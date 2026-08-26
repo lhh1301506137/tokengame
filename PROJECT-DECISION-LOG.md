@@ -101,8 +101,9 @@ metadata:
   date: 2026-08-25
   source: user_direct
   scope: mvp
-  status: user_confirmed
+  status: superseded
   supersedes: none
+  superseded_by: DEC-20260827-018
   affected_docs:
     - PROJECT-PLAN-TREE.md
     - STATUS.md
@@ -916,8 +917,8 @@ metadata:
   date: 2026-08-27
   source: advisor_question
   scope: mvp
-  status: pending_user_confirmation
-  supersedes: none
+  status: user_confirmed
+  supersedes: DEC-20260825-002
   affected_docs:
     - docs/SEMANTIC-CONFIRMATION-L1-20260827.md
     - PROJECT-PLAN-TREE.md
@@ -925,13 +926,92 @@ metadata:
     - .trellis/tasks/08-26-public-ai-table-talk/prd.md
   resulting_changes:
     - doc: docs/SEMANTIC-CONFIRMATION-L1-20260827.md
-      change: 分别完整展示共享宿主中立入口与并列宿主入口两个 L1 候选，不展示或确认 L2 与规则。
+      change: 将方案 1 的共享宿主中立入口登记为已确认；方案 2 未被选择，L2 与规则不继承本次确认。
     - doc: PROJECT-PLAN-TREE.md
-      change: 把活动路线停在已确认宿主中立 L0，登记两条 L1 候选和下一用户决策。
+      change: 以 TG-L1-HOST-ENTRY 替代旧 TG-L1-CODEX-ENTRY 作为当前入口域，并把下一用户决策推进到首个 L2 章程。
+    - doc: STATUS.md
+      change: 将当前语义阶段推进到 TG-L2-SESSION-LAUNCH 后继章程确认。
+    - doc: .trellis/tasks/08-26-public-ai-table-talk/prd.md
+      change: 记录 L1 已确认、首个 L2 尚待确认的 Route Rebase 状态。
 
 question: TokenGame 应只有一个宿主中立入口能力域，让 Codex、Claude 成为其下适配；还是保留 Codex 入口并新增并列的 Claude 入口能力域？
 why_it_matters: 两者都能接入同一个牌桌，但前者让共同身份、恢复和隐私说明天然只有一份；后者允许每个宿主入口长期独立演进，也会增加语义重复、维护成本和分裂风险。
 recommended_answer: 选择共享宿主中立入口。宿主差异主要是下层安装、输入和 UI 适配，不值得为每个宿主复制一个 L1 产品能力域。
+user_answer: 用户回复“1”，只确认 `docs/SEMANTIC-CONFIRMATION-L1-20260827.md` 完整展示的方案 1“共享宿主中立入口”。
+decision: 采用 SC-TG-L1-HOST-ENTRY-20260827-A 作为 TG-L1-HOST-ENTRY 的当前 L1 合同，权限为 user_confirmed；DEC-20260825-002 与 SC-TG-L1-CODEX-ENTRY-20260825-A 转为已替代历史。方案 2 未被选择。本决策不确认任何 L2、U7、产品规则、宿主能力、技术实现或交付状态。
+follow_up: 进入 TG-L2-SESSION-LAUNCH 的宿主中立后继章程确认；只有该 L2 的完整预构建 payload 获得独立精确确认并通过合同校验后，才可进入其规则分类或后续 L2。
+
+semantic_contract:
+  contract_id: SC-TG-L1-HOST-ENTRY-20260827-A
+  node_id: TG-L1-HOST-ENTRY
+  payload_schema: dual-ai.semantic-contract.v1
+  digest: sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160
+  binding_status: verified
+  verified_at: 2026-08-27
+  verified_with: dual-ai-semantic-alignment/scripts/semantic-contract.mjs
+
+```json dual-ai.semantic-contract.v1
+{
+  "schema": "dual-ai.semantic-contract.v1",
+  "contract_id": "SC-TG-L1-HOST-ENTRY-20260827-A",
+  "node_id": "TG-L1-HOST-ENTRY",
+  "semantic_level": "L1",
+  "parent_node_id": "TG-L0-PRODUCT",
+  "scope": "current_mvp",
+  "meaning": {
+    "goal": "让用户能够从任一受支持的 AI 工作宿主自然进入同一个 TokenGame，把当前游戏会话实际使用的 AI 与一个宿主中立的玩家会话连接起来，并进入或恢复后续牌桌，而不要求另配一套模型 API。",
+    "responsibility": "承担产品主链中统一入口与会话承接责任：各宿主适配器分别处理本宿主可靠的安装、授权和交互形态，共享入口则向后续牌桌交付含义一致的玩家身份、游戏会话和 AI 能力边界；它不决定牌局规则或公开交流规则。",
+    "included": [
+      "允许 Codex、Claude 及以后受支持宿主通过各自可靠的交互形态接入同一个 TokenGame，适配器可以分阶段交付",
+      "在用户明确允许后安装或启用 TokenGame，并把当前游戏会话与玩家的参赛身份显式绑定",
+      "使用该游戏会话实际采用的模型、推理配置和可用工具作为 AI 能力来源，不要求平台验证模型提供商身份，也不要求用户另填模型 API",
+      "清楚显示当前游戏、AI 参赛、房间连接和恢复状态，并为中断后的继续游戏提供入口",
+      "为所有宿主使用同一套玩家身份、房间归属和恢复含义，使后来加入的宿主不需要重做牌桌核心"
+    ],
+    "excluded": [
+      "不要求各宿主使用相同的输入框、控件、页面布局或自动化接口",
+      "不承担德州扑克状态裁决、隐藏信息保护，也不决定哪些赛时内容公开",
+      "不为每个宿主建立互不兼容的账户、房间命名空间或独立牌局核心",
+      "当前 MVP 不要求两个宿主适配器同时完成，也不承诺跨设备同步、公开匹配或应用商店分发"
+    ],
+    "user_visible_result": "用户无论从哪个已经受支持的宿主进入，都能用少量明确操作启用同一个 TokenGame，带上当前游戏会话真实使用的 AI，看到自己是否已连接或可恢复牌桌，而不必重新配置另一套 AI 客户端。",
+    "relationships": [
+      "上游依赖用户对安装、联网和会话能力的明确授权，以及各宿主能够可靠提供的接入能力",
+      "向可信实时牌局能力提供宿主中立的玩家会话、加入或恢复请求和明确的身份归属",
+      "向公开人机博弈能力提供经过边界控制的当前会话 AI 入口；宿主特有输入形态由后续章程适配"
+    ],
+    "ideal_final_form": "形成一条稳定的 TokenGame 宿主入口主链：玩家可以选择受支持的 AI 工作宿主而不更换游戏身份或进入另一套牌局核心，各宿主的进入体验保持自然，但共享状态、隐私说明和恢复结果保持一致。",
+    "current_mvp_boundary": "先让至少一个宿主适配器完成显式安装或启用、绑定一个当前游戏会话、开启或关闭 AI 助手、连接或恢复一个临时私人德州牌桌；另一个宿主可以稍后接入，但玩家身份、房间归属和恢复含义不得写死为首个宿主专属。",
+    "expected_scenario": "玩家 A 在 Codex 中启用 TokenGame，玩家 B 在 Claude 中通过该宿主可靠入口启用同一游戏；两人各自绑定当前游戏会话并加入同一个私人房。即使首个 MVP 只先交付 Codex 入口，后来增加 Claude 时也沿用同一玩家与房间含义，不重做牌桌核心。",
+    "plausible_but_wrong": "分别制作 Codex TokenGame 和 Claude TokenGame，两边各有自己的玩家身份、房间和恢复规则；它们都能打开牌桌，却无法自然进入同一场比赛，最终形成两套名称相同但互不兼容的产品。"
+  },
+  "protected_product_rules": []
+}
+```
+
+## DEC-20260827-019：候选——宿主中立游戏会话与座位恢复章程
+
+metadata:
+  date: 2026-08-27
+  source: advisor_question
+  scope: feature
+  status: pending_user_confirmation
+  supersedes: none
+  proposed_supersedes: DEC-20260825-005（仅在候选被精确确认并完成合同校验后）
+  affected_docs:
+    - docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
+    - PROJECT-PLAN-TREE.md
+    - STATUS.md
+    - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+  resulting_changes:
+    - doc: docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
+      change: 完整展示 TG-L2-SESSION-LAUNCH 的宿主中立后继章程，暂不展示或确认其产品规则。
+    - doc: PROJECT-PLAN-TREE.md
+      change: 把活动路线停在已验证 TG-L1-HOST-ENTRY，登记首个 L2 候选和下一用户决策。
+
+question: 游戏会话启动是否应扩展为宿主中立的私人房创建或加入、房间与座位归属，以及普通中断后回到原座位的完整步骤，同时允许各宿主采用不同可靠入口？
+why_it_matters: 旧章程只覆盖单个 Codex 会话的启用和恢复入口，不能定义跨宿主玩家是否进入同一房间、是否拥有稳定座位，也不能覆盖 Claude 可能无法复用 Codex 主输入框行为的现实。
+recommended_answer: 确认宿主中立后继章程，把用户可见的授权、当前会话 AI、临时私人房、座位归属、状态和恢复结果统一起来；凭据字段、存储方式、具体 UI 与接口继续由后续规则分类和专业实现决定。
 user_answer: pending
-decision: 当前仅登记两条待确认候选，不提升任何 L1。方案 1 将以 SC-TG-L1-HOST-ENTRY-20260827-A 后继替代 DEC-20260825-002；方案 2 将保留 DEC-20260825-002，并新增 SC-TG-L1-CLAUDE-ENTRY-20260827-A。任一选择都不确认 L2、U7、产品规则或实现。
-follow_up: 方案 1 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-host-entry-shared.json，摘要为 sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160；方案 2 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-claude-entry-sibling.json，摘要为 sha256:43e8bb190cc8b2529fe48a4e293e9e4471992dfd8ace0283e6c1e62eb8b71186。只有用户明确回复 1 或 2 后，才可原样持久化并校验对应合同。
+decision: 当前只登记 SC-TG-L2-SESSION-LAUNCH-20260827-B 候选，不提升该 L2，也不确认任何席位凭据、U7、公开 AI、验收或实现规则。SC-TG-L2-SESSION-LAUNCH-20260825-A 保留为最后一个已验证但与新父级冲突的历史章程。
+follow_up: 候选 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-session-launch-host-neutral.json，摘要为 sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f。只有用户明确回复 1 后，才可原样持久化、校验并替代 DEC-20260825-005；回复 2 或 3 不产生确认。

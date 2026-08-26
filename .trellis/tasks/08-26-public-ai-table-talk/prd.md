@@ -635,9 +635,9 @@
 
 ## 语义变更与分阶段确认状态（2026-08-27）
 
-本 PRD 中与已验证合同冲突或超出其范围的“已确认”“已锁定”表述，只代表需求发现会话中的候选共识，不具有 `user_confirmed` 合同权威。宿主中立 L0 已由 `PROJECT-DECISION-LOG.md#DEC-20260827-017` 单独确认并校验；L1、L2 与规则仍须分阶段取得各自权威，受影响实现继续暂停。
+本 PRD 中与已验证合同冲突或超出其范围的“已确认”“已锁定”表述，只代表需求发现会话中的候选共识，不具有 `user_confirmed` 合同权威。宿主中立 L0 与共享宿主入口 L1 已分别由 `PROJECT-DECISION-LOG.md#DEC-20260827-017`、`PROJECT-DECISION-LOG.md#DEC-20260827-018` 单独确认并校验；L2 与规则仍须分阶段取得各自权威，受影响实现继续暂停。
 
-确认顺序固定为：L0 宿主中立化（已完成）→ L1 宿主入口路线二选一（当前）→ `TG-L2-SESSION-LAUNCH`、`TG-L2-PLAYABLE-TABLE`、`TG-L2-PUBLIC-AI-EXCHANGE` 三个章程分别确认 → 对应受保护产品规则与 supersede 链。后续阶段不得在前一阶段确认前向用户展开成一个总规则包。
+确认顺序固定为：L0 宿主中立化（已完成）→ L1 共享宿主入口（已完成）→ `TG-L2-SESSION-LAUNCH`（当前）、`TG-L2-PLAYABLE-TABLE`、`TG-L2-PUBLIC-AI-EXCHANGE` 三个章程分别确认 → 对应受保护产品规则与 supersede 链。后续阶段不得在前一阶段确认前向用户展开成一个总规则包。
 
 U7 候选按最终复核拆为三项，尚未取得用户权威：
 
@@ -657,6 +657,7 @@ semantic_reconciliation:
   status: drift_needs_user_decision
   original_or_latest_user_intent_checked:
     - PROJECT-DECISION-LOG.md#DEC-20260827-017
+    - PROJECT-DECISION-LOG.md#DEC-20260827-018
     - current_user_instruction:2026-08-27
   historical_ai_inference_checked:
     - CLAUDE-SEMANTIC-REVIEW-20260826.md
@@ -666,7 +667,7 @@ semantic_reconciliation:
     - .trellis/tasks/08-26-public-ai-table-talk/prd.md
   confirmed_path_checked:
     - PROJECT-DECISION-LOG.md#DEC-20260827-017
-    - PROJECT-DECISION-LOG.md#DEC-20260825-002
+    - PROJECT-DECISION-LOG.md#DEC-20260827-018
     - PROJECT-DECISION-LOG.md#DEC-20260825-005
     - PROJECT-DECISION-LOG.md#DEC-20260825-008
     - PROJECT-DECISION-LOG.md#DEC-20260825-009
@@ -674,7 +675,7 @@ semantic_reconciliation:
     - existing_records_only_no_tests_rerun
   material_deltas:
     - classification: docs_and_implementation_drift
-      summary: L0 宿主中立化已经确认；L1 入口结构、临时私人房和事件驱动公开 AI 的 L2/规则后继仍与旧 Codex 路线存在待确认差异。
+      summary: L0 宿主中立化与共享 L1 入口已经确认；临时私人房、座位恢复和事件驱动公开 AI 的 L2/规则后继仍与旧 Codex 路线存在待确认差异。
       affected_levels:
         - L0
         - L1
@@ -682,7 +683,7 @@ semantic_reconciliation:
   scope_escalation_recommended: yes
   user_decision_needed: yes
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
-  next_action: user_choose_stage_2_l1_entry_structure
+  next_action: user_confirm_stage_3_l2_session_launch_charter
 
 route_rebase:
   status: pending_user_confirmation
@@ -693,23 +694,27 @@ route_rebase:
       - CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
       - docs/SEMANTIC-CONFIRMATION-20260827.md
       - docs/SEMANTIC-CONFIRMATION-L1-20260827.md
+      - docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
   semantic_impact: l0_l2_confirmation_required
   authority:
     user: pending_user_confirmation
     primary_ai: propose_l0_l2_and_wait
-    decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
+    decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019
   previous_active_path:
     - TG-L0-PRODUCT
     - TG-L1-LIVE-TABLE
     - TG-L2-PLAYABLE-TABLE
   candidate_active_path:
     - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
-    - TG-L1-ENTRY-STRUCTURE@DEC-20260827-018-two-options
+    - TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A
+    - TG-L2-SESSION-LAUNCH@SC-TG-L2-SESSION-LAUNCH-20260827-B-pending
   resulting_active_path:
     - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
+    - TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A
   affected_scope:
     plan_nodes:
       - TG-L0-PRODUCT
+      - TG-L1-HOST-ENTRY
       - TG-L1-CODEX-ENTRY
       - TG-L1-LIVE-TABLE
       - TG-L1-PUBLIC-AI-PLAY
@@ -735,16 +740,18 @@ route_rebase:
       - .trellis/tasks/08-26-public-ai-table-talk/prd.md
       - docs/SEMANTIC-CONFIRMATION-20260827.md
       - docs/SEMANTIC-CONFIRMATION-L1-20260827.md
+      - docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
     status_and_navigation:
       - active_path_held_at_protected_confirmation
     completion_evidence:
       - existing_codex_probe_evidence_scope_limited
   reliable_resume_boundary:
-    earliest_trustworthy_node_or_checkpoint: SC-TG-L0-ROOT-20260827-B-current_verified
-    first_invalid_or_unverified_node: TG-L1-ENTRY-STRUCTURE@DEC-20260827-018-pending_user_confirmation
+    earliest_trustworthy_node_or_checkpoint: SC-TG-L1-HOST-ENTRY-20260827-A-current_verified
+    first_invalid_or_unverified_node: TG-L2-SESSION-LAUNCH@SC-TG-L2-SESSION-LAUNCH-20260827-B-pending_user_confirmation
     basis:
       - PROJECT-DECISION-LOG.md#DEC-20260827-017
       - PROJECT-DECISION-LOG.md#DEC-20260827-018
+      - PROJECT-DECISION-LOG.md#DEC-20260827-019
   impact_dispositions:
     - subject: SC-TG-L0-ROOT-20260825-A
       kind: document
@@ -758,6 +765,12 @@ route_rebase:
       reason: L0-L2 候选会改变宿主入口、MVP 桌型和公开 AI 责任。
       required_action: hold_until_sequential_confirmation_and_truth_write
       evidence_or_owner: PROJECT-PLAN-TREE.md
+    - subject: SC-TG-L1-CODEX-ENTRY-20260825-A
+      kind: document
+      disposition: superseded
+      reason: 共享宿主入口后继已经由用户确认并完成唯一合同校验；旧 Codex 专属 L1 只保留为可审计历史。
+      required_action: retain_as_historical_evidence_only
+      evidence_or_owner: PROJECT-DECISION-LOG.md#DEC-20260825-002
     - subject: existing_codex_host_probe_results
       kind: completion_evidence
       disposition: reusable
@@ -765,14 +778,16 @@ route_rebase:
       required_action: retain_with_scope_limit_then_revalidate_affected_claims
       evidence_or_owner: docs/HOST-PROBE-CHECKLIST.md
   unresolved_blockers:
-    - user_choice_stage_2_l1_entry_structure
+    - user_confirmation_stage_3_l2_session_launch_charter
   durable_carrier: active_trellis_or_prd
-  history_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+  history_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
 ```
 
 <a id="l0-truth-persistence-result"></a>
 
-### L0 语义写入结果
+### L0 语义写入结果（第一阶段历史记录）
+
+以下记录保留第一阶段当时的静态持久化证据，不再控制当前 `active`、`next` 或 Route Rebase；当前结果见 `#l1-truth-persistence-result`。
 
 ```yaml
 execution_closure:
@@ -1032,4 +1047,288 @@ understanding_revision_receipt:
   plan_tree_understanding_view_refs:
     - PROJECT-PLAN-TREE.md#TG-L0-PRODUCT
     - PROJECT-PLAN-TREE.md#TG-L1-CODEX-ENTRY
+```
+
+<a id="l1-truth-persistence-result"></a>
+
+### L1 共享宿主入口语义写入结果
+
+```yaml
+execution_closure:
+  contract: dual-ai.execution-closure.v1
+  result_id: EC-TG-L1-HOST-ENTRY-20260827-A
+  detail_level: material_node_closure
+  scope:
+    scope_id: TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A
+    exact_outcome: 将用户选择的共享宿主中立入口 L1 原样写入唯一决策合同，替代旧 Codex 专属入口 L1，并把活动导航停在尚未确认的 TG-L2-SESSION-LAUNCH 后继章程
+    owner_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
+  trigger: semantic_write_changes_navigation_state
+  basis:
+    semantic_contract_refs:
+      - node_id: TG-L0-PRODUCT
+        contract_id: SC-TG-L0-ROOT-20260827-B
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+        expected_digest: sha256:72f84db2d6965f8a3f3e0a6deb1657a37c477d65d65cddc6bbaf88598e74b7d6
+        binding_status: verified
+      - node_id: TG-L1-HOST-ENTRY
+        contract_id: SC-TG-L1-HOST-ENTRY-20260827-A
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
+        expected_digest: sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160
+        binding_status: verified
+    route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
+    implementation_identity:
+      kind: not_required
+      scope: semantic_truth_persistence_only
+      identity: not_required
+      status: not_required
+      not_required_reason: 本结果只判断用户确认与语义导航写入，不声明宿主入口产品已经实现。
+    verification_identities:
+      - evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/l1-host-entry-verification-20260827.json
+        identity: sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160
+        status: current
+    freshness: current
+  acceptance:
+    derivation_timing: legacy_or_existing_state_reconstructed
+    obligations:
+      - obligation_id: L1-PERSIST-USER-ANSWER
+        claim_or_predicate: 用户回复只确认此前完整展示的 L1 方案 1“共享宿主中立入口”。
+        required: yes
+        real_condition: 决策记录不得把该回复扩展为 L2、U7、规则、宿主能力或实现确认。
+      - obligation_id: L1-PERSIST-BINDING
+        claim_or_predicate: 预构建 L1 payload 在 DEC-20260827-018 中恰好出现一次且摘要匹配。
+        required: yes
+        real_condition: 使用语义合同工具直接校验决策日志当前字节。
+      - obligation_id: L1-PERSIST-SUPERSEDE
+        claim_or_predicate: 旧 Codex 专属 L1 保留为已替代历史，当前入口指针指向共享宿主 L1。
+        required: yes
+        real_condition: 决策日志、Plan Tree 与 STATUS 的活动指针一致。
+      - obligation_id: L1-PERSIST-NON-INHERITANCE
+        claim_or_predicate: 活动路线只推进到 L1，下一步仍是独立的 TG-L2-SESSION-LAUNCH 用户确认。
+        required: yes
+        real_condition: 候选 L2 及其规则没有被标记为当前已确认。
+    selected_surfaces:
+      - inspection
+    observations:
+      - obligation_id: L1-PERSIST-USER-ANSWER
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: PROJECT-DECISION-LOG.md#DEC-20260827-018
+        result: pass
+        caveat: 只证明用户价值决定已持久化，不证明技术能力。
+      - obligation_id: L1-PERSIST-BINDING
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/l1-host-entry-verification-20260827.json
+        result: pass
+        caveat: payload_count 为一且 digest verified。
+      - obligation_id: L1-PERSIST-SUPERSEDE
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: PROJECT-PLAN-TREE.md#semantic_baseline
+        result: pass
+        caveat: 旧 Codex 证据仍可按原范围复用，但不能代表共享入口或双宿主能力已交付。
+      - obligation_id: L1-PERSIST-NON-INHERITANCE
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
+        result: pass
+        caveat: L2 当前仍是候选。
+    skipped:
+      - check: npm_test_and_playwright
+        reason: 本次只写入语义合同；运行产品测试不能证明或替代用户确认。
+      - check: codex_and_claude_host_probes
+        reason: 双宿主、私人房恢复和主动唤醒能力属于后续证据门禁，本结果不声明其通过。
+    result: pass
+  capability_claim:
+    overall_result: supported
+    claims:
+      - capability_id: TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A
+        claim: 共享宿主中立入口 L1 的用户确认、唯一合同绑定与当前语义指针已经持久化。
+        exact_scope: 仅限 L1 语义真相与导航写入，不包括任何宿主适配器、私人房、恢复或双宿主功能已经实现。
+        result: supported
+        dimensions:
+          semantic:
+            required: yes
+            status: sufficient_for_claim
+            evidence_type: inspection
+            evidence_pointer: PROJECT-DECISION-LOG.md#DEC-20260827-018
+            user_readable_meaning: 用户选择的共享入口 L1 与当前合同完全一致。
+            caveat: 不向下确认任何 L2 或规则。
+          implementation:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断入口代码实现。
+            caveat: 受影响产品实现仍暂停。
+            not_applicable_reason: 精确声明仅为语义持久化。
+          data:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断身份、房间或恢复数据能力。
+            caveat: 无。
+            not_applicable_reason: 精确声明不涉及运行数据。
+          integration:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断 Codex、Claude 或牌桌集成。
+            caveat: 双宿主互通未验证。
+            not_applicable_reason: 精确声明不涉及运行集成。
+          verification:
+            required: yes
+            status: sufficient_for_claim
+            evidence_type: inspection
+            evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/l1-host-entry-verification-20260827.json
+            user_readable_meaning: 决策日志中的唯一 L1 payload 与预期摘要匹配。
+            caveat: 这是静态合同校验，不是产品测试。
+          operational:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断部署或生产可用性。
+            caveat: 未发布、未部署。
+            not_applicable_reason: 精确声明不涉及运行就绪。
+        safe_wording: 可以声称共享宿主中立入口 L1 已确认并完成语义持久化；不能声称 L2、私人房恢复、双宿主或主动 AI 已实现。
+        gaps:
+          - TG-L2-SESSION-LAUNCH 宿主中立后继仍待用户确认。
+          - 其余两个 L2 和产品规则仍待后续分阶段确认。
+  route_boundaries:
+    local:
+      result: supported
+      evidence_refs:
+        - PROJECT-DECISION-LOG.md#DEC-20260827-018
+        - .trellis/tasks/08-26-public-ai-table-talk/research/l1-host-entry-verification-20260827.json
+    adjacent:
+      result: partial
+      evidence_refs:
+        - PROJECT-DECISION-LOG.md#DEC-20260827-019
+    cumulative:
+      result: partial
+      evidence_refs:
+        - PROJECT-PLAN-TREE.md#semantic_baseline
+  semantic_delta: l0_l2_confirmation_required
+  state: blocked
+  claim_limits:
+    - L1 语义写入不证明任何宿主适配器、私人房、座位恢复、牌桌或主动 AI 已交付。
+    - L2、U7 与产品规则不继承本次用户确认。
+  remaining_non_blocking: []
+  advance_allowed: no
+  next_owner: PROJECT-DECISION-LOG.md#DEC-20260827-019
+
+  formal_self_review:
+    status: ai_generated
+    performed_after_semantic_write: yes
+    verdict: APPROVE_WITH_NOTES
+    reviewed_scope: 用户回复 1 对共享宿主中立入口 L1 的精确持久化、旧 Codex 专属 L1 替代关系、当前导航和首个 L2 独立确认包
+    review_checks:
+      correctness: pass
+      regression_and_scope: pass_with_limits
+      missing_verification: documented
+      direction_risk: held_at_l2_user_confirmation
+      sentinel_signal: none_for_exact_semantic_persistence_claim
+    evidence_directly_inspected:
+      - 当前用户回复与此前完整展示的 L1 方案 1 边界
+      - PROJECT-DECISION-LOG.md 中唯一嵌入 payload、摘要、状态与 supersede 链
+      - PROJECT-PLAN-TREE.md、STATUS.md、活动 PRD 和两阶段确认页的当前指针
+      - 预构建 L2 候选、内容寻址校验与受保护字段展示完整性
+    direction_challenge:
+      - challenge: 共享宿主 L1 是否只是抽象得更漂亮，却掩盖 Codex 与 Claude 的真实交互差异。
+        conclusion: L1 只统一玩家身份、房间与恢复含义，并明确允许宿主适配器分阶段、使用不同可靠入口；本阶段没有声称两个宿主已经等价实现。
+      - challenge: 首个 L2 是否把某种主输入框、MCP、URL、凭据字段或页面布局提前升级为产品硬约束。
+        conclusion: 候选只冻结用户可见的授权、私人房、座位归属、状态与普通中断恢复结果；具体输入面、接口、存储和凭据形状仍留待规则分类与实现证据。
+      - challenge: 方案 1 是否只因被推荐而未经独立比较就写入。
+        conclusion: 用户回复前已分别完整展示共享入口与并列入口的责任、结果、错误形态和摘要；本次仅持久化用户明确选择的原方案 1 payload。
+    findings:
+      - severity: note
+        finding: L1 语义持久化已经闭合，但整个 Route Rebase 仍被首个 L2、其余两个 L2 与规则的独立确认阻塞。
+        disposition: 保持 advance_allowed 为 no，并把下一 owner 固定为 DEC-20260827-019。
+      - severity: note
+        finding: 首个 L2 候选定义了私人房与座位恢复的用户结果，但席位凭据、一性交接和恢复时限仍是未分类规则。
+        disposition: 在用户确认章程前不展示为既定规则；章程确认后再逐项判定产品规则、验收规则或实现规则。
+      - severity: note
+        finding: 旧 Codex 运行与产品测试证据没有随新 L1 自动升级为双宿主、跨宿主私人房或座位恢复证据。
+        disposition: Project Intelligence 保持 refresh_required，受影响实现与验收保持 revalidation_required。
+    counterfactual_review:
+      evidence_that_would_change_verdict:
+        - DEC-20260827-018 中 payload 不唯一或摘要校验失败。
+        - 任一当前入口或活动路径指针仍以旧 Codex 专属 L1 为现行合同，或活动路径提前包含尚未确认的 L2。
+        - 用户说明本次回复 1 并非确认此前完整展示的 L1 方案 1，而是意指方案 2 或其他动作。
+        - L2 确认页遗漏、增加或改写候选合同的任一受保护字段，却仍声称回复 1 会确认原候选。
+      not_verified:
+        - 未运行 npm test 或 Playwright，因其不能证明用户语义确认。
+        - 未执行 Codex 或 Claude 宿主探针，也未验证跨宿主私人房、座位恢复或事件驱动主动唤醒。
+        - 未确认任何 L2、U7、席位凭据、公开 AI、验收或实现规则。
+      claims_relying_on_primary_report_instead_of_direct_evidence:
+        - 历史 Codex 宿主探针与产品测试结果仅沿用既有记录，未用于本次 L1 通过结论。
+    review_independence:
+      level: same_session_self
+      primary_identity_verified: no
+      reviewer_identity_verified: no
+      independently_derived_scope: yes
+      evidence_directly_inspected: yes
+      limitations:
+        - 这是同一会话 AI 的正式自查，不是外部独立复核、用户验收或产品测试。
+
+truth_navigation_impact:
+  - surface: PROJECT-DECISION-LOG.md#DEC-20260825-002
+    classification: supersede
+    reason: 已验证共享宿主入口后继取代旧 Codex 专属入口；旧 payload 与摘要保持历史可审计。
+    affected_pointer_or_meaning: TG-L1-CODEX-ENTRY previous current contract
+  - surface: PROJECT-DECISION-LOG.md#DEC-20260827-018
+    classification: update
+    reason: 写入用户精确答案、原样 payload、唯一摘要校验和 supersede 关系。
+    affected_pointer_or_meaning: TG-L1-HOST-ENTRY current contract
+  - surface: PROJECT-PLAN-TREE.md
+    classification: update
+    reason: 新共享 L1 进入活动路径，旧 Codex L1 转为 superseded，恢复边界移动到待确认会话启动 L2。
+    affected_pointer_or_meaning: active_path, dependencies, reliable_boundary, semantic_baseline
+  - surface: STATUS.md
+    classification: update
+    reason: 当前目标、语义阶段、下一 owner 和候选引用改为首个 L2 章程确认。
+    affected_pointer_or_meaning: current, active, next, semantic_alignment, project_intelligence
+  - surface: docs/SEMANTIC-CONFIRMATION-L1-20260827.md
+    classification: update
+    reason: 保留两个方案的原展示内容，并把方案 1 标为已确认和已验证、方案 2 标为未选择。
+    affected_pointer_or_meaning: stage_2_l1_user_confirmed
+  - surface: docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
+    classification: update
+    reason: 建立下一阶段独立 L2 章程确认入口，不赋予候选用户权威。
+    affected_pointer_or_meaning: stage_3_l2_session_launch_pending_user_confirmation
+  - surface: .trellis/tasks/08-26-public-ai-table-talk/prd.md#l0-truth-persistence-result
+    classification: historical_only
+    reason: 第一阶段 L0 静态记录保持原字节语义，但不再控制当前 active 或 next 指针。
+    affected_pointer_or_meaning: prior-stage evidence only
+
+post_write_pointer_closure:
+  status: closed
+  repaired_or_historicalized:
+    - 旧 Codex 专属 L1 决策、合同和 Plan Tree 节点明确标记 superseded。
+    - 活动路径、当前入口、依赖、恢复边界和下一 owner 全部指向 L1 已确认、首个 L2 待确认状态。
+    - 第二阶段确认页明确禁止向 L2、U7 或规则继承，第一阶段执行结果明确标为历史记录。
+  blockers: []
+
+understanding_revision_receipt:
+  current_before_ref: SC-TG-L1-CODEX-ENTRY-20260825-A
+  candidate_successor_ref: SC-TG-L1-HOST-ENTRY-20260827-A
+  current_after_ref: SC-TG-L1-HOST-ENTRY-20260827-A
+  affected_node_refs:
+    - TG-L1-CODEX-ENTRY
+    - TG-L1-HOST-ENTRY
+    - TG-L1-LIVE-TABLE
+    - TG-L1-PUBLIC-AI-PLAY
+    - TG-L2-SESSION-LAUNCH
+    - TG-L2-PLAYABLE-TABLE
+    - TG-L2-PUBLIC-AI-EXCHANGE
+  invalidated_completion_or_evidence_refs:
+    - STATUS.md#project_intelligence@refresh_required
+    - REVIEW-LOG.md#2026-08-26座位旁-ai-公开气泡复核@revalidation_required
+  reliable_resume_boundary_ref: PROJECT-PLAN-TREE.md#当前恢复点
+  plan_tree_understanding_view_refs:
+    - PROJECT-PLAN-TREE.md#TG-L1-HOST-ENTRY
+    - PROJECT-PLAN-TREE.md#TG-L2-SESSION-LAUNCH
 ```

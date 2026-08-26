@@ -1,8 +1,8 @@
 # TokenGame 第二阶段语义确认：宿主入口路线
 
-状态：`stage_2_l1_pending_user_confirmation`
+状态：`stage_2_l1_user_confirmed`
 
-已确认上游：`TG-L0-PRODUCT / SC-TG-L0-ROOT-20260827-B`。本文件只处理 L1 宿主入口结构；L0 的确认不向本阶段继承。
+已确认上游：`TG-L0-PRODUCT / SC-TG-L0-ROOT-20260827-B`。用户随后回复“1”，只确认本文件完整展示的方案 1；同一预构建 payload 已原样写入 `PROJECT-DECISION-LOG.md#DEC-20260827-018`，并以 `TG-L1-HOST-ENTRY / SC-TG-L1-HOST-ENTRY-20260827-A`、摘要 `sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160` 唯一校验通过。该确认不向 L2、U7、产品规则或实现继承。
 
 ## 这次在选择什么
 
@@ -95,22 +95,21 @@
 
 ## 本轮确认范围
 
-只选择一种 L1 宿主入口结构，不确认三个 L2 后继章程、U7、公开/私密/迟到/主动发言规则、宿主探针结果、技术实现或产品已经完成。
+本轮已经只选择共享宿主中立入口，不确认三个 L2 后继章程、U7、公开/私密/迟到/主动发言规则、宿主探针结果、技术实现或产品已经完成。
 
-## 本轮选择
+## 本轮选择结果
 
-1. **共享宿主中立入口（推荐）**：确认本文件方案 1 的完整 `TG-L1-HOST-ENTRY` 语义，后续进入第一个 L2“游戏会话与宿主入口”。
-2. **并列宿主入口**：确认本文件方案 2 的完整 `TG-L1-CLAUDE-ENTRY` 语义，并保留既有 Codex 入口，后续进入第一个 L2。
-3. **解释或修改**：先说明希望调整的用户结果、责任或边界，不确认任何 L1 候选。
+用户选择了方案 1。`TG-L1-HOST-ENTRY` 现在是当前已验证入口域；旧 `TG-L1-CODEX-ENTRY` 保留为已替代历史，方案 2 未生效。下一阶段只展开第一个 L2“游戏会话与宿主入口”，见 `docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md`。
 
 <!--
 option_1_candidate_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-host-entry-shared.json
 option_1_candidate_digest: sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160
-option_1_authority: pending_user_confirmation
-option_1_proposed_supersedes: DEC-20260825-002
+option_1_authority: user_confirmed
+option_1_decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
+option_1_binding_status: verified
+option_1_supersedes: DEC-20260825-002
 option_2_candidate_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-claude-entry-sibling.json
 option_2_candidate_digest: sha256:43e8bb190cc8b2529fe48a4e293e9e4471992dfd8ace0283e6c1e62eb8b71186
-option_2_authority: pending_user_confirmation
-option_2_preserves: DEC-20260825-002
-confirmation_rule: reply 1 or 2 confirms only the corresponding unchanged payload shown above; descendants and rules do not inherit authority
+option_2_authority: not_selected
+confirmation_rule: the recorded reply 1 confirms only option 1's unchanged payload; descendants and rules do not inherit authority
 -->

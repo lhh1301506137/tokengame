@@ -7,9 +7,9 @@
 - 初始化分类：`fresh_init`
 - 框架就绪度：`continue_ready`
 - 当前阶段：`prototype`
-- 当前目标：完成宿主中立 TokenGame 的分阶段语义变更确认；L0 已单独确认，当前等待 L1 宿主入口结构二选一。
-- 当前路径：`SC-TG-L0-ROOT-20260827-B` 是现行已验证根合同；L1 及三个 L2 后继仍待选择或确认，受影响产品实现继续暂停。
-- 裸指令 `继续`：不会替用户选择 L1 方案，也不会授权发布、部署、付费服务或扩大产品范围。
+- 当前目标：完成宿主中立 TokenGame 的分阶段语义变更确认；L0 与共享宿主入口 L1 已分别确认，当前等待首个 L2“游戏会话与宿主入口”章程确认。
+- 当前路径：`SC-TG-L0-ROOT-20260827-B` 与 `SC-TG-L1-HOST-ENTRY-20260827-A` 是现行已验证主链；`TG-L2-SESSION-LAUNCH` 后继及其余 L2/规则仍待独立确认，受影响产品实现继续暂停。
+- 裸指令 `继续`：不会确认当前 L2 候选，也不会授权发布、部署、付费服务或扩大产品范围。
 
 ```yaml
 user_facing_language_resolution:
@@ -53,9 +53,9 @@ trellis:
   bootstrap_task: archived/2026-08/00-bootstrap-guidelines
   active_task: .trellis/tasks/08-26-public-ai-table-talk
   active_task_status: planning
-  active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-host-entry-shared.json
-  recommendation: user_choose_stage_2_l1_entry_structure
-  reason: l0_successor_is_verified_but_l1_entry_structure_and_l2_successors_remain_unconfirmed
+  active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-session-launch-host-neutral.json
+  recommendation: user_confirm_stage_3_l2_session_launch_charter
+  reason: l0_and_shared_l1_are_verified_but_session_launch_successor_and_remaining_l2_rules_remain_unconfirmed
 
 continuous_risk_authorization:
   status: active
@@ -99,23 +99,22 @@ semantic_alignment:
   semantic_baseline_status: conflict
   confirmed_nodes:
     - TG-L0-PRODUCT
-    - TG-L1-CODEX-ENTRY
+    - TG-L1-HOST-ENTRY
     - TG-L1-LIVE-TABLE
     - TG-L1-PUBLIC-AI-PLAY
     - TG-L2-SESSION-LAUNCH
     - TG-L2-PLAYABLE-TABLE
     - TG-L2-PUBLIC-AI-EXCHANGE
   pending_or_missing:
-    - TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A-option-1
-    - TG-L1-CLAUDE-ENTRY@SC-TG-L1-CLAUDE-ENTRY-20260827-A-option-2
-    - TG-L2-SESSION-LAUNCH@successor_not_yet_presented
+    - TG-L2-SESSION-LAUNCH@SC-TG-L2-SESSION-LAUNCH-20260827-B-pending
     - TG-L2-PLAYABLE-TABLE@successor_not_yet_presented
     - TG-L2-PUBLIC-AI-EXCHANGE@successor_not_yet_presented
   binding_index: H:/tokengold/tokengame/PROJECT-PLAN-TREE.md#semantic_baseline
   current_root_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
-  candidate_confirmation_ref: docs/SEMANTIC-CONFIRMATION-L1-20260827.md#l1-entry-options
+  current_entry_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
+  candidate_confirmation_ref: docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md#l2-session-launch-charter
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
-  next_action: user_choose_stage_2_l1_entry_structure
+  next_action: user_confirm_stage_3_l2_session_launch_charter
 
 project_intelligence:
   contract: dual-ai.project-intelligence.v1
@@ -283,14 +282,15 @@ project_intelligence:
   execution_closure_ref: REVIEW-LOG.md#2026-08-26座位旁-ai-公开气泡复核
   dependent_implementation_acceptance: revalidation_required
   route_permission:
-    requested_route_ref: TG-L1-ENTRY-STRUCTURE@DEC-20260827-018
+    requested_route_ref: TG-L2-SESSION-LAUNCH@DEC-20260827-019
     decision: held
     basis_refs:
       - PROJECT-DECISION-LOG.md#DEC-20260827-017
       - PROJECT-DECISION-LOG.md#DEC-20260827-018
+      - PROJECT-DECISION-LOG.md#DEC-20260827-019
       - CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
       - PROJECT-PLAN-TREE.md#semantic_baseline
-  next_owner: direct_dual_ai_semantic_alignment_stage_2_l1_choice
+  next_owner: direct_dual_ai_semantic_alignment_stage_3_l2_session_launch_confirmation
 
 capability_inventory:
   contract: dual-ai.capability-inventory.v1
@@ -312,4 +312,4 @@ capability_inventory:
 
 ## 连续性边界
 
-宿主中立 L0 已由用户单独确认并通过内容寻址校验，旧 Codex 专属 L0 转为已替代历史。当前语义状态仍为 `conflict`，因为共享宿主中立入口与并列宿主入口尚未二选一，三个 L2 后继及规则也未确认；受影响实现停在 L1 门禁。既有 Codex 桥接、多人牌桌与座位旁气泡测试只按原记录保留，本轮没有安装依赖、重跑 `npm test` 或 Playwright，也不把历史 23/23 冒充本轮实测。现有证据仍不覆盖双宿主能力、Codex 或 Claude 的事件驱动主动唤醒、完整 MVP、生产认证/持久化/远程并发、隐私完备性、用户接受或发布状态。
+宿主中立 L0 与共享宿主入口 L1 已分别由用户确认并通过内容寻址校验，旧 Codex 专属 L0/L1 转为已替代历史。当前语义状态仍为 `conflict`，因为 `TG-L2-SESSION-LAUNCH` 的宿主中立私人房与座位恢复后继、其余两个 L2 和规则尚未确认；受影响实现停在首个 L2 门禁。既有 Codex 桥接、多人牌桌与座位旁气泡测试只按原记录保留，本轮没有安装依赖、重跑 `npm test` 或 Playwright，也不把历史 23/23 冒充本轮实测。现有证据仍不覆盖双宿主能力、跨宿主私人房、座位恢复、Codex 或 Claude 的事件驱动主动唤醒、完整 MVP、生产认证/持久化/远程并发、隐私完备性、用户接受或发布状态。
