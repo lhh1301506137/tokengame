@@ -1,10 +1,10 @@
 # TokenGame 第五阶段语义确认：公开座位 AI 交流
 
-状态：`stage_5_l2_public_ai_exchange_pending_user_confirmation`
+状态：`stage_5_l2_public_ai_exchange_user_confirmed`
 
-候选合同：`TG-L2-PUBLIC-AI-EXCHANGE / SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C`
+已确认合同：`TG-L2-PUBLIC-AI-EXCHANGE / SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C`
 
-候选摘要：`sha256:90015efee0fe4f7d20947adff61c37c281a5d56f8ebaf3fe3c01f170b7c89e3f`
+已验证摘要：`sha256:90015efee0fe4f7d20947adff61c37c281a5d56f8ebaf3fe3c01f170b7c89e3f`
 
 已确认上游：
 
@@ -72,17 +72,20 @@
 
 只确认以上 `TG-L2-PUBLIC-AI-EXCHANGE` 语义章程。不会顺带确认任何精确公开时序、次数、字数、时长、迟到、屏蔽、私密对话、记忆、托管、公平场、信用、宿主 Hook/UI、验收或实现规则，也不表示 Codex、Claude 或产品已经完成事件驱动主动发言。
 
-## 本轮选择
+## 确认结果
 
-1. **确认以上章程（推荐）**：只确认本文件完整展示的 `TG-L2-PUBLIC-AI-EXCHANGE` 宿主中立公开座位 AI 后继语义；通过独立合同校验后，才进入产品规则分类与 supersede 链。
-2. **修改章程**：指出希望调整的一席一 AI、默认公开范围、回合外发言、主动发言、隐藏信息或真人动作边界；不确认当前候选。
-3. **先解释**：继续讨论该 L2 与宿主输入、可信牌桌、AI 主动唤醒或后续配额规则的边界；不确认当前候选。
+用户回复“1”，只确认以上完整展示且未改动的 `TG-L2-PUBLIC-AI-EXCHANGE / SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C` 语义章程。该 payload 已在 `PROJECT-DECISION-LOG.md#DEC-20260827-021` 中唯一绑定并通过摘要校验，替代旧 `DEC-20260825-009`。
+
+用户随后把变化概括为“仅适配 Codex 改为多适配”。这个概括能够解释宿主中立化，但不是全部变化：本轮还明确把旧的真人主动询问/AI 被动回答升级为事件驱动主动座位 AI；此前第二个 L2 也已经把公开测试桌改为临时私人房。由于这两项都在独立完整确认包中展示并得到确认，当前结论仍然成立，但该说明不构成未来未展示 L2、规则或实现的预授权。
+
+三个当前 MVP L2 章程至此均已确认。下一阶段进入产品规则分类与 supersede 链；旧公开时序规则及其他精确规则仍只保留为历史或候选，不自动继承。
 
 <!--
 candidate_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-public-ai-exchange-host-neutral.json
 candidate_contract_digest: sha256:90015efee0fe4f7d20947adff61c37c281a5d56f8ebaf3fe3c01f170b7c89e3f
-candidate_authority: pending_user_confirmation
-candidate_proposed_supersedes: DEC-20260825-009
-candidate_rules_state: candidate_rules_pending_all_three_charters
-confirmation_rule: reply 1 confirms only the unchanged L2 charter payload shown above; rules, implementation, host capability and descendants do not inherit authority
+candidate_authority: user_confirmed_and_verified_at_PROJECT-DECISION-LOG.md#DEC-20260827-021
+candidate_supersedes: DEC-20260825-009
+candidate_rules_state: protected_product_rules_pending_classification
+verification_ref: .trellis/tasks/08-26-public-ai-table-talk/research/l2-public-ai-exchange-verification-20260827.json
+confirmation_rule: user reply 1 confirmed only the unchanged L2 charter payload shown above; rules, implementation, host capability and unspecified future descendants did not inherit authority
 -->
