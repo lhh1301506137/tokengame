@@ -8,7 +8,7 @@ plan_tree:
   root_goal_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
   active_path:
     - TG-L0-PRODUCT
-    - TG-L1-LIVE-TABLE
+    - TG-L1-PUBLIC-AI-PLAY
   nodes:
     - id: TG-L0-PRODUCT
       parent: none
@@ -54,8 +54,8 @@ plan_tree:
       parent: TG-L0-PRODUCT
       dependencies:
         - TG-L1-HOST-ENTRY
-      status: active
-      summary: 已确认的可信实时牌局能力域；宿主中立会话与座位恢复 L2 已确认，当前在此域下独立确认临时私人牌桌后继章程。
+      status: planned
+      summary: 已确认的可信实时牌局能力域；宿主中立会话与座位恢复、临时私人牌桌两个 L2 已确认并唯一绑定，相关产品实现仍待后续重验。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-003
       understanding_view:
@@ -69,10 +69,16 @@ plan_tree:
       dependencies:
         - TG-L1-HOST-ENTRY
         - TG-L1-LIVE-TABLE
-      status: planned
-      summary: 已确认的公开人机博弈能力域；其赛时消息桥接将先在接入可行性切片中验证。
+      status: active
+      summary: 已确认的公开人机博弈能力域；当前在此域下独立确认一席一 AI、座位旁上下文气泡与事件驱动主动发言的宿主中立后继章程。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-004
+      understanding_view:
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-004
+        current_revision_ref: SC-TG-L1-PUBLIC-AI-20260825-A
+        candidate_successor_ref: none
+        presentation: aligned
+        result_ref: none
     - id: TG-L2-SESSION-LAUNCH
       parent: TG-L1-HOST-ENTRY
       dependencies: []
@@ -92,25 +98,32 @@ plan_tree:
       dependencies:
         - TG-L2-SESSION-LAUNCH
       status: blocked
-      summary: 旧公开测试桌章程与亮牌规则仍是最后一个已验证合同；宿主中立的两至四人临时私人牌桌后继等待 DEC-20260827-020 确认，旧规则暂不继承。
+      summary: 宿主中立的两至四人临时私人牌桌章程已确认并唯一绑定；旧公开测试桌与亮牌规则转为已替代历史，产品规则不自动继承。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-008
         - PROJECT-DECISION-LOG.md#DEC-20260827-020
       understanding_view:
-        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-008
-        current_revision_ref: SC-TG-L2-PLAYABLE-TABLE-20260825-B
-        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md#l2-playable-table-charter
-        presentation: presented
-        result_ref: none
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260827-020
+        current_revision_ref: SC-TG-L2-PLAYABLE-TABLE-20260827-C
+        candidate_successor_ref: none
+        presentation: aligned
+        result_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#l2-playable-table-truth-persistence-result
     - id: TG-L2-PUBLIC-AI-EXCHANGE
       parent: TG-L1-PUBLIC-AI-PLAY
       dependencies:
         - TG-L2-SESSION-LAUNCH
         - TG-L2-PLAYABLE-TABLE
-      status: planned
-      summary: 已确认的公开 AI 交换章程、分阶段实时公开规则与每行动窗口一次 AI 请求规则。
+      status: blocked
+      summary: 旧 Codex 聚焦的真人主动询问/AI 被动回答章程及两条时序规则仍是最后一个已验证合同；宿主中立的一席一 AI、座位气泡与事件驱动主动发言后继等待 DEC-20260827-021 确认，旧规则暂不继承。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-009
+        - PROJECT-DECISION-LOG.md#DEC-20260827-021
+      understanding_view:
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-009
+        current_revision_ref: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260825-B
+        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-L2-PUBLIC-AI-EXCHANGE-20260827.md#l2-public-ai-exchange-charter
+        presentation: presented
+        result_ref: none
     - id: TG-L3-CODEX-BRIDGE-SPIKE
       parent: TG-L2-SESSION-LAUNCH
       dependencies:
@@ -159,15 +172,15 @@ plan_tree:
       owner_links:
         - PROJECT-PLAN-TREE.md#当前恢复点
         - STATUS.md#project_intelligence
-  active_node: TG-L1-LIVE-TABLE
+  active_node: TG-L1-PUBLIC-AI-PLAY
   current_next_leaf: none
   current_execution_unit_ref: none
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-L1-LIVE-TABLE@SC-TG-L1-LIVE-TABLE-20260825-A
-    first_invalid_or_unverified_node: TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-C-pending
+    earliest_trustworthy_node_or_checkpoint: TG-L1-PUBLIC-AI-PLAY@SC-TG-L1-PUBLIC-AI-20260825-A
+    first_invalid_or_unverified_node: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C-pending
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: user_confirm_stage_4_l2_playable_table_charter
+  next_owner: user_confirm_stage_5_l2_public_ai_exchange_charter
 
 semantic_baseline:
   required: yes
@@ -193,8 +206,7 @@ semantic_baseline:
       - TG-L2-PLAYABLE-TABLE
       - TG-L2-PUBLIC-AI-EXCHANGE
   pending_or_missing_nodes:
-    - TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-C-pending
-    - TG-L2-PUBLIC-AI-EXCHANGE@successor_not_yet_presented
+    - TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C-pending
   future_unaligned_nodes:
     - multi_game_platform_expansion
     - tournament_and_spectator_ecosystem
@@ -231,11 +243,11 @@ semantic_baseline:
       binding_status: verified
       verified_at: 2026-08-27
     - node_id: TG-L2-PLAYABLE-TABLE
-      contract_id: SC-TG-L2-PLAYABLE-TABLE-20260825-B
-      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-008
-      digest: sha256:57a19dc3c4e0d22fa2f6c10467ed40bcaaacb745c2c2148f6c16050842d1c482
+      contract_id: SC-TG-L2-PLAYABLE-TABLE-20260827-C
+      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-020
+      digest: sha256:fb692a1879e13fa440855402f6bf9069d5ec6d3e74c3f23e056ed58f1b2f4d0c
       binding_status: verified
-      verified_at: 2026-08-25
+      verified_at: 2026-08-27
     - node_id: TG-L2-PUBLIC-AI-EXCHANGE
       contract_id: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260825-B
       decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-009
@@ -243,15 +255,15 @@ semantic_baseline:
       binding_status: verified
       verified_at: 2026-08-25
   blocking_paths:
-    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B -> TG-L1-LIVE-TABLE@SC-TG-L1-LIVE-TABLE-20260825-A -> pending TG-L2-PLAYABLE-TABLE successor -> pending TG-L2-PUBLIC-AI-EXCHANGE successor -> affected current MVP route
+    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B -> TG-L1-PUBLIC-AI-PLAY@SC-TG-L1-PUBLIC-AI-20260825-A -> pending TG-L2-PUBLIC-AI-EXCHANGE successor -> pending protected product rules -> affected current MVP route
   unaffected_confirmed_paths: []
   last_checked: 2026-08-27
-  next_action: user_confirm_stage_4_l2_playable_table_charter
+  next_action: user_confirm_stage_5_l2_public_ai_exchange_charter
 ```
 
 ## 当前恢复点
 
-宿主中立 L0、共享 `TG-L1-HOST-ENTRY` 与 `TG-L2-SESSION-LAUNCH` 已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口与会话章程保留为已替代历史。当前活动路线转到可信实时牌局域，下一动作只确认 `TG-L2-PLAYABLE-TABLE` 的两至四人临时私人牌桌后继章程。第三个公开 AI L2 与所有产品规则仍未确认。既有 Codex 桥接、牌桌和气泡证据继续按旧范围保留，不证明新私人房牌桌、双宿主、座位恢复或主动唤醒已经交付。
+宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、`TG-L2-SESSION-LAUNCH` 与 `TG-L2-PLAYABLE-TABLE` 已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌和亮牌规则保留为已替代历史。当前活动路线转到公开人机博弈域，下一动作只确认 `TG-L2-PUBLIC-AI-EXCHANGE` 的一席一 AI、座位旁上下文气泡与事件驱动主动发言后继章程。所有产品规则仍未重新确认。既有 Codex 桥接、牌桌和气泡证据继续按旧范围保留，不证明新私人房牌桌、双宿主、座位恢复或主动唤醒已经交付。
 
 ## 本地探针执行结论
 

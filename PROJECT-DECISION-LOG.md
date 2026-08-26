@@ -516,8 +516,9 @@ metadata:
   date: 2026-08-25
   source: user_direct
   scope: feature
-  status: user_confirmed
+  status: superseded
   supersedes: DEC-20260825-006
+  superseded_by: DEC-20260827-020
   affected_docs:
     - PROJECT-PLAN-TREE.md
     - STATUS.md
@@ -1070,7 +1071,84 @@ semantic_contract:
 }
 ```
 
-## DEC-20260827-020：候选——宿主中立临时私人牌桌章程
+## DEC-20260827-020：确认宿主中立临时私人牌桌章程
+
+metadata:
+  date: 2026-08-27
+  source: user_direct
+  scope: feature
+  status: user_confirmed
+  supersedes: DEC-20260825-008
+  affected_docs:
+    - docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
+    - PROJECT-PLAN-TREE.md
+    - STATUS.md
+    - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+    - .trellis/tasks/08-26-public-ai-table-talk/research/l2-playable-table-verification-20260827.json
+  resulting_changes:
+    - doc: docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
+      change: 将此前完整展示且未改动的 TG-L2-PLAYABLE-TABLE 宿主中立临时私人牌桌后继章程标记为用户已确认。
+    - doc: PROJECT-PLAN-TREE.md
+      change: 把 TG-L2-PLAYABLE-TABLE 当前指针提升到已验证后继，并把下一用户决策停在公开座位 AI 交流章程。
+
+question: 完整可玩牌桌是否应从“搜索公开测试桌”改为两至四名真人通过邀请进入同一中立权威临时私人桌，并明确真人结构化动作、隐藏信息隔离和宿主无关的唯一结算？
+why_it_matters: 旧章程明确不承诺私人房，与当前 MVP 路线直接冲突；如果仍让各宿主或邀请创建者掌握牌堆、动作或结算，就无法验证同一个 TokenGame 多人核心。
+recommended_answer: 确认宿主中立临时私人牌桌后继章程，保留成熟标准德扑裁决，把具体盲注、计时、掉线、亮牌和界面参数留到规则分类或专业实现阶段。
+user_answer: 用户回复“1”，精确确认此前完整展示、摘要为 sha256:fb692a1879e13fa440855402f6bf9069d5ec6d3e74c3f23e056ed58f1b2f4d0c 的第二个 L2 章程；不确认亮牌、具体行动计时、掉线默认动作、恢复时限、公开 AI、验收或实现规则。
+decision: 采用 SC-TG-L2-PLAYABLE-TABLE-20260827-C 作为 TG-L2-PLAYABLE-TABLE 当前章程，权限为 user_confirmed，并替代 DEC-20260825-008。旧亮牌规则只保留为历史权威证据，不自动继承、删除或修改；其他 L2、产品规则、实现和宿主能力也不继承本次确认。
+follow_up: 独立展示并确认第三个 L2“公开座位 AI 交流”后继章程；只有三个 L2 均完成确认，才进入产品规则分类与 supersede 链。
+
+semantic_contract:
+  contract_id: SC-TG-L2-PLAYABLE-TABLE-20260827-C
+  node_id: TG-L2-PLAYABLE-TABLE
+  payload_schema: dual-ai.semantic-contract.v1
+  digest: sha256:fb692a1879e13fa440855402f6bf9069d5ec6d3e74c3f23e056ed58f1b2f4d0c
+  binding_status: verified
+  verified_at: 2026-08-27
+  verified_with: dual-ai-semantic-alignment/scripts/semantic-contract.mjs
+
+```json dual-ai.semantic-contract.v1
+{
+  "schema": "dual-ai.semantic-contract.v1",
+  "contract_id": "SC-TG-L2-PLAYABLE-TABLE-20260827-C",
+  "node_id": "TG-L2-PLAYABLE-TABLE",
+  "semantic_level": "L2",
+  "parent_node_id": "TG-L1-LIVE-TABLE",
+  "scope": "current_mvp",
+  "meaning": {
+    "goal": "让已经取得房间与座位归属的两至四名真人，在同一中立权威的临时私人牌桌上，从等待开局连续完成标准无限注德州扑克手牌，并获得一致的私有信息、公共状态、合法行动与结算。",
+    "responsibility": "作为可信实时牌局能力的完整可玩闭环，接收宿主中立的玩家会话与座位归属，唯一裁决牌堆、底牌、公共牌、行动顺序、下注、底池和胜负；把玩家与 AI 的语言表达同官方动作严格分开，并向公开人机博弈能力提供经过席位权限裁剪的可信牌局上下文。",
+    "included": [
+      "让受邀玩家进入同一张最多四席的临时私人牌桌，显示等待、准备、参与、暂离、掉线和结算等可理解状态，至少两名可参与玩家即可开始",
+      "由中立权威为每手牌唯一生成并保护底牌，按标准无限注德州扑克推进盲注、公共牌、下注街、行动顺序和合法金额范围",
+      "在每次状态变化后向所有玩家同步一致的公共事实，同时只向各席显示其有权获得的底牌、合法行动和私有状态",
+      "由真人通过明确的牌桌交互提交 fold、check、call、bet、raise 或 all-in 等结构化官方动作，并由权威服务按最新状态重新校验；聊天和 AI 话术没有动作效力",
+      "完成弃牌结束、标准摊牌、主池与必要边池、筹码变化和胜负结算，并向玩家解释关键结果",
+      "在行动超时、短暂断线、玩家暂离或客户端重连时继续维持唯一牌局事实，不让单个宿主或邀请创建者成为牌堆、对手底牌或结算权威"
+    ],
+    "excluded": [
+      "不把玩家聊天、AI 声称的手牌、胜率、建议或表演内容当作官方牌局事实或动作",
+      "不负责决定人机内容何时公开、何时私密、能否迟到发布或能否由 AI 主动发言",
+      "不提供公开大厅、自动匹配、正式账户、排名、长期战绩、跨房间筹码账户或好友社交系统",
+      "不涉及真实价值筹码、充值提现、锦标赛、观战广播、多种扑克变体或通用游戏规则引擎",
+      "本章程不锁定具体盲注、起始筹码、行动秒数、恢复时限、默认超时动作、亮牌策略或界面控件；其中改变玩家体验的规则在后续规则阶段确认，其余参数与实现由 Primary 在已确认边界内设计"
+    ],
+    "user_visible_result": "玩家能够从同一临时私人房的等待状态进入真实多人牌局，始终知道谁在参与、轮到谁、自己可采取什么官方动作、公共牌和底池如何变化、自己能看到什么以及一手牌为何这样结算；不同宿主或客户端不会形成互相矛盾的牌局，任何话术都不能暗中替玩家执行动作。",
+    "relationships": [
+      "从 TG-L2-SESSION-LAUNCH 接收已授权的玩家游戏会话、临时房间、座位归属以及创建、加入或恢复请求",
+      "向 TG-L2-PUBLIC-AI-EXCHANGE 提供每个玩家依法可见的牌局事实、行动窗口、事件顺序和公开结算，但不提供对手底牌或服务端秘密",
+      "接收真人明确提交的结构化牌局动作，将合法结果、异常、等待状态和结算作为权威事件返回给所有玩家界面"
+    ],
+    "ideal_final_form": "形成与宿主界面解耦的可信实时牌桌核心：Codex、Claude 及以后宿主的玩家都连接同一份权威比赛现实，网络波动和客户端差异不会分叉状态；未来公开匹配只需产生兼容的房间与座位归属，不必重写德州扑克裁决、隐藏信息或 AI 上下文边界。",
+    "current_mvp_boundary": "只交付一张最多四席、至少两名真人可开始的临时私人无限注德州牌桌，使用不可兑现测试筹码，支持等待与准备、连续手牌、真人结构化动作、基础行动计时、掉线状态、短暂恢复和完整结算。当前不交付公开大厅、自动匹配、正式账户、长期筹码经济、观战或 AI 自主提交官方动作。",
+    "expected_scenario": "玩家 A 创建临时房并邀请 B、C；三人可以从不同已支持宿主进入同一牌桌并准备。权威服务分别发送各自底牌，按顺序接受过牌、下注、跟注、加注、弃牌或全押，推进公共牌并完成主池或边池结算。某席短暂断线后看到的仍是同一手牌当前状态；A 即使创建了邀请，也不能查看 B、C 底牌或修改结算。",
+    "plausible_but_wrong": "每个宿主各自在本地发牌和推演状态，或让创建邀请的玩家设备承担网络房主和牌堆权威；画面可能都像扑克，但并发、断线或恶意客户端会产生不同底牌与结算。另一种错误是让聊天中的“all in”直接执行下注，使语言博弈绕过真人动作与权威校验。"
+  },
+  "protected_product_rules": []
+}
+```
+
+## DEC-20260827-021：候选——宿主中立公开座位 AI 交流章程
 
 metadata:
   date: 2026-08-27
@@ -1078,21 +1156,21 @@ metadata:
   scope: feature
   status: pending_user_confirmation
   supersedes: none
-  proposed_supersedes: DEC-20260825-008（仅在候选被精确确认并完成合同校验后）
+  proposed_supersedes: DEC-20260825-009（仅在候选被精确确认并完成合同校验后）
   affected_docs:
-    - docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
+    - docs/SEMANTIC-CONFIRMATION-L2-PUBLIC-AI-EXCHANGE-20260827.md
     - PROJECT-PLAN-TREE.md
     - STATUS.md
     - .trellis/tasks/08-26-public-ai-table-talk/prd.md
   resulting_changes:
-    - doc: docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
-      change: 完整展示 TG-L2-PLAYABLE-TABLE 的宿主中立临时私人牌桌后继章程，暂不展示或确认其产品规则。
+    - doc: docs/SEMANTIC-CONFIRMATION-L2-PUBLIC-AI-EXCHANGE-20260827.md
+      change: 完整展示 TG-L2-PUBLIC-AI-EXCHANGE 的宿主中立公开座位 AI 后继章程，暂不展示或确认其产品规则。
     - doc: PROJECT-PLAN-TREE.md
-      change: 登记第二个 L2 候选，把下一用户决策停在完整可玩牌桌章程。
+      change: 登记第三个 L2 候选，把下一用户决策停在公开座位 AI 交流章程。
 
-question: 完整可玩牌桌是否应从“搜索公开测试桌”改为两至四名真人通过邀请进入同一中立权威临时私人桌，并明确真人结构化动作、隐藏信息隔离和宿主无关的唯一结算？
-why_it_matters: 旧章程明确不承诺私人房，与当前 MVP 路线直接冲突；如果仍让各宿主或邀请创建者掌握牌堆、动作或结算，就无法验证同一个 TokenGame 多人核心。
-recommended_answer: 确认宿主中立临时私人牌桌后继章程，保留成熟标准德扑裁决，把具体盲注、计时、掉线、亮牌和界面参数留到规则分类或专业实现阶段。
+question: 公开 AI 交换是否应从“真人主动询问、AI 被动回答”升级为每席唯一当前会话 AI 与真人成组显示，并允许 AI 依据可审计桌内事件选择沉默、回答或主动公开发言，同时保持默认公开范围、隐藏信息和话术无动作效力的跨宿主一致性？
+why_it_matters: 事件驱动主动座位 AI 是 TokenGame 区别于普通德扑聊天框和外挂胜率工具的核心；但 Codex 与 Claude 都尚未验证主动唤醒，如果把被动问答静默当成等价实现，会直接改变用户已表达的产品体验。
+recommended_answer: 确认宿主中立公开座位 AI 后继章程；冻结一席一 AI、座位旁上下文气泡、规定游戏范围默认公开、回合内外玩家发言、AI 可沉默/回答/主动发言、隐藏信息隔离和语言无动作效力，把次数、字数、冷却、迟到、屏蔽、私密频道与宿主技术留到规则或实现阶段。
 user_answer: pending
-decision: 当前只登记 SC-TG-L2-PLAYABLE-TABLE-20260827-C 候选，不提升该 L2，也不确认亮牌、计时、掉线、恢复、公开 AI、验收或实现规则。SC-TG-L2-PLAYABLE-TABLE-20260825-B 与 DEC-20260825-008 保持最后一个已验证的历史当前合同，直到候选获得精确确认和唯一绑定。
-follow_up: 候选 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-playable-table-host-neutral.json，摘要为 sha256:fb692a1879e13fa440855402f6bf9069d5ec6d3e74c3f23e056ed58f1b2f4d0c。只有用户明确回复 1 后，才可原样持久化、校验并替代 DEC-20260825-008；回复 2 或 3 不产生确认。
+decision: 当前只登记 SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C 候选，不提升该 L2，也不确认旧公开时序规则、配额、字数、时长、迟到、屏蔽、私密对话、AI 托管、市场、公平场、信用、验收、实现或宿主能力。SC-TG-L2-PUBLIC-AI-EXCHANGE-20260825-B 与 DEC-20260825-009 保持最后一个已验证的当前合同，直到候选获得精确确认和唯一绑定。
+follow_up: 候选 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-public-ai-exchange-host-neutral.json，摘要为 sha256:90015efee0fe4f7d20947adff61c37c281a5d56f8ebaf3fe3c01f170b7c89e3f。只有用户在完整看到确认包后明确回复 1，才可原样持久化、校验并替代 DEC-20260825-009；回复 2 或 3 不产生确认。三个 L2 均确认前不得进入规则包。

@@ -1,6 +1,6 @@
 # TokenGame 第四阶段语义确认：完整可玩牌桌
 
-状态：`stage_4_l2_playable_table_pending_user_confirmation`
+状态：`stage_4_l2_playable_table_user_confirmed`
 
 已确认上游：
 
@@ -61,21 +61,20 @@
 
 旧合同中“弃牌获胜默认不强制亮牌、获胜者可自愿亮牌、标准摊牌按规则展示”的用户确认仍作为历史权威证据保留，但不会从旧章程自动继承到新章程。Ready 倒计时、盲注与起始筹码、行动时限、掉线默认动作、席位恢复时限等候选也继续保持 `candidate_rules_pending_charter`。三个 L2 章程都分别确认后，再完整展示需要保留、修改、新增或删除的产品规则；验收规则和实现规则仍由 Primary 负责。
 
-## 本轮确认范围
+## 确认结果
 
-只确认以上 `TG-L2-PLAYABLE-TABLE` 语义章程，不确认亮牌、计时、掉线处理、恢复时限等产品规则，不确认公开 AI 规则、验收规则、实现规则、宿主探针结果或产品已经完成。
+用户回复“1”，只确认以上完整展示且未改动的 `TG-L2-PLAYABLE-TABLE / SC-TG-L2-PLAYABLE-TABLE-20260827-C` 语义章程。该 payload 已在 `PROJECT-DECISION-LOG.md#DEC-20260827-020` 中唯一绑定并通过摘要校验，替代旧 `DEC-20260825-008`。
 
-## 本轮选择
+本次确认不确认亮牌、具体行动计时、掉线默认动作、恢复时限等产品规则，不确认公开 AI 规则、验收规则、实现规则、宿主探针结果或产品已经完成。旧亮牌规则仅保留为历史权威证据，不自动继承、删除或修改。
 
-1. **确认以上章程（推荐）**：只确认本文件完整展示的 `TG-L2-PLAYABLE-TABLE` 宿主中立临时私人房后继语义；通过独立合同校验后进入第三个 L2“公开 AI 交换”。
-2. **修改章程**：指出希望调整的牌桌人数、私人房、权威裁决、真人动作或 MVP 边界；不确认当前候选。
-3. **先解释**：继续讨论该 L2 与会话启动、成熟德扑规则或公开 AI 的边界；不确认当前候选。
+下一阶段独立确认第三个 L2“公开座位 AI 交流”，见 `docs/SEMANTIC-CONFIRMATION-L2-PUBLIC-AI-EXCHANGE-20260827.md`。三个 L2 全部确认前不进入规则包。
 
 <!--
 candidate_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-playable-table-host-neutral.json
 candidate_contract_digest: sha256:fb692a1879e13fa440855402f6bf9069d5ec6d3e74c3f23e056ed58f1b2f4d0c
-candidate_authority: pending_user_confirmation
-candidate_proposed_supersedes: DEC-20260825-008
-candidate_rules_state: candidate_rules_pending_charter
-confirmation_rule: reply 1 confirms only the unchanged L2 charter payload shown above; rules and descendants do not inherit authority
+candidate_authority: user_confirmed_and_verified_at_PROJECT-DECISION-LOG.md#DEC-20260827-020
+candidate_supersedes: DEC-20260825-008
+candidate_rules_state: product_rules_pending_all_three_charters
+verification_ref: .trellis/tasks/08-26-public-ai-table-talk/research/l2-playable-table-verification-20260827.json
+confirmation_rule: user reply 1 confirmed only the unchanged L2 charter payload shown above; rules and descendants did not inherit authority
 -->
