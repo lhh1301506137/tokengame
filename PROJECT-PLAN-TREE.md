@@ -5,32 +5,37 @@
 ```yaml
 plan_tree:
   status: needs_reconciliation
-  root_goal_ref: PROJECT-DECISION-LOG.md#DEC-20260825-001
+  root_goal_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
   active_path:
     - TG-L0-PRODUCT
-    - TG-L1-LIVE-TABLE
-    - TG-L2-PLAYABLE-TABLE
   nodes:
     - id: TG-L0-PRODUCT
       parent: none
       dependencies: []
       status: active
-      summary: 已确认 TokenGame 是以公开人机协作为核心博弈机制的 AI 原生多人竞技游戏平台；三个 MVP 能力域和必要功能章程均已确认。
+      summary: 已确认 TokenGame 是宿主中立的 AI 原生多人竞技游戏平台，以公开人机博弈为核心；Codex 与 Claude 是首批目标宿主，适配器允许分阶段交付。
       owner_links:
-        - PROJECT-DECISION-LOG.md#DEC-20260825-001
+        - PROJECT-DECISION-LOG.md#DEC-20260827-017
       understanding_view:
-        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-001
-        current_revision_ref: SC-TG-L0-ROOT-20260825-A
-        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-20260827.md#l0-host-neutral-candidate
-        presentation: presented
-        result_ref: none
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+        current_revision_ref: SC-TG-L0-ROOT-20260827-B
+        candidate_successor_ref: none
+        presentation: aligned
+        result_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#l0-truth-persistence-result
     - id: TG-L1-CODEX-ENTRY
       parent: TG-L0-PRODUCT
       dependencies: []
       status: completed
-      summary: Codex 入口与会话承接能力域的聚焦风险已关闭；插件、Skill、Hook、MCP 与实时服务最小闭环已在真实宿主通过。
+      summary: 已验证的旧 Codex 专属入口章程及其宿主证据；它是否被共享宿主入口替代，或作为并列入口继续保留，等待 DEC-20260827-018 选择。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-002
+        - PROJECT-DECISION-LOG.md#DEC-20260827-018
+      understanding_view:
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-002
+        current_revision_ref: SC-TG-L1-CODEX-ENTRY-20260825-A
+        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-L1-20260827.md#l1-entry-options
+        presentation: presented
+        result_ref: none
     - id: TG-L1-LIVE-TABLE
       parent: TG-L0-PRODUCT
       dependencies:
@@ -120,21 +125,21 @@ plan_tree:
       owner_links:
         - PROJECT-PLAN-TREE.md#当前恢复点
         - STATUS.md#project_intelligence
-  active_node: TG-L2-PLAYABLE-TABLE
+  active_node: TG-L0-PRODUCT
   current_next_leaf: none
   current_execution_unit_ref: none
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-L0-PRODUCT@SC-TG-L0-ROOT-20260825-A
-    first_invalid_or_unverified_node: TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B-pending
+    earliest_trustworthy_node_or_checkpoint: TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
+    first_invalid_or_unverified_node: TG-L1-ENTRY-STRUCTURE@DEC-20260827-018-pending
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: user_confirm_stage_1_l0_host_neutral_candidate
+  next_owner: user_choose_stage_2_l1_entry_structure
 
 semantic_baseline:
   required: yes
   status: conflict
-  coverage: complete_for_scope
-  authority: user_confirmed
+  coverage: partial
+  authority: mixed
   currency: current
   consistency: conflict
   scope: current_mvp
@@ -154,8 +159,8 @@ semantic_baseline:
       - TG-L2-PLAYABLE-TABLE
       - TG-L2-PUBLIC-AI-EXCHANGE
   pending_or_missing_nodes:
-    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
-    - TG-L1-HOST-ENTRY@not_yet_presented
+    - TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A-option-1
+    - TG-L1-CLAUDE-ENTRY@SC-TG-L1-CLAUDE-ENTRY-20260827-A-option-2
     - TG-L2-SESSION-LAUNCH@successor_not_yet_presented
     - TG-L2-PLAYABLE-TABLE@successor_not_yet_presented
     - TG-L2-PUBLIC-AI-EXCHANGE@successor_not_yet_presented
@@ -165,11 +170,11 @@ semantic_baseline:
   legacy_unverified_nodes: []
   confirmation_evidence:
     - node_id: TG-L0-PRODUCT
-      contract_id: SC-TG-L0-ROOT-20260825-A
-      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-001
-      digest: sha256:5205e888cd98b4ed60efc80c2dbd4a39c65e12381aa6d4f9414bf040c70da137
+      contract_id: SC-TG-L0-ROOT-20260827-B
+      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+      digest: sha256:72f84db2d6965f8a3f3e0a6deb1657a37c477d65d65cddc6bbaf88598e74b7d6
       binding_status: verified
-      verified_at: 2026-08-25
+      verified_at: 2026-08-27
     - node_id: TG-L1-CODEX-ENTRY
       contract_id: SC-TG-L1-CODEX-ENTRY-20260825-A
       decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-002
@@ -207,15 +212,15 @@ semantic_baseline:
       binding_status: verified
       verified_at: 2026-08-25
   blocking_paths:
-    - TG-L0-PRODUCT -> pending host-neutral successor -> affected current MVP route
+    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B -> pending L1 entry structure -> pending L2 successors -> affected current MVP route
   unaffected_confirmed_paths: []
   last_checked: 2026-08-27
-  next_action: user_confirm_stage_1_l0_host_neutral_candidate
+  next_action: user_choose_stage_2_l1_entry_structure
 ```
 
 ## 当前恢复点
 
-旧 Codex 专属 L0、三个 L1、三个 L2 及其规则合同仍作为最后一组已验证语义保留；活动 PRD 的宿主中立入口、临时私人房和事件驱动公开 AI 候选与之发生 L0-L2 冲突。当前恢复点因此前移到 `SC-TG-L0-ROOT-20260825-A`，产品实现暂停，下一动作是让用户只确认 `docs/SEMANTIC-CONFIRMATION-20260827.md` 当前展开的 L0 候选。L1、三个 L2 与规则阶段尚未展示，不能由本次确认继承。既有 Codex 桥接和牌桌证据保持原范围，不证明双宿主或主动唤醒已交付。
+宿主中立 L0 已由用户单独确认并以 `SC-TG-L0-ROOT-20260827-B` 验证；旧 Codex 专属 L0 保留为已替代历史。当前活动路径只推进到该 L0，下一动作是选择共享 `TG-L1-HOST-ENTRY`，或保留既有 Codex 入口并新增 `TG-L1-CLAUDE-ENTRY`。三个 L2 与规则仍未展示，不能继承 L0 权威。既有 Codex 桥接、牌桌和气泡证据继续按旧范围保留，不证明双宿主或主动唤醒已经交付。
 
 ## 本地探针执行结论
 

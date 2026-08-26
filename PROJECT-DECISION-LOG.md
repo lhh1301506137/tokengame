@@ -6,8 +6,9 @@ metadata:
   date: 2026-08-25
   source: user_direct
   scope: root_goal
-  status: user_confirmed
+  status: superseded
   supersedes: none
+  superseded_by: DEC-20260827-017
   affected_docs:
     - PROJECT-PLAN-TREE.md
     - STATUS.md
@@ -837,9 +838,8 @@ metadata:
   date: 2026-08-27
   source: advisor_question
   scope: root_goal
-  status: pending_user_confirmation
-  supersedes: none
-  proposed_supersedes: DEC-20260825-001（仅在候选被精确确认并完成合同校验后）
+  status: user_confirmed
+  supersedes: DEC-20260825-001
   affected_docs:
     - docs/SEMANTIC-CONFIRMATION-20260827.md
     - PROJECT-PLAN-TREE.md
@@ -847,13 +847,91 @@ metadata:
     - .trellis/tasks/08-26-public-ai-table-talk/prd.md
   resulting_changes:
     - doc: docs/SEMANTIC-CONFIRMATION-20260827.md
-      change: 只展开 L0 宿主中立候选；L1、L2 与规则阶段保持未展示、未确认。
+      change: 将已展示的 L0 宿主中立候选登记为已确认；L1、L2 与规则阶段不继承本次确认。
     - doc: PROJECT-PLAN-TREE.md
-      change: 保留当前已验证 L0，同时登记候选后继和受影响路线暂停状态。
+      change: 将已验证的宿主中立 L0 后继提升为当前根合同，保留旧 Codex 专属合同为可审计历史，并把恢复边界推进到待确认 L1。
+    - doc: STATUS.md
+      change: 将语义对齐阶段推进到 L1 宿主入口路线二选一，继续暂停受影响产品实现。
+    - doc: .trellis/tasks/08-26-public-ai-table-talk/prd.md
+      change: 记录 L0 已确认、L1 尚待选择的分阶段 Route Rebase 状态。
 
 question: TokenGame 的根目标是否从“为 Codex 用户提供”改为面向受支持 AI 工作宿主的一套宿主中立产品，并把 Codex 与 Claude 作为首批目标宿主？
 why_it_matters: 如果 L0 仍定义为 Codex 专属，Claude 入口只能暗中改变下层语义或形成第二套产品；如果直接要求两个适配器同时完成，又会无必要地扩大当前 MVP。
 recommended_answer: 采用宿主中立 L0，但允许各宿主适配器分阶段交付；共享牌局权威、公开人机博弈和安全边界不得因宿主适配而降级。
+user_answer: 用户回复“1”，只确认 `docs/SEMANTIC-CONFIRMATION-20260827.md` 完整展示的 L0“宿主中立 TokenGame”语义。
+decision: 采用 SC-TG-L0-ROOT-20260827-B 作为 TG-L0-PRODUCT 的当前宿主中立根合同，权限为 user_confirmed；DEC-20260825-001 与 SC-TG-L0-ROOT-20260825-A 转为已替代历史。本决策不确认任何 L1、L2、U7、产品规则、技术实现或交付状态。
+follow_up: 进入 L1 宿主入口路线二选一；只有下一份 L1 确认包获得精确选择并通过独立合同校验后，才可继续三个 L2 章程。
+
+semantic_contract:
+  contract_id: SC-TG-L0-ROOT-20260827-B
+  node_id: TG-L0-PRODUCT
+  payload_schema: dual-ai.semantic-contract.v1
+  digest: sha256:72f84db2d6965f8a3f3e0a6deb1657a37c477d65d65cddc6bbaf88598e74b7d6
+  binding_status: verified
+  verified_at: 2026-08-27
+  verified_with: dual-ai-semantic-alignment/scripts/semantic-contract.mjs
+
+```json dual-ai.semantic-contract.v1
+{
+  "schema": "dual-ai.semantic-contract.v1",
+  "contract_id": "SC-TG-L0-ROOT-20260827-B",
+  "node_id": "TG-L0-PRODUCT",
+  "semantic_level": "L0",
+  "parent_node_id": null,
+  "scope": "current_mvp",
+  "meaning": {
+    "goal": "为使用受支持 AI 工作宿主的用户提供一种 AI 原生的多人竞技游戏体验：真人与自己的会话 AI 共同参赛，关键赛时人机互动成为其他玩家可观察、判断、利用或反向误导的信息，使使用 AI 本身从隐蔽辅助转化为公开博弈的一部分。",
+    "responsibility": "定义一个宿主中立的 TokenGame 产品，而不是分别制作互不兼容的 Codex 游戏和 Claude 游戏；共同的牌局权威、公开人机博弈和安全边界属于产品核心，各宿主只负责把自己的真实会话 AI 与交互能力接入同一套核心。",
+    "included": [
+      "用户可从受支持的 AI 工作宿主进入 TokenGame；首批目标宿主包括 Codex 与 Claude，具体适配器可以分阶段交付",
+      "每名真人使用自己当前游戏会话实际采用的模型、推理配置和可用工具作为 AI 助手，不要求再单独配置第二套模型 API",
+      "关键赛时人机互动能够被对手观察，并成为判断、表演、欺骗和反欺骗的素材",
+      "不同宿主的玩家最终可以进入同一场中立权威对局并遵守相同的公开交流规则，而不由任一玩家宿主掌握牌堆、对手底牌或结算权",
+      "先以德州扑克验证核心体验，并为以后扩展其他不同信息结构的游戏保留产品空间"
+    ],
+    "excluded": [
+      "不把某一宿主特有的主输入框、自动化接口、插件形态或页面布局规定为 TokenGame 唯一产品形态",
+      "当前 MVP 不要求 Codex 与 Claude 两个适配器同时完成，也不要求立即提供跨宿主公开大厅、公平匹配或正式账户",
+      "当前阶段不转移、不下注真实 API Token、模型额度、法币或其他可兑现资产",
+      "不把私下禁止玩家使用 AI 作为公平性的主要基础，也不把只有自己可见的胜率助手当作核心产品"
+    ],
+    "user_visible_result": "用户得到的是同一个 TokenGame：无论从哪一个受支持宿主进入，都能带着该会话的真实 AI 参与可信牌局，并把人机表达、公开指令和心理干扰变成对手可利用的比赛信息；宿主界面可以适配，但不能悄悄削弱已确认的核心功能。",
+    "relationships": [
+      "上游由各宿主适配器负责安装、授权、绑定当前游戏会话和提供该宿主能够可靠实现的交互形态",
+      "核心由宿主中立的房间、牌桌、隐藏信息边界和公开交流规则推进比赛，宿主 AI 不拥有官方牌局事实",
+      "下游是局内社交反馈、复盘、公开大厅与匹配，以及未来扩展到其他 AI 原生竞技游戏"
+    ],
+    "ideal_final_form": "成为可从多种 AI 工作宿主自然进入的 AI 原生多人游戏平台，Codex、Claude 及以后兼容宿主的玩家能够在同一规则与权威边界下对战；不同用户和模型形成可辨认的竞技风格，而平台不因宿主不同分裂成多套核心。",
+    "current_mvp_boundary": "只交付一个使用不可兑现测试筹码、能够完成真人多人对局的德州扑克模式；以临时私人房验证共同核心，允许宿主适配器按顺序完成，但率先交付的宿主不得把房间身份、牌桌规则或隐藏信息边界定义为该宿主专属。当前不承诺两个宿主同时可用、跨宿主公开匹配、真实 Token 经济、多游戏大厅、赛事体系或复杂商业化。",
+    "expected_scenario": "玩家 A 从 Codex 游戏任务进入临时牌桌，玩家 B 从 Claude 的 TokenGame 入口进入同一房间；两人的实际会话 AI 只获得各自有权看到的牌局信息，人机对话按相同桌规公开，所有官方动作和结算仍由同一个中立权威服务裁决。首个 MVP 可以先只跑通其中一个宿主，但共享核心不能因此写死为该宿主专用。",
+    "plausible_but_wrong": "分别复制一套 Codex 版和一套 Claude 版德州扑克，让两边使用不同的公开规则、牌局协议或数据边界；或者只在各自宿主里提供私有胜率助手。它们可能都能运行，却没有形成同一个以公开人机博弈为核心、可跨宿主演进的 TokenGame。"
+  },
+  "protected_product_rules": []
+}
+```
+
+## DEC-20260827-018：候选——L1 宿主入口结构
+
+metadata:
+  date: 2026-08-27
+  source: advisor_question
+  scope: mvp
+  status: pending_user_confirmation
+  supersedes: none
+  affected_docs:
+    - docs/SEMANTIC-CONFIRMATION-L1-20260827.md
+    - PROJECT-PLAN-TREE.md
+    - STATUS.md
+    - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+  resulting_changes:
+    - doc: docs/SEMANTIC-CONFIRMATION-L1-20260827.md
+      change: 分别完整展示共享宿主中立入口与并列宿主入口两个 L1 候选，不展示或确认 L2 与规则。
+    - doc: PROJECT-PLAN-TREE.md
+      change: 把活动路线停在已确认宿主中立 L0，登记两条 L1 候选和下一用户决策。
+
+question: TokenGame 应只有一个宿主中立入口能力域，让 Codex、Claude 成为其下适配；还是保留 Codex 入口并新增并列的 Claude 入口能力域？
+why_it_matters: 两者都能接入同一个牌桌，但前者让共同身份、恢复和隐私说明天然只有一份；后者允许每个宿主入口长期独立演进，也会增加语义重复、维护成本和分裂风险。
+recommended_answer: 选择共享宿主中立入口。宿主差异主要是下层安装、输入和 UI 适配，不值得为每个宿主复制一个 L1 产品能力域。
 user_answer: pending
-decision: 当前仅登记待确认候选。DEC-20260825-001 与 SC-TG-L0-ROOT-20260825-A 继续作为现行已验证语义；不得把本候选用于实施或声称双宿主已经交付。
-follow_up: 精确候选包位于 docs/SEMANTIC-CONFIRMATION-20260827.md，预构建 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l0-host-neutral.json。只有用户明确确认当前 L0 包后，才可把该 payload 原样嵌入本条、计算并校验合同、将状态改为 user_confirmed，并进入 L1 二选一；任何修改都必须先生成新的候选 payload。
+decision: 当前仅登记两条待确认候选，不提升任何 L1。方案 1 将以 SC-TG-L1-HOST-ENTRY-20260827-A 后继替代 DEC-20260825-002；方案 2 将保留 DEC-20260825-002，并新增 SC-TG-L1-CLAUDE-ENTRY-20260827-A。任一选择都不确认 L2、U7、产品规则或实现。
+follow_up: 方案 1 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-host-entry-shared.json，摘要为 sha256:2bb9530f2b11cc081305279962c3ea1ec15339e5be41812c3ae3ede230a20160；方案 2 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l1-claude-entry-sibling.json，摘要为 sha256:43e8bb190cc8b2529fe48a4e293e9e4471992dfd8ace0283e6c1e62eb8b71186。只有用户明确回复 1 或 2 后，才可原样持久化并校验对应合同。

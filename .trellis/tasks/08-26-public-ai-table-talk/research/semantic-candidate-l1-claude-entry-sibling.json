@@ -1,0 +1,36 @@
+{
+  "schema": "dual-ai.semantic-contract.v1",
+  "contract_id": "SC-TG-L1-CLAUDE-ENTRY-20260827-A",
+  "node_id": "TG-L1-CLAUDE-ENTRY",
+  "semantic_level": "L1",
+  "parent_node_id": "TG-L0-PRODUCT",
+  "scope": "current_mvp",
+  "meaning": {
+    "goal": "在保留既有 Codex 入口能力域的同时，为 Claude 用户建立一个并列的 TokenGame 入口与会话承接能力域，使 Claude 的当前游戏会话 AI 能够进入或恢复同一套权威牌桌，而不要求另配模型 API。",
+    "responsibility": "作为既有 Codex 入口的兄弟 L1，独立承担 Claude 宿主中的安装、授权、会话绑定、状态说明和恢复体验；Codex 与 Claude 两个入口可以分别演进，但都必须把玩家交给同一牌桌与公开博弈核心，不能各自定义比赛事实。",
+    "included": [
+      "通过 Claude 实际可靠的 Chat、Cowork、连接器或内嵌交互形态启用 TokenGame，具体形态由宿主证据决定",
+      "在用户明确允许后绑定当前 Claude 游戏会话及其实际采用的模型、推理配置和可用工具",
+      "显示 Claude 侧的游戏、AI 参赛、房间连接和恢复状态，并支持中断后的继续入口",
+      "与既有 Codex 入口共享牌桌能够识别的玩家身份、房间归属和恢复结果",
+      "允许 Claude 入口和 Codex 入口采用不同的用户可见进入流程，只要共享核心功能不被削弱"
+    ],
+    "excluded": [
+      "不修改或替代已经存在的 Codex 入口章程，而是新增一个并列宿主能力域",
+      "不承诺 Claude 与 Codex 使用相同输入框、自动化接口或页面布局",
+      "不让 Claude 入口拥有牌堆、对手底牌、下注裁决或公开交流规则的控制权",
+      "当前 MVP 不要求两个入口同时完成，也不承诺跨设备同步、公开匹配或应用商店分发"
+    ],
+    "user_visible_result": "Claude 用户能够通过符合 Claude 使用习惯的明确入口带着当前会话 AI 进入 TokenGame，Codex 用户继续使用既有入口；双方最终进入同一权威牌桌，但两个宿主的安装、状态和恢复体验可以分别设计和说明。",
+    "relationships": [
+      "与既有 TG-L1-CODEX-ENTRY 并列，各自承担一个宿主的入口和会话承接责任",
+      "两个宿主入口都向可信实时牌局能力提供可识别的玩家会话、加入或恢复请求",
+      "两个宿主入口都向公开人机博弈能力提供受边界控制的当前会话 AI；跨宿主共同不变量仍由共享上层目标和后续章程约束"
+    ],
+    "ideal_final_form": "Codex 与 Claude 各有一个针对宿主特性充分优化、责任清楚的入口能力域，并通过明确的共同约束接入同一个 TokenGame 核心；增加新宿主时可以新增兄弟入口，而不修改已有宿主体验。",
+    "current_mvp_boundary": "保留现有 Codex 入口合同，并把 Claude 入口作为新增兄弟能力域分阶段实现；首个可玩 MVP 仍可只交付一个宿主，但 Claude 入口一旦交付，就必须使用与 Codex 兼容的玩家身份、房间归属和权威牌桌结果。",
+    "expected_scenario": "Codex 用户继续通过既有项目与会话入口加入私人房；Claude 用户稍后通过 Claude 专用入口绑定当前游戏会话并加入同一房间。两边的安装提示和输入方式不同，但牌桌识别为两个正常玩家，使用同一发牌、行动和结算事实。",
+    "plausible_but_wrong": "给 Claude 制作一个外观不同的入口后，让它使用自己的房间编号、牌局状态或公开规则；这看似尊重宿主差异，实际上把兄弟入口变成了第二套游戏核心，违背已确认的宿主中立 L0。"
+  },
+  "protected_product_rules": []
+}

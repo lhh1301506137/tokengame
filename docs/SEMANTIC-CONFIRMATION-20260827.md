@@ -1,17 +1,17 @@
 # TokenGame 分阶段语义确认
 
-状态：`stage_1_l0_pending_user_confirmation`
+状态：`stage_1_l0_user_confirmed`
 
-本文件是待用户确认的候选包，不是现行产品语义。当前仍以 `PROJECT-DECISION-LOG.md` 中已经验证的旧合同为准；任何候选内容都不会因为写入本文件、代码已存在或测试通过而自动生效。
+本文件保存第一阶段曾向用户完整展示的 L0 包。用户随后回复“1”；同一预构建 payload 已原样写入 `PROJECT-DECISION-LOG.md#DEC-20260827-017`，并以 `SC-TG-L0-ROOT-20260827-B`、摘要 `sha256:72f84db2d6965f8a3f3e0a6deb1657a37c477d65d65cddc6bbaf88598e74b7d6` 唯一校验通过。该确认不向 L1、L2、U7 或产品规则继承。
 
 ## 确认顺序
 
-1. **当前步骤：L0 根目标宿主中立化。** 本文件只展开这一项。
-2. **下一步骤：L1 宿主入口路线二选一。** 等 L0 明确确认后再展示完整选项和章程。
+1. **已完成：L0 根目标宿主中立化。** 本文件保存该阶段的完整展示内容和确认边界。
+2. **当前步骤：L1 宿主入口路线二选一。** 完整选项见 `docs/SEMANTIC-CONFIRMATION-L1-20260827.md`。
 3. **之后：三个 L2 分别确认。** 依次为“游戏会话与宿主入口”“临时私人权威牌桌”“公开人机牌桌交流”；每个章程单独命名、单独展示、单独确认。
 4. **最后：受保护产品规则与替代关系。** 只在对应 L2 章程确认后展示完整规则变化和旧合同替代链；验收规则与实现规则不要求用户背书。
 
-后续阶段目前只有顺序和名称，没有向用户展示可确认的具体语义。回复 `1` 不会确认它们。
+第一阶段收到的回复 `1` 只绑定本文件的 L0；后来单独生成的 L1 选项、三个 L2 和规则都需要各自的新回复，不能追溯继承这次确认。
 
 ## L0 路线变更摘要
 
@@ -77,6 +77,8 @@
 <!--
 candidate_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l0-host-neutral.json
 candidate_contract_digest: sha256:72f84db2d6965f8a3f3e0a6deb1657a37c477d65d65cddc6bbaf88598e74b7d6
-candidate_authority: pending_user_confirmation
-promotion_rule: only exact option-1 confirmation may persist this unchanged payload to PROJECT-DECISION-LOG.md and supersede SC-TG-L0-ROOT-20260825-A
+confirmed_authority: user_confirmed
+confirmed_decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+binding_status: verified
+superseded_contract: SC-TG-L0-ROOT-20260825-A
 -->
