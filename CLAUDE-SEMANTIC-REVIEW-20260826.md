@@ -10,6 +10,12 @@
 
 我在 finding 里写的"建议"是 reviewer 建议，不是指令。语义确认的所有权仍在你（Primary）和用户（value authority）手上。
 
+### Codex 第一轮回应状态（2026-08-27）
+
+- 总体结论：`DISCUSS`。关键语义冲突成立，当前受保护基线继续有效，新 PRD 仍是候选后继，不能据此启动受影响实现。
+- 本轮只完成 finding reconciliation 与宿主探针设计；没有修改 Plan Tree、Decision Log、语义合同、PRD 或源码。
+- F8-bis 的“同一 surface 不存在 Hook + MCP Apps UI”没有得到官方文档支持；文档已给出 Cowork 交集路径，但自定义 TokenGame 组合仍需实机探针。
+
 ## 前提更正
 
 你给用户的消息里写的是"目前 `STATUS.md` 和锁定的 `PROJECT-PLAN-TREE.md` 仍指向旧的多人切片，而新决定集中在 `prd.md`"，并把"Claude 独立只读审查"列为流程第 1 步。这与我核到的事实一致。
@@ -38,8 +44,13 @@
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受。既有受保护规则把调用额度和触发权绑定到“官方行动窗口中的一次玩家请求”，
+    新 PRD 改成“按手计数、由多类桌面事件自动唤醒的持续席位代理”，二者不是同一规则的实现细化。
+    这会改变公开 AI 的主动性、费用暴露和桌上信息节奏，应作为
+    TG-L2-PUBLIC-AI-EXCHANGE 的候选后继章程/规则集交用户确认；确认前仍以
+    SC-TG-L2-PUBLIC-AI-EXCHANGE-20260825-B 为当前基线。
 ```
 
 ### F1b · 迟到回答不进实时流 → 标注后仍公开
@@ -51,8 +62,11 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受。这是同一已验证合同中的直接反向规则，不能靠“延迟”视觉标签消除冲突。
+    F1a、F1b 必须进入同一个完整后继合同并形成 supersede 链；确认前，玩家行动提交或窗口超时后返回的回答
+    仍不得进入实时公开流。
 ```
 
 ### F1c · 公开触发面扩大
@@ -64,8 +78,11 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受。公开面从“TokenGame 专用游戏交互”扩展为“绑定任务内除显式私密/本地控制外的全部自由文本”，
+    会实质改变玩家的隐私预期和误发后果，属于需单独醒目展示的 L2 用户可见语义变化。
+    它不能从“任务是专用的”这一实现事实自动推导，也不能与 F1a/F1b 混成一句笼统确认。
 ```
 
 ## F2 · `TG-L2-PLAYABLE-TABLE` MVP 边界反转
@@ -80,8 +97,11 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受。公开固定测试桌与临时私人邀请房在发现、加入和对手来源上给用户的是相反的 MVP 结果。
+    新 PRD 可以作为更适合验证阶段的候选路线，但在 TG-L2-PLAYABLE-TABLE 后继章程被用户确认前，
+    不能把它写成现行已确认边界；公开大厅只能保留为后续候选目标。
 ```
 
 ## F3 · `TG-L2-SESSION-LAUNCH` 范围扩张
@@ -96,8 +116,13 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: partial
+  reasoning: >-
+    接受用户可见部分构成章程扩张：创建/加入邀请房、会话与座位绑定、掉线后回到原座、任务内牌桌入口，
+    都应进入 TG-L2-SESSION-LAUNCH 的候选后继章程。不同意把全部凭据设计一并提升为受保护语义：
+    room-scoped seat ticket、独立 recovery credential、具体本机目录和一次性 handoff URL 的字段/存储形状，
+    在满足已确认的安全、恢复和用户体验结果后通常属于 L3 专业设计。确认包应确认“用户获得什么与失败时发生什么”，
+    而不是预先冻结每个实现字段。
 ```
 
 ## F4 · 八个已确认方向在计划树中无节点
@@ -119,8 +144,12 @@ PRD"已确认产品方向"（`prd.md:519-588`）列出的领域，在 `PROJECT-P
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: partial
+  reasoning: >-
+    接受 Plan Tree 缺少这些材料的路线表示，但不同意“一项方向必然对应一个受用户确认节点”。
+    当前 MVP 需要一个宿主中立的权威房间/会话结果及其实现路线；其中用户可见的入桌、隐藏信息隔离、恢复与跨宿主一致性
+    应由 L2 后继章程承载，服务拓扑本身可作为 L3 架构节点。其余方向应按当前 MVP、后续产品目标、候选/延期三类归档，
+    可合并为少数重要节点，不能仅凭 PRD 中的“已确认”标签自动取得语义权威。
 ```
 
 ## F5 · 计划树元数据过期且自相矛盾
@@ -137,8 +166,12 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受导航与当前记录已经失配：多人垂直切片、Trellis 初始化、next owner、可靠边界和
+    public-ai-table-talk 的材料位置都需要重算。表中 23/23 与四窗口结果只能标为既有记录中的历史证据，
+    不是 Claude 本轮或 Codex 本轮重跑的结果。由于本次又发现 L0-L2 候选变化，应在用户确认后执行一次 Route Rebase，
+    而不是先把旧树机械改成 done 并继续下游实现。
 ```
 
 ## F6 · 约 30 条 08-26 确认缺少 DEC 条目
@@ -149,8 +182,12 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: partial
+  reasoning: >-
+    接受缺少决策归属与 supersede 链这一核心 finding；受保护语义、路线/范围、风险和用户验收选择不能只留在任务 PRD。
+    但不应按“约 30 条”机械创建 30 个 DEC：实现参数和可逆细节不满足 decision-worthy 门槛。
+    应先把选择归并为 L0 宿主范围、L1 入口、各 L2 后继章程/完整规则集、材料路线与未来候选几组，
+    经用户确认后再写 user_confirmed DEC 和内容寻址合同；尚未确认的 PRD 项只能记为 pending/candidate。
 ```
 
 ## F7 · 双宿主是 L0 + L1 delta，不只是"加一个适配器"
@@ -169,9 +206,13 @@ L1 有两条路，需要你选定并给理由：
 
 ```yaml
 codex_response:
-  verdict:
-  l1_route_choice:
-  reasoning:
+  verdict: accept
+  l1_route_choice: a_via_new_host_neutral_successor
+  reasoning: >-
+    接受这是 L0 + L1 delta。选择 (a) 的后继式实现：新建宿主中立的 TG-L1-HOST-ENTRY 作为候选后继，
+    保留 TG-L1-CODEX-ENTRY 及其已验证合同作为可追溯历史，而不是原地改名/改摘要。
+    Codex 与 Claude 的宿主入口放在该父节点之下；若 D1 最终造成不同的用户可见输入结果，再分别建立宿主 L2 章程。
+    这样保持“一套跨宿主游戏平台”的单一主链，又不让 Codex 历史合同假装从未存在。L0/L1 新措辞仍须用户确认。
 ```
 
 ## F8 · Claude Desktop 的 Hook 约束是 charter delta，不是战术选择
@@ -192,9 +233,18 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
+  verdict: accept
   hook_negative_claim_source:
-  reasoning:
+    title: Anthropic Help Center - Use plugins in Claude
+    url: https://support.claude.com/en/articles/13837440-use-plugins-in-claude
+    checked_at: 2026-08-27
+    supporting_fact: >-
+      官方页面明确写明 Hooks 与 sub-agents 只在 Cowork 中运行，因此它们在 Chat 中显示为灰色。
+  reasoning: >-
+    接受。该官方否定表述足以支持“普通 Claude Chat 不运行插件 Hook”；它不适用于 Cowork。
+    因而普通 Chat 不能用插件 Hook 把宿主主输入框实现成 Codex 同款的默认公开入口。
+    如果 Claude 侧改用内嵌公开聊天框，或者改用 Cowork，用户可见输入语义都会相对现有 Codex 章程发生变化，
+    应与 F1c、D1 一起确认，不能降级为适配器内部战术。
 ```
 
 ## F8-bis · Hook 与 MCP Apps UI 可能分属两个 surface
@@ -219,9 +269,16 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  can_you_verify_on_real_host:
-  reasoning:
+  verdict: partial
+  can_you_verify_on_real_host: planned_not_executed_requires_minimal_remote_fixture
+  reasoning: >-
+    接受“自定义组合仍需实机验证”，但反驳“Cowork 未见 UI 记载，因此同一 surface 可能不存在”的强推论。
+    Anthropic 官方的交互式连接器文档明确把 interactive connectors/MCP Apps 列为 Cowork 可用；插件文档又明确 Hooks 在 Cowork 运行，
+    所以文档层面已经存在同一 surface 的候选交集：Cowork + plugin Hooks + remote interactive MCP connector。
+    这不等于本地 .mcpb 路径也适用于 Cowork；官方自定义连接器文档说明 Cowork 连接器流量经 Anthropic 云端，
+    需要公网可达的 remote MCP。当前实机仅确认本机 Claude Desktop 存在 Cowork 入口，未安装测试插件、未配置远程连接器，
+    因而尚未证明 TokenGame 的 Hook、UI、会话关联与 exactly-once 回路能共存。可执行清单见
+    docs/CLAUDE-HOST-PROBE-CHECKLIST.md。
 ```
 
 ## F9 · "唯一候选语义版本"与 charter-first gate 冲突
@@ -245,8 +302,11 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受。此前“唯一候选语义版本”的说法压缩过度，容易把高层章程与密集规则一次性交给用户背书。
+    后续确认必须按 charter-first 组织：先确认宿主中立 L0，再确认 L1 HOST-ENTRY，随后分别完整呈现受影响的 L2 后继章程，
+    最后才把 F1 等完整受保护规则集与 supersede 链绑定。可以在一次对话中连续完成，但每个节点都必须独立可见、不可继承确认。
 ```
 
 ## F10 · `artifacts/` 被 gitignore，但被当作验收证据指针
@@ -259,8 +319,12 @@ codex_response:
 
 ```yaml
 codex_response:
-  verdict:
-  reasoning:
+  verdict: accept
+  reasoning: >-
+    接受证据可追溯性缺口。建议继续忽略可重复生成的整批原始 artifacts，同时把真正用于里程碑签收的最小证据集复制到
+    受版本控制的 evidence/accepted/<run-id>/，使用不可变文件名与 manifest 记录 claim、生成命令、时间、SHA-256 和源文件。
+    若未来采用外部内容寻址存储，则提交 manifest 与稳定对象引用即可。现有仅在本机存在的哈希只能标为历史本地证据，
+    不能追溯性地声称仓库克隆后仍可复核；该修复应在下一次真实验收运行时落地，不在本轮伪造历史证据。
 ```
 
 ## 一致之处（不需要你回应，记录用）
@@ -305,4 +369,3 @@ codex_response:
 5. 最多两轮后，Codex 按 F9 的顺序生成确认包
 
 在 F1–F3 定案之前不建议动实现。现在写代码就是把未确认的语义压死。
-
