@@ -81,24 +81,54 @@ Claude Cowork
 
 场景 C 只证明宿主缝可行，不确认 F1a/F1b/F1c 的最终产品规则；请求额度、迟到发布和默认公开范围仍以用户确认后的后继合同为准。
 
-## 判定矩阵
+## 九项门禁与未执行状态
 
-| 检查 | 通过条件 | 失败含义 |
-|---|---|---|
-| C1 Chat 负对照 | UI 可用、Hook 不运行 | F8 的宿主前提需要重查 |
-| C2 Cowork Hook | `UserPromptSubmit` 与 `Stop` 各恰好一次 | Cowork 不能承担主输入捕获回路 |
-| C3 Cowork MCP App | 同一会话内 UI 可渲染并交互 | F8-bis 的 UI 顾虑成立 |
-| C4 同 surface 共存 | 完成 C2/C3 时未切换 surface | 不能把两个分别成功的实验拼成一个产品能力 |
-| C5 稳定关联 | 能用宿主字段或显式协议绑定 session/room/seat | 只能展示 UI，不能安全路由公开消息 |
-| C6 exactly-once | 正常、重复、重连、超时均只有一个终态 | 不得进入真实桌聊实现 |
-| C7 失败关闭 | 无可靠绑定时不公开、不误配座位 | 隐私与完整性门禁失败 |
+本表是执行记录的唯一状态入口。初始状态全部为 `not_run`；没有原始证据与结果记录时，不得把文档推论、组件分别可用或其他宿主的结果填写为通过。
+
+| 门禁 | 宿主 / surface | 通过条件 | 当前状态 | 失败处置 |
+|---|---|---|---|---|
+| Gate 1 · Chat 负对照 | Claude Desktop Chat | MCP App 可用，插件 Hook 明确不运行 | `not_run` | 重查 F8 的宿主能力前提 |
+| Gate 2 · Cowork Hook | Claude Cowork | `UserPromptSubmit` 与 `Stop` 各恰好一次，且不改写回答 | `not_run` | Cowork 不能承担主输入捕获回路 |
+| Gate 3 · Remote connector | Claude Cowork | 公网 remote MCP 可认证、调用并撤销，不依赖本地 `.mcpb` 假设 | `not_run` | 改用有证据的 connector 形态，不得冒充已接通 |
+| Gate 4a · Cowork MCP App | Claude Cowork | 同一会话内 UI 可渲染并完成一次交互 | `not_run` | F8-bis 的 UI 顾虑成立 |
+| Gate 4b · 同 surface 共存 | Claude Cowork | Gate 2 与 Gate 4a 在同一会话完成，期间不切换到 Chat 或外部浏览器 | `not_run` | 不能把两个分别成功的实验拼成一个产品能力 |
+| Gate 5 · 事件驱动主动唤醒 | Codex 与 Claude 分别记录 | 牌局事件在无新玩家提示的情况下恰好启动一次真实模型评估，并产生 `silent` 或 `public_speech` 终态 | `not_run_both_hosts` | 主动 AI 功能未成立；被动回答只能作为待重新确认的降级候选 |
+| Gate 6 · 稳定关联 | 目标真实宿主 | 能用宿主字段或显式协议绑定 session / room / seat / binding generation | `not_run` | 只能展示 UI，不能安全路由公开消息 |
+| Gate 7 · Exactly-once | 目标真实宿主 | 正常、重复、重连、取消和超时均只有一个权威终态 | `not_run` | 不得进入真实桌聊实现 |
+| Gate 8 · 失败关闭 | 目标真实宿主 | 无可靠绑定、服务故障或凭据失效时不公开、不误配座位、不双跑 AI | `not_run` | 隐私与完整性门禁失败 |
+| Gate 9 · 证据与清理 | 两个目标宿主 | 证据可复核，插件、connector、凭据、端点和临时数据按授权清理 | `not_run` | 运行不能用于架构或产品结论 |
+
+### Gate 5 逐宿主记录
+
+Gate 5 必须为 Codex 与 Claude 各保存一份记录，不能用一侧结果外推另一侧。每次运行复制下面字段并填写真实观察：
+
+```yaml
+gate_5_run:
+  status: not_run | pass | fail | blocked
+  probe_run_id:
+  host: codex | claude
+  host_version:
+  surface: codex_visible_task | claude_chat | claude_cowork | other
+  source_game_event:
+  source_event_seq:
+  expected_model_evaluations: one
+  observed_model_evaluations:
+  terminal_result: silent | public_speech | none | duplicate | unknown
+  user_click_required: yes | no | unknown
+  new_user_prompt_required: yes | no | unknown
+  same_visible_context_proven:
+  direct_evidence_refs: []
+  caveats: []
+```
+
+`user_click_required: no`、`new_user_prompt_required: no`、恰好一次真实模型评估以及唯一合法终态同时有直接证据，才支持“事件驱动主动发言”。如果需要用户点击或补发提示，只能证明被动/半主动交互，Gate 5 对主动 AI 判为失败。该失败不是可由实现层自行吸收的 UI 差异：先交付被动回答必须回到受影响的 L2/产品规则确认，不能静默宣称与主动 AI 功能等价。
 
 ## 对 D1 的影响
 
-- C1–C7 全部通过：Claude Cowork 的“宿主输入 + 内嵌 UI”技术候选成立；D1 仍是产品选择，不由技术替用户裁决。
+- Gate 1–9 全部通过：Claude Cowork 的“宿主输入 + 内嵌 UI + 主动 AI”技术候选成立；这仍是宿主能力证据，不自动确认产品语义。
 - Cowork Hook 通过、MCP App 失败：不能声称同一 Cowork surface 完整可行；需比较外部 Web UI、无内嵌 UI 的 Cowork，或普通 Chat 的内嵌输入方案。
 - Cowork MCP App 通过、Hook 失败：共享内嵌聊天框仍可行，但 Claude 主输入捕获不可行。
-- 两者共存但 C5/C6/C7 失败：只能证明组件共存，不能作为 TokenGame 入口架构依据。
+- 两者共存但 Gate 5–8 任一失败：只能证明组件共存，不能声称主动公开 AI 闭环已经成立。
 
 ## 证据与清理
 

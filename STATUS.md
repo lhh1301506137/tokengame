@@ -1,14 +1,14 @@
 # TokenGame 项目状态
 
-更新日期：2026-08-26
+更新日期：2026-08-27
 
 ## 初始化状态
 
 - 初始化分类：`fresh_init`
 - 框架就绪度：`continue_ready`
 - 当前阶段：`prototype`
-- 当前目标：Codex 插件宿主聚焦探针已关闭；“座位旁 AI + 公开聊天气泡”已实现并通过四视图 AI 验证，等待用户重新体验确认。
-- 当前路径：当前 MVP 的 L0-L2 语义与受保护产品规则均已确认并通过合同校验。
+- 当前目标：完成宿主中立 TokenGame 的分阶段语义变更确认；当前只等待 L0 根目标候选的精确用户确认。
+- 当前路径：旧 Codex 专属 L0-L2 合同仍是现行已验证语义，但与双宿主、临时私人房和事件驱动公开 AI 的活动 PRD 候选冲突；受影响产品实现暂停。
 - 裸指令 `继续`：可以恢复同一条已确认路线，但不会授权发布、部署、付费服务或扩大产品范围。
 
 ```yaml
@@ -51,11 +51,11 @@ trellis:
   codex_hooks_feature: enabled
   hook_review_status: not_verified_in_this_session
   bootstrap_task: archived/2026-08/00-bootstrap-guidelines
-  active_task: .trellis/tasks/08-26-multiplayer-vertical-slice
-  active_task_status: in_progress
-  active_task_research: .trellis/tasks/08-26-multiplayer-vertical-slice/research/authority-engine-and-transport.md
-  recommendation: request_user_reacceptance_of_seat_ai_bubbles
-  reason: seat_adjacent_public_ai_bubbles_passed_independent_check_and_four_view_acceptance_but_user_reacceptance_is_pending
+  active_task: .trellis/tasks/08-26-public-ai-table-talk
+  active_task_status: planning
+  active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l0-host-neutral.json
+  recommendation: user_confirm_stage_1_l0_host_neutral_candidate
+  reason: protected_l0_l2_candidate_conflicts_must_be_resolved_before_affected_implementation
 
 continuous_risk_authorization:
   status: active
@@ -93,10 +93,10 @@ local_closeout_authorization:
     - scope_expansion_or_user_acceptance
 
 semantic_alignment:
-  mode: new_baseline
-  alignment_stage: truth_persistence
+  mode: semantic_change
+  alignment_stage: hierarchy
   edit_authorization: align_truth_after_confirmation
-  semantic_baseline_status: confirmed
+  semantic_baseline_status: conflict
   confirmed_nodes:
     - TG-L0-PRODUCT
     - TG-L1-CODEX-ENTRY
@@ -105,9 +105,16 @@ semantic_alignment:
     - TG-L2-SESSION-LAUNCH
     - TG-L2-PLAYABLE-TABLE
     - TG-L2-PUBLIC-AI-EXCHANGE
-  pending_or_missing: []
+  pending_or_missing:
+    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
+    - TG-L1-HOST-ENTRY@not_yet_presented
+    - TG-L2-SESSION-LAUNCH@successor_not_yet_presented
+    - TG-L2-PLAYABLE-TABLE@successor_not_yet_presented
+    - TG-L2-PUBLIC-AI-EXCHANGE@successor_not_yet_presented
   binding_index: H:/tokengold/tokengame/PROJECT-PLAN-TREE.md#semantic_baseline
-  next_action: user_experience_acceptance_then_select_next_route
+  candidate_confirmation_ref: docs/SEMANTIC-CONFIRMATION-20260827.md#l0-host-neutral-candidate
+  route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
+  next_action: user_confirm_stage_1_l0_host_neutral_candidate
 
 project_intelligence:
   contract: dual-ai.project-intelligence.v1
@@ -192,8 +199,8 @@ project_intelligence:
         - 当前 CLI 没有临时 plugin-dir 参数；插件需先加入 marketplace 再安装，会修改 Codex 本地配置和缓存
         - 本机 enable_mcp_apps 为未启用的开发中能力，不能据此承诺 Codex 内嵌牌桌
         - 已新增项目内无限注德州扑克领域状态机与四身份表级权威层，覆盖四轮下注、短额 all-in、主池/多层边池、平池奇数筹码、标准摊牌、超时与自愿亮牌
-        - `npm test` 当前 23/23 通过，包含原有 11 项 Codex 桥接回归；四个隔离 Chromium context 已经由真实 UI 完成 checkdown、四人 all-in 和加注弃牌后自愿亮牌，控制台错误为 0
-        - 最新 `npm run table` 已验证权威服务、本地桥、四席观察者零底牌及 Ctrl+C 无监听残留；当前仍是单进程内存固定桌
+        - "`npm test` 当前 23/23 通过，包含原有 11 项 Codex 桥接回归；四个隔离 Chromium context 已经由真实 UI 完成 checkdown、四人 all-in 和加注弃牌后自愿亮牌，控制台错误为 0"
+        - "最新 `npm run table` 已验证权威服务、本地桥、四席观察者零底牌及 Ctrl+C 无监听残留；当前仍是单进程内存固定桌"
       claim_limits:
         - 尚未证明当前 Codex 桌面会渲染插件 MCP UI
         - 安装后的新能力应在新聊天或新 CLI 会话使用；旧会话热激活不作为产品承诺
@@ -268,19 +275,19 @@ project_intelligence:
       - scope_isolation
       - operation_policy
       - required_authority_findings
-  freshness: current
-  protected_semantic_delta: none
-  semantic_reconciliation: acceptable_evolution
-  collaboration_state: await_user_acceptance
+  freshness: review_required
+  protected_semantic_delta: confirmation_required
+  semantic_reconciliation: drift_needs_user_decision
+  collaboration_state: stop_affected_and_align
   execution_closure_ref: REVIEW-LOG.md#2026-08-26座位旁-ai-公开气泡复核
   route_permission:
-    requested_route_ref: TG-L3-MULTIPLAYER-VERTICAL-SLICE
-    decision: allowed
+    requested_route_ref: TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
+    decision: held
     basis_refs:
-      - user:继续
-      - PROJECT-DECISION-LOG.md#DEC-20260826-013
-      - PROJECT-PLAN-TREE.md#当前恢复点
-  next_owner: user_experience_reacceptance
+      - PROJECT-DECISION-LOG.md#DEC-20260827-017
+      - CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
+      - PROJECT-PLAN-TREE.md#semantic_baseline
+  next_owner: direct_dual_ai_semantic_alignment_stage_1_l0_confirmation
 
 capability_inventory:
   contract: dual-ai.capability-inventory.v1
@@ -302,4 +309,4 @@ capability_inventory:
 
 ## 连续性边界
 
-当前 MVP 的 L0-L2 与受保护产品规则均已由用户分别确认并写入已验证合同。Codex 桥接实现已通过 11 项自动化、浏览器和真实 0.145.0 插件宿主验证，且探针安装已可逆清理；前置 TG-L3/TG-L4 以 `pass_with_notes` 关闭。Trellis 0.5.8 已完成 Codex 项目初始化；`TG-L3-MULTIPLAYER-VERTICAL-SLICE` 已实现 A/B/C/D 四个独立身份、服务端权威无限注德州扑克、逐玩家隐藏投影、HTTP/SSE、完整结算和可操作 Web UI。座位旁 AI 与公开聊天气泡现已完成：四席同伴可见，合法 prompt/answer 按 actor 与 `request_id` 配对，每席只显示最近一组而右侧完整历史保持 87/87；未知、孤立、错席、重复、迟到与 HTML 注入负例均通过。当前 `npm test` 23/23 通过，四个隔离浏览器上下文的公开 AI、checkdown、四人 all-in、加注弃牌和自愿亮牌均通过且控制台错误为 0。独立 Trellis 检查修复了非法 answer 误点亮全局阶段和事件列表 80 条截断两项问题。用户已认可牌局机制，现只等待其重新体验本次气泡修正；不能据 AI 验证声称用户已经接受。项目没有 Git 仓库，Trellis 的提交后归档仍无法执行，因此任务载体保持 `in_progress`。现有结论不覆盖完整 MVP、生产认证/持久化/远程并发、四个真实 Codex 会话绑定、隐私完备性、桌面内嵌 UI、用户接受或发布状态。
+旧 Codex 专属 L0-L2 与其产品规则仍保留已验证合同，但活动 PRD 已提出宿主中立入口、临时私人房和事件驱动主动 AI 等冲突候选，因此当前语义状态为 `conflict`，受影响实现停在 L0 分阶段确认门禁。既有 Codex 桥接、多人牌桌与座位旁气泡的测试结果只按原记录保留，本轮没有安装依赖、重跑 `npm test` 或 Playwright，也不把历史 23/23 冒充本轮实测。Git 仓库现已存在；两轮 Claude 复核及 Codex 回应均可由提交历史审计。现有证据仍不覆盖双宿主能力、Codex 或 Claude 的事件驱动主动唤醒、完整 MVP、生产认证/持久化/远程并发、隐私完备性、用户接受或发布状态。

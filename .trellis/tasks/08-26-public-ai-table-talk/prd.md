@@ -630,3 +630,139 @@
 - 用户已确认锁定单一 `SEAT_AI` 架构；以后如要重新引入意图分类或双管线，必须新增 ADR 和证据，不得直接从已被取代的探索记录恢复。
 
 **Consequences**：MVP-0 只需证明“标准德扑 + 四组公开玩家/AI 对话”可玩，不需要先建设私密投影、记忆数据层、托管协议、能力市场或信用系统。路线图决定继续保留，但必须由后续独立任务重新激活和验收，不能从本文件的历史草案自动膨胀回首版。
+
+<a id="semantic-change-20260827"></a>
+
+## 语义变更与分阶段确认状态（2026-08-27）
+
+本 PRD 中与已验证合同冲突或超出其范围的“已确认”“已锁定”表述，只代表需求发现会话中的候选共识，不具有 `user_confirmed` 合同权威。现行语义仍由 `PROJECT-DECISION-LOG.md` 的已验证合同控制；受影响实现暂停在分阶段确认门禁。
+
+确认顺序固定为：L0 宿主中立化 → L1 宿主入口路线二选一 → `TG-L2-SESSION-LAUNCH`、`TG-L2-PLAYABLE-TABLE`、`TG-L2-PUBLIC-AI-EXCHANGE` 三个章程分别确认 → 对应受保护产品规则与 supersede 链。后续阶段不得在前一阶段确认前向用户展开成一个总规则包。
+
+U7 候选按最终复核拆为三项，尚未取得用户权威：
+
+1. 各宿主输入形态可以在功能不降级的前提下适配。
+2. 默认公开范围、隐藏信息边界以及公开话术无扑克动作效力必须跨宿主一致。
+3. 事件驱动主动发言在 Codex 与 Claude 两侧均未验证；任一侧 Gate 5 失败时，被动回答只能作为重新确认的降级候选，不能由实现层静默替代。
+
+```yaml
+semantic_reconciliation:
+  depth: deep_intent
+  scope: current_mvp
+  triggers:
+    - external_advisor_review
+    - verified_contract_vs_active_prd_conflict
+    - dual_host_product_direction
+  baseline_status_before: confirmed
+  status: drift_needs_user_decision
+  original_or_latest_user_intent_checked:
+    - PROJECT-DECISION-LOG.md#DEC-20260825-001
+    - current_user_instruction:2026-08-27
+  historical_ai_inference_checked:
+    - CLAUDE-SEMANTIC-REVIEW-20260826.md
+  current_documents_checked:
+    - PROJECT-PLAN-TREE.md
+    - STATUS.md
+    - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+  confirmed_path_checked:
+    - PROJECT-DECISION-LOG.md#DEC-20260825-001
+    - PROJECT-DECISION-LOG.md#DEC-20260825-002
+    - PROJECT-DECISION-LOG.md#DEC-20260825-005
+    - PROJECT-DECISION-LOG.md#DEC-20260825-008
+    - PROJECT-DECISION-LOG.md#DEC-20260825-009
+  current_implementation_or_product_surface_checked:
+    - existing_records_only_no_tests_rerun
+  material_deltas:
+    - classification: docs_and_implementation_drift
+      summary: 已验证语义仍限定 Codex 和公开固定测试桌，活动 PRD 候选改为宿主中立入口、临时私人房与事件驱动公开 AI。
+      affected_levels:
+        - L0
+        - L1
+        - L2
+  scope_escalation_recommended: yes
+  user_decision_needed: yes
+  route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
+  next_action: user_confirm_stage_1_l0_host_neutral_candidate
+
+route_rebase:
+  status: pending_user_confirmation
+  transformation: supersede
+  trigger:
+    reason: 已验证的 Codex 专属 L0/L1 与双宿主、临时私人房和事件驱动公开 AI 候选发生受保护语义冲突。
+    evidence:
+      - CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
+      - docs/SEMANTIC-CONFIRMATION-20260827.md
+  semantic_impact: l0_l2_confirmation_required
+  authority:
+    user: pending_user_confirmation
+    primary_ai: propose_l0_l2_and_wait
+    decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+  previous_active_path:
+    - TG-L0-PRODUCT
+    - TG-L1-LIVE-TABLE
+    - TG-L2-PLAYABLE-TABLE
+  candidate_active_path:
+    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B-pending
+    - TG-L1-HOST-ENTRY@not_yet_presented
+  resulting_active_path: []
+  affected_scope:
+    plan_nodes:
+      - TG-L0-PRODUCT
+      - TG-L1-CODEX-ENTRY
+      - TG-L1-LIVE-TABLE
+      - TG-L1-PUBLIC-AI-PLAY
+      - TG-L2-SESSION-LAUNCH
+      - TG-L2-PLAYABLE-TABLE
+      - TG-L2-PUBLIC-AI-EXCHANGE
+    code: []
+    data: []
+    api_or_interfaces:
+      - host_entry_boundary
+      - authoritative_room_and_seat_protocol
+      - seat_ai_publication_contract
+    active_entrypoints:
+      - current_codex_plugin_path
+      - proposed_claude_host_path
+    tests:
+      - SAME_VISIBLE_TASK_SPIKE_V1_not_run
+      - CLAUDE_HOST_PROBE_GATE_1_TO_9_not_run
+    documents:
+      - PROJECT-DECISION-LOG.md
+      - PROJECT-PLAN-TREE.md
+      - STATUS.md
+      - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+      - docs/SEMANTIC-CONFIRMATION-20260827.md
+    status_and_navigation:
+      - active_path_held_at_protected_confirmation
+    completion_evidence:
+      - existing_codex_probe_evidence_scope_limited
+  reliable_resume_boundary:
+    earliest_trustworthy_node_or_checkpoint: SC-TG-L0-ROOT-20260825-A-current_verified
+    first_invalid_or_unverified_node: SC-TG-L0-ROOT-20260827-B-pending_user_confirmation
+    basis:
+      - PROJECT-DECISION-LOG.md#DEC-20260825-001
+      - PROJECT-DECISION-LOG.md#DEC-20260827-017
+  impact_dispositions:
+    - subject: SC-TG-L0-ROOT-20260825-A
+      kind: document
+      disposition: reusable
+      reason: 在候选被确认和校验前仍是现行已验证合同；之后保留为可审计历史。
+      required_action: preserve_until_exact_successor_confirmation
+      evidence_or_owner: PROJECT-DECISION-LOG.md#DEC-20260825-001
+    - subject: active_product_implementation_route
+      kind: status_or_navigation
+      disposition: revalidation_required
+      reason: L0-L2 候选会改变宿主入口、MVP 桌型和公开 AI 责任。
+      required_action: hold_until_sequential_confirmation_and_truth_write
+      evidence_or_owner: PROJECT-PLAN-TREE.md
+    - subject: existing_codex_host_probe_results
+      kind: completion_evidence
+      disposition: reusable
+      reason: 只证明旧 Codex 聚焦范围，不能外推为双宿主或主动唤醒已完成。
+      required_action: retain_with_scope_limit_then_revalidate_affected_claims
+      evidence_or_owner: docs/HOST-PROBE-CHECKLIST.md
+  unresolved_blockers:
+    - user_confirmation_stage_1_l0_host_neutral_candidate
+  durable_carrier: active_trellis_or_prd
+  history_ref: CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
+```

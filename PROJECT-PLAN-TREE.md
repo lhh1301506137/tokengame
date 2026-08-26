@@ -4,7 +4,7 @@
 
 ```yaml
 plan_tree:
-  status: active
+  status: needs_reconciliation
   root_goal_ref: PROJECT-DECISION-LOG.md#DEC-20260825-001
   active_path:
     - TG-L0-PRODUCT
@@ -21,8 +21,8 @@ plan_tree:
       understanding_view:
         current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-001
         current_revision_ref: SC-TG-L0-ROOT-20260825-A
-        candidate_successor_ref: none
-        presentation: aligned
+        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-20260827.md#l0-host-neutral-candidate
+        presentation: presented
         result_ref: none
     - id: TG-L1-CODEX-ENTRY
       parent: TG-L0-PRODUCT
@@ -121,21 +121,22 @@ plan_tree:
         - PROJECT-PLAN-TREE.md#当前恢复点
         - STATUS.md#project_intelligence
   active_node: TG-L2-PLAYABLE-TABLE
-  current_next_leaf: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+  current_next_leaf: none
   current_execution_unit_ref: none
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-L0-PRODUCT
-    first_invalid_or_unverified_node: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+    earliest_trustworthy_node_or_checkpoint: TG-L0-PRODUCT@SC-TG-L0-ROOT-20260825-A
+    first_invalid_or_unverified_node: TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B-pending
+  route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: primary_ai_initialize_trellis_then_define_first_multiplayer_vertical_slice
+  next_owner: user_confirm_stage_1_l0_host_neutral_candidate
 
 semantic_baseline:
   required: yes
-  status: confirmed
+  status: conflict
   coverage: complete_for_scope
   authority: user_confirmed
   currency: current
-  consistency: aligned
+  consistency: conflict
   scope: current_mvp
   protected_levels:
     - L0
@@ -152,7 +153,12 @@ semantic_baseline:
       - TG-L2-SESSION-LAUNCH
       - TG-L2-PLAYABLE-TABLE
       - TG-L2-PUBLIC-AI-EXCHANGE
-  pending_or_missing_nodes: []
+  pending_or_missing_nodes:
+    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
+    - TG-L1-HOST-ENTRY@not_yet_presented
+    - TG-L2-SESSION-LAUNCH@successor_not_yet_presented
+    - TG-L2-PLAYABLE-TABLE@successor_not_yet_presented
+    - TG-L2-PUBLIC-AI-EXCHANGE@successor_not_yet_presented
   future_unaligned_nodes:
     - multi_game_platform_expansion
     - tournament_and_spectator_ecosystem
@@ -200,15 +206,16 @@ semantic_baseline:
       digest: sha256:cf494f719361565de3e28e714d5e8811aa2007199c34dfe3f5d5ecee0fda647c
       binding_status: verified
       verified_at: 2026-08-25
-  blocking_paths: []
+  blocking_paths:
+    - TG-L0-PRODUCT -> pending host-neutral successor -> affected current MVP route
   unaffected_confirmed_paths: []
-  last_checked: 2026-08-25
-  next_action: initialize_trellis_and_plan_first_multiplayer_vertical_slice
+  last_checked: 2026-08-27
+  next_action: user_confirm_stage_1_l0_host_neutral_candidate
 ```
 
 ## 当前恢复点
 
-当前 MVP 的 L0、三个 L1、三个必要 L2 章程及三项受保护产品规则已经分别确认并通过合同校验。Codex 桥接已通过 11 项自动化、Playwright 和真实 0.145.0 插件宿主验收；安装、信任、公开/普通/拒绝/故障回退与卸载路径均直接执行，TG-L3/TG-L4 以 `pass_with_notes` 关闭。路线现转向 TG-L2-PLAYABLE-TABLE，首个未验证节点为 TG-L3-MULTIPLAYER-VERTICAL-SLICE；开发前按既定建议初始化 Trellis。完整多人牌桌、生产鉴权、上下文泄漏完备防护和公开发布仍未成立。
+旧 Codex 专属 L0、三个 L1、三个 L2 及其规则合同仍作为最后一组已验证语义保留；活动 PRD 的宿主中立入口、临时私人房和事件驱动公开 AI 候选与之发生 L0-L2 冲突。当前恢复点因此前移到 `SC-TG-L0-ROOT-20260825-A`，产品实现暂停，下一动作是让用户只确认 `docs/SEMANTIC-CONFIRMATION-20260827.md` 当前展开的 L0 候选。L1、三个 L2 与规则阶段尚未展示，不能由本次确认继承。既有 Codex 桥接和牌桌证据保持原范围，不证明双宿主或主动唤醒已交付。
 
 ## 本地探针执行结论
 

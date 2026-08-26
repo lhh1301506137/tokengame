@@ -830,3 +830,30 @@ decision: 在四个玩家座位旁分别显示 AI 同伴，并把服务端已经
 follow_up: 该决定是已确认 L2 公开 AI 语义下的可逆 UI/投影修正，不修改牌局规则、公开时序或隐私合同；实现后重跑四浏览器场景并重新请求用户体验确认。
 implementation_status: ai_verified_user_reacceptance_pending
 implementation_evidence: 四席 AI、生成中与回答气泡、actor/request 配对负例、桌面/窄屏布局、87/87 完整事件流及三种完整牌局已通过四窗口复验；用户重新体验确认仍未发生。
+
+## DEC-20260827-017：候选——根目标改为宿主中立
+
+metadata:
+  date: 2026-08-27
+  source: advisor_question
+  scope: root_goal
+  status: pending_user_confirmation
+  supersedes: none
+  proposed_supersedes: DEC-20260825-001（仅在候选被精确确认并完成合同校验后）
+  affected_docs:
+    - docs/SEMANTIC-CONFIRMATION-20260827.md
+    - PROJECT-PLAN-TREE.md
+    - STATUS.md
+    - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+  resulting_changes:
+    - doc: docs/SEMANTIC-CONFIRMATION-20260827.md
+      change: 只展开 L0 宿主中立候选；L1、L2 与规则阶段保持未展示、未确认。
+    - doc: PROJECT-PLAN-TREE.md
+      change: 保留当前已验证 L0，同时登记候选后继和受影响路线暂停状态。
+
+question: TokenGame 的根目标是否从“为 Codex 用户提供”改为面向受支持 AI 工作宿主的一套宿主中立产品，并把 Codex 与 Claude 作为首批目标宿主？
+why_it_matters: 如果 L0 仍定义为 Codex 专属，Claude 入口只能暗中改变下层语义或形成第二套产品；如果直接要求两个适配器同时完成，又会无必要地扩大当前 MVP。
+recommended_answer: 采用宿主中立 L0，但允许各宿主适配器分阶段交付；共享牌局权威、公开人机博弈和安全边界不得因宿主适配而降级。
+user_answer: pending
+decision: 当前仅登记待确认候选。DEC-20260825-001 与 SC-TG-L0-ROOT-20260825-A 继续作为现行已验证语义；不得把本候选用于实施或声称双宿主已经交付。
+follow_up: 精确候选包位于 docs/SEMANTIC-CONFIRMATION-20260827.md，预构建 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l0-host-neutral.json。只有用户明确确认当前 L0 包后，才可把该 payload 原样嵌入本条、计算并校验合同、将状态改为 user_confirmed，并进入 L1 二选一；任何修改都必须先生成新的候选 payload。
