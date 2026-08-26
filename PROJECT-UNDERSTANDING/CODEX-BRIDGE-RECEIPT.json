@@ -1,0 +1,37 @@
+{
+  "receipt_schema": "dual-ai.understanding-artifact-receipt.v4",
+  "understanding_entity_id": "UE-TG-CODEX-BRIDGE",
+  "revision_id": "PI-TG-CODEX-BRIDGE-R4",
+  "language": "zh-CN",
+  "runtime_profile": "adaptive",
+  "runtime_profile_source": "adapter_default",
+  "artifact_producer_id": "tokengame-understanding-projection-generator",
+  "generation_context": {
+    "context_id": "UGC-TG-CODEX-BRIDGE-R4",
+    "sha256": "40026d4f3fbab75bf70996686c375ab1419d1474d527082d230bfd7429c1dca5"
+  },
+  "projection_refs": {
+    "human_brief_ref": "CODEX-BRIDGE.md",
+    "ai_working_contract_ref": "CODEX-BRIDGE-AI.json",
+    "evidence_appendix_refs": ["CODEX-BRIDGE-EVIDENCE.md"]
+  },
+  "projection_sha256": {
+    "human_brief_ref": "14a7970a633f60512f4aaa336454c6abe22fc1bc3dccdf1465d6d1b2f4279ca7",
+    "ai_working_contract_ref": "b11dd480c5003c54f8d385431b543dd2a87417e0a069ad4082bdd087fd058213",
+    "evidence_appendix_refs": {
+      "CODEX-BRIDGE-EVIDENCE.md": "f6b7d208530bf00710f1de728898af674f26a6ca23a0b4dc52646f71b2b53dfb"
+    }
+  },
+  "owner_reads": {
+    "project_intelligence": {
+      "ref": "project-intelligence.md",
+      "sha256": "63f856014c596539808be79811910dd8c45d4a697f04a3a5e02fb8308a33bf0e"
+    },
+    "plan_tree": {
+      "ref": "plan-tree.md",
+      "sha256": "048d0643a00ed02e9867b73abe6bd3f1ff31b51c0ab9a429bf82cabb32b023af"
+    }
+  },
+  "repair_attempts": 1,
+  "reported_status": "repaired"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "tokengame",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local TokenGame prototype with an authoritative four-seat Hold'em table and Codex public-AI bridge.",
+  "scripts": {
+    "table": "node src/run-probe.cjs",
+    "probe": "node src/run-probe.cjs",
+    "authority": "node src/authority/server.cjs",
+    "bridge": "node src/bridge/server.cjs",
+    "test": "node --test --test-concurrency=1 test/*.test.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

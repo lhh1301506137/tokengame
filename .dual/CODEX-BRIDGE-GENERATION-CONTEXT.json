@@ -1,0 +1,181 @@
+{
+  "context_schema": "dual-ai.understanding-generation-context.v2",
+  "context_id": "UGC-TG-CODEX-BRIDGE-R4",
+  "understanding_entity": {
+    "entity_id": "UE-TG-CODEX-BRIDGE",
+    "semantic_key": "tokengame.codex.bridge",
+    "identity_status": "owner_anchored",
+    "owner_ref": "STATUS.md#project_intelligence"
+  },
+  "revision_id": "PI-TG-CODEX-BRIDGE-R4",
+  "oracle_owner": {
+    "owner": "project_intelligence",
+    "owner_ref": "project-intelligence.md",
+    "owner_sha256": "63f856014c596539808be79811910dd8c45d4a697f04a3a5e02fb8308a33bf0e",
+    "provenance": "owner_derived_before_generation"
+  },
+  "dependency_owner": {
+    "owner": "plan_tree",
+    "owner_ref": "plan-tree.md",
+    "owner_sha256": "048d0643a00ed02e9867b73abe6bd3f1ff31b51c0ab9a429bf82cabb32b023af",
+    "basis_refs": ["PROJECT-PLAN-TREE.md#当前恢复点"]
+  },
+  "oracle_producer_id": "project-intelligence-scope-resolver",
+  "artifact_producer_id": "tokengame-understanding-projection-generator",
+  "runtime_profile": "adaptive",
+  "runtime_profile_source": "adapter_default",
+  "operation_context": {
+    "mode": "bounded_project_write",
+    "project_write_policy": "bounded",
+    "artifact_output_policy": "bounded_update",
+    "product_work_requested": "yes",
+    "authorized_scope_refs": ["TG-L3-CODEX-BRIDGE-SPIKE", "TG-L4-CODEX-HOST-INTEGRATION-PROBE", "TG-L3-MULTIPLAYER-VERTICAL-SLICE"],
+    "authorization_ref": "PROJECT-PLAN-TREE.md#当前恢复点"
+  },
+  "read_scope_refs": [
+    "PROJECT-DECISION-LOG.md#DEC-20260825-005",
+    "PROJECT-DECISION-LOG.md#DEC-20260825-009",
+    "PROJECT-DECISION-LOG.md#DEC-20260825-011",
+    "PROJECT-DECISION-LOG.md#DEC-20260826-012",
+    "PROJECT-DECISION-LOG.md#DEC-20260826-013",
+    "PROJECT-PLAN-TREE.md#当前恢复点",
+    "STATUS.md#project_intelligence"
+  ],
+  "evidence_scope_refs": [
+    "local:codex-cli-0.145.0",
+    "local:docs/HOST-PROBE-CHECKLIST.md",
+    "local:docs/ACCEPTANCE-EVIDENCE.md",
+    "official:https://learn.chatgpt.com/docs/hooks",
+    "official:https://developers.openai.com/plugins/build/plugins",
+    "official:https://github.com/openai/codex/issues/27141"
+  ],
+  "impact_scope": {
+    "affected_node_refs": [
+      "TG-L1-CODEX-ENTRY",
+      "TG-L2-SESSION-LAUNCH",
+      "TG-L2-PUBLIC-AI-EXCHANGE",
+      "TG-L3-CODEX-BRIDGE-SPIKE",
+      "TG-L4-CODEX-HOST-INTEGRATION-PROBE"
+    ],
+    "blocked_scope": [],
+    "unaffected_scope": ["TG-L3-MULTIPLAYER-VERTICAL-SLICE"],
+    "scope_isolation": {
+      "status": "proven",
+      "minimum_dependency_closure": [
+        "TG-L1-CODEX-ENTRY",
+        "TG-L2-SESSION-LAUNCH",
+        "TG-L2-PUBLIC-AI-EXCHANGE",
+        "TG-L3-CODEX-BRIDGE-SPIKE",
+        "TG-L4-CODEX-HOST-INTEGRATION-PROBE"
+      ],
+      "basis_refs": [
+        "PROJECT-PLAN-TREE.md#当前恢复点",
+        "PROJECT-PLAN-TREE.md#本地探针执行结论",
+        "PROJECT-DECISION-LOG.md#DEC-20260826-013"
+      ]
+    }
+  },
+  "route_permission": {
+    "requested_route_ref": "TG-L3-MULTIPLAYER-VERTICAL-SLICE",
+    "decision": "allowed",
+    "basis_refs": [
+      "PROJECT-DECISION-LOG.md#DEC-20260826-013",
+      "PROJECT-PLAN-TREE.md#当前恢复点",
+      "PROJECT-PLAN-TREE.md#本地探针执行结论"
+    ]
+  },
+  "required_unknowns": [
+    {
+      "unknown_id": "U-TG-CODEX-UI-SUPPORT",
+      "entity_id": "UE-TG-CODEX-BRIDGE",
+      "owner": "evidence_unknown",
+      "status": "open",
+      "impact_scope_refs": ["TG-L3-CODEX-BRIDGE-SPIKE"],
+      "blocking_boundary": "evidence_claim",
+      "blocked_scope_refs": [],
+      "evidence_status": "partial",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": null
+    },
+    {
+      "unknown_id": "U-TG-HOOK-RUNTIME-BEHAVIOR",
+      "entity_id": "UE-TG-CODEX-BRIDGE",
+      "owner": "evidence_unknown",
+      "status": "resolved",
+      "impact_scope_refs": ["TG-L3-CODEX-BRIDGE-SPIKE", "TG-L4-CODEX-HOST-INTEGRATION-PROBE"],
+      "blocking_boundary": "none",
+      "blocked_scope_refs": [],
+      "evidence_status": "sufficient",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": "docs/HOST-PROBE-CHECKLIST.md#已执行验收"
+    },
+    {
+      "unknown_id": "U-TG-LOCAL-BRIDGE-AUTH",
+      "entity_id": "UE-TG-CODEX-BRIDGE",
+      "owner": "professional_design_unknown",
+      "status": "open",
+      "impact_scope_refs": ["TG-L2-SESSION-LAUNCH", "TG-L3-CODEX-BRIDGE-SPIKE"],
+      "blocking_boundary": "release",
+      "blocked_scope_refs": [],
+      "evidence_status": "partial",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": null
+    },
+    {
+      "unknown_id": "U-TG-CONTEXT-LEAKAGE-GUARD",
+      "entity_id": "UE-TG-CODEX-BRIDGE",
+      "owner": "professional_design_unknown",
+      "status": "open",
+      "impact_scope_refs": ["TG-L2-PUBLIC-AI-EXCHANGE", "TG-L3-CODEX-BRIDGE-SPIKE"],
+      "blocking_boundary": "evidence_claim",
+      "blocked_scope_refs": [],
+      "evidence_status": "partial",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": null
+    },
+    {
+      "unknown_id": "U-TG-CODEX-PROVENANCE-ATTESTATION",
+      "entity_id": "UE-TG-CODEX-BRIDGE",
+      "owner": "professional_design_unknown",
+      "status": "resolved",
+      "impact_scope_refs": ["TG-L2-PUBLIC-AI-EXCHANGE", "TG-L3-CODEX-BRIDGE-SPIKE"],
+      "blocking_boundary": "none",
+      "blocked_scope_refs": [],
+      "evidence_status": "sufficient",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": "PROJECT-DECISION-LOG.md#DEC-20260825-011"
+    }
+  ],
+  "navigation_context": {
+    "plan_tree_status": "active",
+    "active_path": ["TG-L0-PRODUCT", "TG-L1-LIVE-TABLE", "TG-L2-PLAYABLE-TABLE"],
+    "active_node_ref": "TG-L2-PLAYABLE-TABLE",
+    "current_next_leaf_ref": "TG-L3-MULTIPLAYER-VERTICAL-SLICE",
+    "reliable_boundary": {
+      "earliest_trustworthy_ref": "TG-L0-PRODUCT",
+      "first_invalid_or_unverified_ref": "TG-L3-MULTIPLAYER-VERTICAL-SLICE",
+      "first_invalid_or_unverified_state": "unverified"
+    },
+    "subject_route_relations": [
+      {
+        "subject_ref": "TG-L3-CODEX-BRIDGE-SPIKE",
+        "relation": "outside_current_route",
+        "basis_refs": ["PROJECT-PLAN-TREE.md#当前恢复点"]
+      }
+    ],
+    "basis_refs": ["PROJECT-PLAN-TREE.md#当前恢复点"]
+  },
+  "project_route_reads": [
+    {
+      "ref": "PROJECT-PLAN-TREE.md",
+      "sha256": "e165a77dbda25bb8c1aff4a6480f62952a828701d7b2142e8dc57b4404a2c44b",
+      "role": "plan_tree_owner"
+    }
+  ],
+  "required_authority_findings": []
+}

@@ -1,0 +1,44 @@
+# 类型与边界安全
+
+## 当前事实
+
+项目使用 JavaScript，没有 TypeScript、JSDoc 类型层或运行时 schema 库。当前安全性来自严格的协议边界校验、稳定字段命名、结构化错误和测试，而不是静态类型。不能在验收中声称已通过 type-check。
+
+## 代码与模块格式
+
+- Node.js 服务、测试和插件入口使用 CommonJS `.cjs`、`require()`、`module.exports` 与 `"use strict"`。
+- 浏览器 UI 使用普通脚本 `web/app.js`；Playwright 辅助加载器使用 ESM `.mjs`。
+- 不在同一模块内混用 CommonJS 和 ESM。
+
+## 运行时校验
+
+- 所有外部 JSON 先经过 `readJson()` 的大小限制和解析错误处理。
+- 必填文本在 `EventStore`/`TableStore` 边界通过 `requiredString(value, field, maxLength)` 校验类型、空值和长度。
+- 筹码、版本和下注目标显式使用 `Number()`，随后以 `Number.isSafeInteger()` 和领域允许范围校验；时间长度可使用 `Number.isFinite()` 后检查范围。
+- HTTP/桥响应先读取文本，再在 `try/catch` 中解析 JSON；无效响应转换为稳定错误码。
+- 浏览器读取可能缺失的投影字段时使用可选链和默认值，不假定首次请求一定成功。
+
+现有边界模式：
+
+```js
+const duration = Number(duration_ms);
+if (!Number.isFinite(duration) || duration < 1 || duration > 10 * 60_000) {
+  throw new ProbeError("invalid_duration_ms", 400);
+}
+```
+
+## 协议字段
+
+- 线协议 JSON 使用 snake_case：`session_id`、`turn_id`、`deadline_at`、`idempotency_key`。
+- JavaScript 内部变量使用 camelCase：`sessionId`、`turnId`、`actionWindow`。
+- 事件结构必须包含单调递增 `seq`、`type`、`server_time` 与 `payload`。
+- 业务错误使用 `ProbeError(code, status, details)`；客户端依赖稳定 `code`，不能依赖英文堆栈文本。
+- 扑克规则错误使用 `HoldemRuleError(code, status, details)`；HTTP 层以相同结构映射，不暴露内部对象、牌堆或未授权底牌。
+- 对外返回深拷贝的公共状态，防止调用方意外修改 store 内部对象。
+
+## 禁止模式
+
+- 不把 `JSON.parse()` 直接暴露在无捕获的网络边界。
+- 不用宽松真假值判断替代协议必填字段校验。
+- 不把服务器异常堆栈、系统路径或内部 token 返回给 UI/插件。
+- 不通过类型断言式注释掩盖未校验输入；若引入 TypeScript，应作为独立迁移并配套 `typecheck` 脚本。

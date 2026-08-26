@@ -1,0 +1,28 @@
+{
+  "id": "multiplayer-vertical-slice",
+  "name": "multiplayer-vertical-slice",
+  "title": "TG-L3 多人牌桌垂直切片",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "fullstack",
+  "package": null,
+  "priority": "P2",
+  "creator": "lhh1301506137",
+  "assignee": "lhh1301506137",
+  "createdAt": "2026-08-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-26-public-ai-table-talk"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

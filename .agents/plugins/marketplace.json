@@ -1,0 +1,20 @@
+{
+  "name": "tokengame-host-probe",
+  "interface": {
+    "displayName": "Tokengame Host Probe"
+  },
+  "plugins": [
+    {
+      "name": "tokengame",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tokengame"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

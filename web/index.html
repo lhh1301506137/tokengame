@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>TokenGame / Codex Poker Table</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="TokenGame 观察入口">
+          <span class="brand-mark" aria-hidden="true">TG</span>
+          <span>
+            <small>CODEX TABLE PROTOCOL</small>
+            <strong>TokenGame</strong>
+          </span>
+        </a>
+        <div class="topbar-status">
+          <div class="viewer-badge" id="viewerBadge" data-role="observer">
+            <span id="viewerAvatar">·</span>
+            <div>
+              <small>当前视图</small>
+              <strong id="viewerLabel">公共观察</strong>
+            </div>
+          </div>
+          <div class="connection" id="connectionBadge" data-state="connecting">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="connectionLabel">连接中</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="table-panel" aria-labelledby="tableTitle">
+          <header class="table-heading">
+            <div>
+              <p class="eyebrow">FIXED 4-SEAT · PLAY TOKENS ONLY</p>
+              <h1 id="tableTitle">Codex 无限注德州扑克</h1>
+              <p class="hand-label" id="handLabel">正在读取权威牌局……</p>
+            </div>
+            <dl class="table-metrics">
+              <div><dt>阶段</dt><dd id="streetLabel">—</dd></div>
+              <div><dt>底池</dt><dd id="potLabel">—</dd></div>
+              <div><dt>行动者</dt><dd id="actorLabel">—</dd></div>
+              <div class="timer-metric" data-state="idle" id="timerMetric">
+                <dt>剩余</dt><dd id="actionTimer">--:--</dd>
+              </div>
+            </dl>
+          </header>
+
+          <div class="canvas-frame">
+            <div class="table-stage">
+              <canvas id="tableCanvas" aria-label="四人无限注德州扑克牌桌；详细状态同时提供在页面控件和文本接口中"></canvas>
+              <div class="canvas-tag top-left">AUTHORITY · <b id="sequenceLabel">SEQ 0</b></div>
+              <div class="canvas-tag bottom-right">F · FULLSCREEN</div>
+            </div>
+
+            <section class="seat-ai-layer" id="seatAiLayer" aria-label="四个玩家座位旁的 Codex AI 同伴">
+              <article class="seat-ai" data-seat="a" data-state="idle" aria-label="玩家 A 与其 AI 同伴">
+                <header class="seat-ai-identity">
+                  <span class="seat-ai-avatar" aria-hidden="true">✦</span>
+                  <span class="seat-ai-name"><small>PLAYER A</small><strong>Codex AI</strong></span>
+                  <span class="seat-ai-status" data-role="status">就绪</span>
+                </header>
+                <div class="seat-conversation" data-role="conversation" role="status" aria-live="polite" aria-atomic="true" hidden>
+                  <div class="chat-bubble chat-bubble-player">
+                    <span class="chat-speaker">玩家 A · 公开</span>
+                    <p data-role="prompt"></p>
+                  </div>
+                  <div class="chat-bubble chat-bubble-ai" data-role="answer-bubble" data-state="generating">
+                    <span class="chat-speaker">A 的 Codex AI · 公开</span>
+                    <p data-role="answer"></p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="seat-ai" data-seat="b" data-state="idle" aria-label="玩家 B 与其 AI 同伴">
+                <header class="seat-ai-identity">
+                  <span class="seat-ai-avatar" aria-hidden="true">✦</span>
+                  <span class="seat-ai-name"><small>PLAYER B</small><strong>Codex AI</strong></span>
+                  <span class="seat-ai-status" data-role="status">就绪</span>
+                </header>
+                <div class="seat-conversation" data-role="conversation" role="status" aria-live="polite" aria-atomic="true" hidden>
+                  <div class="chat-bubble chat-bubble-player">
+                    <span class="chat-speaker">玩家 B · 公开</span>
+                    <p data-role="prompt"></p>
+                  </div>
+                  <div class="chat-bubble chat-bubble-ai" data-role="answer-bubble" data-state="generating">
+                    <span class="chat-speaker">B 的 Codex AI · 公开</span>
+                    <p data-role="answer"></p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="seat-ai" data-seat="c" data-state="idle" aria-label="玩家 C 与其 AI 同伴">
+                <header class="seat-ai-identity">
+                  <span class="seat-ai-avatar" aria-hidden="true">✦</span>
+                  <span class="seat-ai-name"><small>PLAYER C</small><strong>Codex AI</strong></span>
+                  <span class="seat-ai-status" data-role="status">就绪</span>
+                </header>
+                <div class="seat-conversation" data-role="conversation" role="status" aria-live="polite" aria-atomic="true" hidden>
+                  <div class="chat-bubble chat-bubble-player">
+                    <span class="chat-speaker">玩家 C · 公开</span>
+                    <p data-role="prompt"></p>
+                  </div>
+                  <div class="chat-bubble chat-bubble-ai" data-role="answer-bubble" data-state="generating">
+                    <span class="chat-speaker">C 的 Codex AI · 公开</span>
+                    <p data-role="answer"></p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="seat-ai" data-seat="d" data-state="idle" aria-label="玩家 D 与其 AI 同伴">
+                <header class="seat-ai-identity">
+                  <span class="seat-ai-avatar" aria-hidden="true">✦</span>
+                  <span class="seat-ai-name"><small>PLAYER D</small><strong>Codex AI</strong></span>
+                  <span class="seat-ai-status" data-role="status">就绪</span>
+                </header>
+                <div class="seat-conversation" data-role="conversation" role="status" aria-live="polite" aria-atomic="true" hidden>
+                  <div class="chat-bubble chat-bubble-player">
+                    <span class="chat-speaker">玩家 D · 公开</span>
+                    <p data-role="prompt"></p>
+                  </div>
+                  <div class="chat-bubble chat-bubble-ai" data-role="answer-bubble" data-state="generating">
+                    <span class="chat-speaker">D 的 Codex AI · 公开</span>
+                    <p data-role="answer"></p>
+                  </div>
+                </div>
+              </article>
+            </section>
+          </div>
+
+          <section class="action-console" aria-labelledby="actionTitle">
+            <div class="action-message">
+              <p class="eyebrow" id="actionTitle">PLAYER ACTION</p>
+              <strong id="actionStatus">观察模式不能提交牌局动作</strong>
+              <small id="legalHint">请使用服务启动时输出的 A/B/C/D 专属链接。</small>
+            </div>
+            <div class="action-buttons" id="actionButtons">
+              <button class="action-button fold" id="foldButton" type="button">弃牌</button>
+              <button class="action-button" id="checkButton" type="button">过牌</button>
+              <button class="action-button" id="callButton" type="button">跟注</button>
+              <label class="amount-control" for="betAmount">
+                <span>下注到</span>
+                <input id="betAmount" type="number" inputmode="numeric" min="1" step="1" />
+              </label>
+              <button class="action-button primary" id="betButton" type="button">下注</button>
+              <button class="action-button all-in" id="allInButton" type="button">ALL IN</button>
+            </div>
+            <div class="secondary-actions">
+              <button class="text-button" id="revealButton" type="button">自愿亮牌</button>
+              <button class="text-button" id="resetTableButton" type="button">开始新测试手牌</button>
+              <span id="controlNote" role="status">所有动作由服务端校验。</span>
+            </div>
+          </section>
+        </section>
+
+        <aside class="side-panel" aria-label="牌局事实与公开事件">
+          <section class="fact-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">OFFICIAL FACTS</p>
+                <h2>权威牌局</h2>
+              </div>
+              <span class="contract-chip">NLH · 1/2</span>
+            </div>
+            <dl class="fact-grid">
+              <div><dt>牌桌</dt><dd>固定四人桌</dd></div>
+              <div><dt>筹码</dt><dd>不可兑现</dd></div>
+              <div><dt>状态版本</dt><dd id="revisionLabel">—</dd></div>
+              <div><dt>当前下注</dt><dd id="currentBetLabel">—</dd></div>
+            </dl>
+            <p class="privacy-note" id="privacyNote">公共观察不包含任何隐藏底牌。</p>
+          </section>
+
+          <section class="ai-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">PUBLIC AI CHANNEL</p>
+                <h2>先公开，再生成</h2>
+              </div>
+              <span class="contract-chip">CODEX</span>
+            </div>
+            <ol class="ai-flow" aria-label="公开 AI 事件流程">
+              <li id="phasePrompt" data-state="idle"><span>01</span><strong>Prompt</strong></li>
+              <li id="phaseModel" data-state="idle"><span>02</span><strong>Model</strong></li>
+              <li id="phaseAnswer" data-state="idle"><span>03</span><strong>Answer</strong></li>
+            </ol>
+            <code>$tokengame public &lt;message&gt;</code>
+          </section>
+
+          <section class="event-card">
+            <div class="section-heading sticky-heading">
+              <div>
+                <p class="eyebrow">TABLE FEED</p>
+                <h2>公开事件</h2>
+              </div>
+              <span class="event-count" id="eventCount">0</span>
+            </div>
+            <ol class="event-list" id="eventList" aria-live="polite"></ol>
+            <div class="empty-events" id="emptyEvents">等待权威事件……</div>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="footnote">
+        <strong>本地垂直切片</strong>
+        <span>服务端持有唯一牌局状态；每个玩家链接只投影该身份允许看到的底牌。无真实价值筹码、账号经济或生产认证。</span>
+      </footer>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

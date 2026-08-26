@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/08-26-multiplayer-vertical-slice/prd.md","reason":"逐项核对用户确认的验收标准与非目标"}
+{"file":".trellis/tasks/08-26-multiplayer-vertical-slice/research/mature-online-poker-rules-baseline.md","reason":"复核标准行动、短额 all-in、边池、摊牌和超时语义"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查任何业务决定是否泄漏到客户端"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"检查身份、金额、版本和错误边界"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"检查确定性测试、清理、隐私与现有回归"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"检查 DOM 注入安全、可访问性和 Canvas 投影"}

@@ -1,0 +1,52 @@
+{
+  "contract_schema": "dual-ai.ai-working-contract.v4",
+  "contract_id": "AIWC-TG-CODEX-BRIDGE-R4",
+  "artifact_producer_id": "tokengame-understanding-projection-generator",
+  "understanding_entity": {"entity_id":"UE-TG-CODEX-BRIDGE","semantic_key":"tokengame.codex.bridge","identity_status":"owner_anchored","owner_ref":"STATUS.md#project_intelligence"},
+  "revision_id": "PI-TG-CODEX-BRIDGE-R4",
+  "subject": "TokenGame Codex 会话桥接、隐私边界与公开事件协议",
+  "projection_refs": {"human_brief_ref":"CODEX-BRIDGE.md","ai_working_contract_ref":"CODEX-BRIDGE-AI.json","evidence_appendix_refs":["CODEX-BRIDGE-EVIDENCE.md"]},
+  "provenance": "runtime_evidence",
+  "authority": "primary_ai_professional",
+  "freshness": "current",
+  "time_range": "current_stage",
+  "working_refs": {
+    "current": {"owner":"project_intelligence","ref":"STATUS.md#project_intelligence"},
+    "candidate": null,
+    "plan": {"owner":"plan_tree","ref":"PROJECT-PLAN-TREE.md#当前恢复点"},
+    "result": {"owner":"execution_closure","ref":"PROJECT-PLAN-TREE.md#本地探针执行结论"},
+    "gap": {"owner":"evidence_owner","ref":"docs/HOST-PROBE-CHECKLIST.md#修复后边界"}
+  },
+  "operation_context": {"mode":"bounded_project_write","project_write_policy":"bounded","artifact_output_policy":"bounded_update","product_work_requested":"yes","authorized_scope_refs":["TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-CODEX-HOST-INTEGRATION-PROBE","TG-L3-MULTIPLAYER-VERTICAL-SLICE"],"authorization_ref":"PROJECT-PLAN-TREE.md#当前恢复点"},
+  "read_scope_refs": ["PROJECT-DECISION-LOG.md#DEC-20260825-005","PROJECT-DECISION-LOG.md#DEC-20260825-009","PROJECT-DECISION-LOG.md#DEC-20260825-011","PROJECT-DECISION-LOG.md#DEC-20260826-012","PROJECT-DECISION-LOG.md#DEC-20260826-013","PROJECT-PLAN-TREE.md#当前恢复点","STATUS.md#project_intelligence"],
+  "evidence_scope_refs": ["local:codex-cli-0.145.0","local:docs/HOST-PROBE-CHECKLIST.md","local:docs/ACCEPTANCE-EVIDENCE.md","official:https://learn.chatgpt.com/docs/hooks","official:https://developers.openai.com/plugins/build/plugins","official:https://github.com/openai/codex/issues/27141"],
+  "impact_scope": {
+    "affected_node_refs": ["TG-L1-CODEX-ENTRY","TG-L2-SESSION-LAUNCH","TG-L2-PUBLIC-AI-EXCHANGE","TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-CODEX-HOST-INTEGRATION-PROBE"],
+    "blocked_scope": [],
+    "unaffected_scope": ["TG-L3-MULTIPLAYER-VERTICAL-SLICE"],
+    "scope_isolation": {"status":"proven","minimum_dependency_closure":["TG-L1-CODEX-ENTRY","TG-L2-SESSION-LAUNCH","TG-L2-PUBLIC-AI-EXCHANGE","TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-CODEX-HOST-INTEGRATION-PROBE"],"basis_refs":["PROJECT-PLAN-TREE.md#当前恢复点","PROJECT-PLAN-TREE.md#本地探针执行结论","PROJECT-DECISION-LOG.md#DEC-20260826-013"]}
+  },
+  "route_permission": {"requested_route_ref":"TG-L3-MULTIPLAYER-VERTICAL-SLICE","decision":"allowed","basis_refs":["PROJECT-DECISION-LOG.md#DEC-20260826-013","PROJECT-PLAN-TREE.md#当前恢复点","PROJECT-PLAN-TREE.md#本地探针执行结论"]},
+  "unknowns": [
+    {"unknown_id":"U-TG-CODEX-UI-SUPPORT","entity_id":"UE-TG-CODEX-BRIDGE","owner":"evidence_unknown","status":"open","impact_scope_refs":["TG-L3-CODEX-BRIDGE-SPIKE"],"blocking_boundary":"evidence_claim","blocked_scope_refs":[],"evidence_status":"partial","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":null},
+    {"unknown_id":"U-TG-HOOK-RUNTIME-BEHAVIOR","entity_id":"UE-TG-CODEX-BRIDGE","owner":"evidence_unknown","status":"resolved","impact_scope_refs":["TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-CODEX-HOST-INTEGRATION-PROBE"],"blocking_boundary":"none","blocked_scope_refs":[],"evidence_status":"sufficient","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":"docs/HOST-PROBE-CHECKLIST.md#已执行验收"},
+    {"unknown_id":"U-TG-LOCAL-BRIDGE-AUTH","entity_id":"UE-TG-CODEX-BRIDGE","owner":"professional_design_unknown","status":"open","impact_scope_refs":["TG-L2-SESSION-LAUNCH","TG-L3-CODEX-BRIDGE-SPIKE"],"blocking_boundary":"release","blocked_scope_refs":[],"evidence_status":"partial","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":null},
+    {"unknown_id":"U-TG-CONTEXT-LEAKAGE-GUARD","entity_id":"UE-TG-CODEX-BRIDGE","owner":"professional_design_unknown","status":"open","impact_scope_refs":["TG-L2-PUBLIC-AI-EXCHANGE","TG-L3-CODEX-BRIDGE-SPIKE"],"blocking_boundary":"evidence_claim","blocked_scope_refs":[],"evidence_status":"partial","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":null},
+    {"unknown_id":"U-TG-CODEX-PROVENANCE-ATTESTATION","entity_id":"UE-TG-CODEX-BRIDGE","owner":"professional_design_unknown","status":"resolved","impact_scope_refs":["TG-L2-PUBLIC-AI-EXCHANGE","TG-L3-CODEX-BRIDGE-SPIKE"],"blocking_boundary":"none","blocked_scope_refs":[],"evidence_status":"sufficient","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":"PROJECT-DECISION-LOG.md#DEC-20260825-011"}
+  ],
+  "invalidation_conditions": ["Codex Hook 输入字段或插件加载生命周期发生不兼容变化","真宿主无法在模型生成前原子发布提示","Stop 与显式 MCP 工具回退均无法可靠配对最终回答","普通 Codex 内容产生任何桥接或网络事件","受保护的公开范围或当前会话 AI 语义发生变化"],
+  "readiness": "host_probe_closed_ready_for_next_route",
+  "runtime_profile": "adaptive",
+  "runtime_profile_source": "adapter_default",
+  "owner_precedence": {"navigation":"plan_tree","understanding":"project_intelligence","semantic_confirmation":"semantic_alignment"},
+  "authority_findings": [],
+  "navigation_context": {
+    "plan_tree_status":"active",
+    "active_path":["TG-L0-PRODUCT","TG-L1-LIVE-TABLE","TG-L2-PLAYABLE-TABLE"],
+    "active_node_ref":"TG-L2-PLAYABLE-TABLE",
+    "current_next_leaf_ref":"TG-L3-MULTIPLAYER-VERTICAL-SLICE",
+    "reliable_boundary":{"earliest_trustworthy_ref":"TG-L0-PRODUCT","first_invalid_or_unverified_ref":"TG-L3-MULTIPLAYER-VERTICAL-SLICE","first_invalid_or_unverified_state":"unverified"},
+    "subject_route_relations":[{"subject_ref":"TG-L3-CODEX-BRIDGE-SPIKE","relation":"outside_current_route","basis_refs":["PROJECT-PLAN-TREE.md#当前恢复点"]}],
+    "basis_refs":["PROJECT-PLAN-TREE.md#当前恢复点"]
+  }
+}

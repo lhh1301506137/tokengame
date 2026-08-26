@@ -1,0 +1,9 @@
+{"file":".trellis/tasks/08-26-multiplayer-vertical-slice/prd.md","reason":"已确认的四人多人牌桌范围、规则层级与验收合同"}
+{"file":".trellis/tasks/08-26-multiplayer-vertical-slice/research/authority-engine-and-transport.md","reason":"权威领域状态机、逐玩家投影与 HTTP/SSE 传输结论"}
+{"file":".trellis/tasks/08-26-multiplayer-vertical-slice/research/mature-online-poker-rules-baseline.md","reason":"标准无限注德州扑克规则来源与超时默认"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"服务端、浏览器、桥与测试模块边界"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"服务端唯一权威状态和客户端投影约束"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"CommonJS、线协议字段与运行时校验约定"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"原生 DOM、Canvas、安全文本与可访问性模式"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"确定性时钟、权威状态和回归验证要求"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务跨越领域状态、HTTP/SSE 与浏览器投影"}
