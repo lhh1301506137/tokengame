@@ -8,7 +8,7 @@ plan_tree:
   root_goal_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
   active_path:
     - TG-L0-PRODUCT
-    - TG-L1-HOST-ENTRY
+    - TG-L1-LIVE-TABLE
   nodes:
     - id: TG-L0-PRODUCT
       parent: none
@@ -26,7 +26,7 @@ plan_tree:
     - id: TG-L1-HOST-ENTRY
       parent: TG-L0-PRODUCT
       dependencies: []
-      status: active
+      status: planned
       summary: 已确认的共享宿主中立入口与会话承接能力域；Codex、Claude 及以后宿主作为其下适配器分阶段接入同一玩家身份、房间与恢复含义。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260827-018
@@ -54,10 +54,16 @@ plan_tree:
       parent: TG-L0-PRODUCT
       dependencies:
         - TG-L1-HOST-ENTRY
-      status: planned
-      summary: 已确认的可信实时牌局能力域；其旧 Codex 接入与牌桌证据保持原范围，等待新的宿主中立会话与私人房 L2 章程确认后重验受影响主链。
+      status: active
+      summary: 已确认的可信实时牌局能力域；宿主中立会话与座位恢复 L2 已确认，当前在此域下独立确认临时私人牌桌后继章程。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-003
+      understanding_view:
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-003
+        current_revision_ref: SC-TG-L1-LIVE-TABLE-20260825-A
+        candidate_successor_ref: none
+        presentation: aligned
+        result_ref: none
     - id: TG-L1-PUBLIC-AI-PLAY
       parent: TG-L0-PRODUCT
       dependencies:
@@ -71,24 +77,31 @@ plan_tree:
       parent: TG-L1-HOST-ENTRY
       dependencies: []
       status: blocked
-      summary: 旧 Codex 专属游戏会话启动章程仍是最后一个已验证历史合同，但父级和私人房/座位恢复责任已经变化；宿主中立后继等待 DEC-20260827-019 确认。
+      summary: 宿主中立游戏会话、临时私人房、座位归属与普通中断恢复章程已确认并唯一绑定；产品实现与双宿主能力仍待后续重验。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-005
         - PROJECT-DECISION-LOG.md#DEC-20260827-019
       understanding_view:
-        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-005
-        current_revision_ref: SC-TG-L2-SESSION-LAUNCH-20260825-A
-        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md#l2-session-launch-charter
-        presentation: presented
-        result_ref: none
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019
+        current_revision_ref: SC-TG-L2-SESSION-LAUNCH-20260827-B
+        candidate_successor_ref: none
+        presentation: aligned
+        result_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#l2-session-launch-truth-persistence-result
     - id: TG-L2-PLAYABLE-TABLE
       parent: TG-L1-LIVE-TABLE
       dependencies:
         - TG-L2-SESSION-LAUNCH
-      status: active
-      summary: 已确认的完整可玩牌桌章程与亮牌规则；弃牌获胜默认不强制亮牌，可自愿亮牌。
+      status: blocked
+      summary: 旧公开测试桌章程与亮牌规则仍是最后一个已验证合同；宿主中立的两至四人临时私人牌桌后继等待 DEC-20260827-020 确认，旧规则暂不继承。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-008
+        - PROJECT-DECISION-LOG.md#DEC-20260827-020
+      understanding_view:
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260825-008
+        current_revision_ref: SC-TG-L2-PLAYABLE-TABLE-20260825-B
+        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md#l2-playable-table-charter
+        presentation: presented
+        result_ref: none
     - id: TG-L2-PUBLIC-AI-EXCHANGE
       parent: TG-L1-PUBLIC-AI-PLAY
       dependencies:
@@ -146,15 +159,15 @@ plan_tree:
       owner_links:
         - PROJECT-PLAN-TREE.md#当前恢复点
         - STATUS.md#project_intelligence
-  active_node: TG-L1-HOST-ENTRY
+  active_node: TG-L1-LIVE-TABLE
   current_next_leaf: none
   current_execution_unit_ref: none
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A
-    first_invalid_or_unverified_node: TG-L2-SESSION-LAUNCH@SC-TG-L2-SESSION-LAUNCH-20260827-B-pending
+    earliest_trustworthy_node_or_checkpoint: TG-L1-LIVE-TABLE@SC-TG-L1-LIVE-TABLE-20260825-A
+    first_invalid_or_unverified_node: TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-C-pending
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: user_confirm_stage_3_l2_session_launch_charter
+  next_owner: user_confirm_stage_4_l2_playable_table_charter
 
 semantic_baseline:
   required: yes
@@ -180,8 +193,7 @@ semantic_baseline:
       - TG-L2-PLAYABLE-TABLE
       - TG-L2-PUBLIC-AI-EXCHANGE
   pending_or_missing_nodes:
-    - TG-L2-SESSION-LAUNCH@SC-TG-L2-SESSION-LAUNCH-20260827-B-pending
-    - TG-L2-PLAYABLE-TABLE@successor_not_yet_presented
+    - TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-C-pending
     - TG-L2-PUBLIC-AI-EXCHANGE@successor_not_yet_presented
   future_unaligned_nodes:
     - multi_game_platform_expansion
@@ -213,11 +225,11 @@ semantic_baseline:
       binding_status: verified
       verified_at: 2026-08-25
     - node_id: TG-L2-SESSION-LAUNCH
-      contract_id: SC-TG-L2-SESSION-LAUNCH-20260825-A
-      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-005
-      digest: sha256:061266e6c84ec3f94c1be078bcb13e22edb4ae3c6364d1497a801c9e79feff6d
+      contract_id: SC-TG-L2-SESSION-LAUNCH-20260827-B
+      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019
+      digest: sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f
       binding_status: verified
-      verified_at: 2026-08-25
+      verified_at: 2026-08-27
     - node_id: TG-L2-PLAYABLE-TABLE
       contract_id: SC-TG-L2-PLAYABLE-TABLE-20260825-B
       decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-008
@@ -231,15 +243,15 @@ semantic_baseline:
       binding_status: verified
       verified_at: 2026-08-25
   blocking_paths:
-    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B -> TG-L1-HOST-ENTRY@SC-TG-L1-HOST-ENTRY-20260827-A -> pending TG-L2-SESSION-LAUNCH successor -> pending remaining L2 successors -> affected current MVP route
+    - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B -> TG-L1-LIVE-TABLE@SC-TG-L1-LIVE-TABLE-20260825-A -> pending TG-L2-PLAYABLE-TABLE successor -> pending TG-L2-PUBLIC-AI-EXCHANGE successor -> affected current MVP route
   unaffected_confirmed_paths: []
   last_checked: 2026-08-27
-  next_action: user_confirm_stage_3_l2_session_launch_charter
+  next_action: user_confirm_stage_4_l2_playable_table_charter
 ```
 
 ## 当前恢复点
 
-宿主中立 L0 与共享 `TG-L1-HOST-ENTRY` 已分别由用户确认并通过内容寻址校验；旧 Codex 专属 L0/L1 保留为已替代历史。当前活动路径推进到共享 L1，下一动作只确认 `TG-L2-SESSION-LAUNCH` 的宿主中立后继章程，重点是临时私人房、房间与座位归属、普通中断恢复和允许宿主入口形态不同。后续两个 L2 与任何产品规则仍未确认。既有 Codex 桥接、牌桌和气泡证据继续按旧范围保留，不证明双宿主、私人房恢复或主动唤醒已经交付。
+宿主中立 L0、共享 `TG-L1-HOST-ENTRY` 与 `TG-L2-SESSION-LAUNCH` 已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口与会话章程保留为已替代历史。当前活动路线转到可信实时牌局域，下一动作只确认 `TG-L2-PLAYABLE-TABLE` 的两至四人临时私人牌桌后继章程。第三个公开 AI L2 与所有产品规则仍未确认。既有 Codex 桥接、牌桌和气泡证据继续按旧范围保留，不证明新私人房牌桌、双宿主、座位恢复或主动唤醒已经交付。
 
 ## 本地探针执行结论
 

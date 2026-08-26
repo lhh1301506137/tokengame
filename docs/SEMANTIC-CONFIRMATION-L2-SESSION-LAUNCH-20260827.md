@@ -1,13 +1,13 @@
 # TokenGame 第三阶段语义确认：游戏会话与宿主入口
 
-状态：`stage_3_l2_session_launch_pending_user_confirmation`
+状态：`stage_3_l2_session_launch_user_confirmed`
 
 已确认上游：
 
 - `TG-L0-PRODUCT / SC-TG-L0-ROOT-20260827-B`
 - `TG-L1-HOST-ENTRY / SC-TG-L1-HOST-ENTRY-20260827-A`
 
-本文件只处理 `TG-L2-SESSION-LAUNCH` 的宿主中立后继章程。L0、L1 的确认不向本阶段继承。
+本文件只处理 `TG-L2-SESSION-LAUNCH` 的宿主中立后继章程。用户随后回复“1”，只确认本文件完整展示的章程；同一预构建 payload 已原样写入 `PROJECT-DECISION-LOG.md#DEC-20260827-019`，并以摘要 `sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f` 唯一校验通过。该确认不向其他 L2、产品规则或实现继承。
 
 ## 为什么旧章程需要后继
 
@@ -58,23 +58,23 @@
 
 ## 暂不进入本轮确认的规则
 
-旧 PRD 和两轮复核中已经存在席位与恢复凭据安全、一次性交接、具体恢复时限等候选规则。它们当前统一标记为 `candidate_rules_pending_charter`：只有本章程先获得独立确认后，Primary 才会逐项判断哪些是需要用户确认的受保护产品规则，哪些只是 AI 派生的验收规则或实现规则。本轮回复不会确认这些规则。
+旧 PRD 和两轮复核中已经存在席位与恢复凭据安全、一次性交接、具体恢复时限等候选规则。它们继续标记为 `candidate_rules_pending_charter`：本章程确认没有确认这些规则。按既定顺序，另外两个 L2 先各自完成章程确认，之后 Primary 再逐项判断哪些是需要用户确认的受保护产品规则，哪些只是 AI 派生的验收规则或实现规则。
 
 ## 本轮确认范围
 
-只确认以上 `TG-L2-SESSION-LAUNCH` 语义章程，不确认席位或恢复凭据规则、U7、公开/私密/迟到/主动发言规则、验收规则、实现规则、宿主探针结果或产品已经完成。
+本轮已经只确认以上 `TG-L2-SESSION-LAUNCH` 语义章程，没有确认席位或恢复凭据规则、U7、公开/私密/迟到/主动发言规则、验收规则、实现规则、宿主探针结果或产品已经完成。
 
-## 本轮选择
+## 本轮选择结果
 
-1. **确认以上章程（推荐）**：只确认本文件完整展示的 `TG-L2-SESSION-LAUNCH` 宿主中立后继语义；通过独立合同校验后再进入规则分类。
-2. **修改章程**：指出希望调整的授权、私人房、座位恢复或宿主差异结果；不确认当前候选。
-3. **先解释**：继续讨论该 L2 与 L1、牌桌或公开 AI 的边界；不确认当前候选。
+用户选择了方案 1。`SC-TG-L2-SESSION-LAUNCH-20260827-B` 现在是 `TG-L2-SESSION-LAUNCH` 的当前已验证章程；旧 Codex 专属章程保留为已替代历史。下一阶段只展开第二个 L2“完整可玩牌桌”，见 `docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md`。
 
 <!--
 candidate_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-session-launch-host-neutral.json
 candidate_contract_digest: sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f
-candidate_authority: pending_user_confirmation
-candidate_proposed_supersedes: DEC-20260825-005
+candidate_authority: user_confirmed
+candidate_decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019
+candidate_binding_status: verified
+candidate_supersedes: DEC-20260825-005
 candidate_rules_state: candidate_rules_pending_charter
-confirmation_rule: reply 1 confirms only the unchanged L2 charter payload shown above; rules and descendants do not inherit authority
+confirmation_rule: the recorded reply 1 confirms only the unchanged L2 charter payload shown above; rules and descendants do not inherit authority
 -->

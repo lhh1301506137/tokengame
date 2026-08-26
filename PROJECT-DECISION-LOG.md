@@ -307,8 +307,9 @@ metadata:
   date: 2026-08-25
   source: user_direct
   scope: feature
-  status: user_confirmed
+  status: superseded
   supersedes: none
+  superseded_by: DEC-20260827-019
   affected_docs:
     - PROJECT-PLAN-TREE.md
     - STATUS.md
@@ -989,15 +990,14 @@ semantic_contract:
 }
 ```
 
-## DEC-20260827-019：候选——宿主中立游戏会话与座位恢复章程
+## DEC-20260827-019：确认宿主中立游戏会话与座位恢复章程
 
 metadata:
   date: 2026-08-27
   source: advisor_question
   scope: feature
-  status: pending_user_confirmation
-  supersedes: none
-  proposed_supersedes: DEC-20260825-005（仅在候选被精确确认并完成合同校验后）
+  status: user_confirmed
+  supersedes: DEC-20260825-005
   affected_docs:
     - docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
     - PROJECT-PLAN-TREE.md
@@ -1005,13 +1005,94 @@ metadata:
     - .trellis/tasks/08-26-public-ai-table-talk/prd.md
   resulting_changes:
     - doc: docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
-      change: 完整展示 TG-L2-SESSION-LAUNCH 的宿主中立后继章程，暂不展示或确认其产品规则。
+      change: 将完整展示的 TG-L2-SESSION-LAUNCH 宿主中立后继章程登记为已确认；产品规则不继承本次确认。
     - doc: PROJECT-PLAN-TREE.md
-      change: 把活动路线停在已验证 TG-L1-HOST-ENTRY，登记首个 L2 候选和下一用户决策。
+      change: 将 TG-L2-SESSION-LAUNCH 后继提升为当前合同，并把下一用户决策推进到第二个 L2 章程。
+    - doc: STATUS.md
+      change: 将当前语义阶段推进到 TG-L2-PLAYABLE-TABLE 后继章程确认。
+    - doc: .trellis/tasks/08-26-public-ai-table-talk/prd.md
+      change: 记录第一个 L2 已确认、第二个 L2 尚待确认的 Route Rebase 状态。
 
 question: 游戏会话启动是否应扩展为宿主中立的私人房创建或加入、房间与座位归属，以及普通中断后回到原座位的完整步骤，同时允许各宿主采用不同可靠入口？
 why_it_matters: 旧章程只覆盖单个 Codex 会话的启用和恢复入口，不能定义跨宿主玩家是否进入同一房间、是否拥有稳定座位，也不能覆盖 Claude 可能无法复用 Codex 主输入框行为的现实。
 recommended_answer: 确认宿主中立后继章程，把用户可见的授权、当前会话 AI、临时私人房、座位归属、状态和恢复结果统一起来；凭据字段、存储方式、具体 UI 与接口继续由后续规则分类和专业实现决定。
+user_answer: 用户回复“1”，只确认 `docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md` 完整展示的宿主中立游戏会话与座位恢复章程。
+decision: 采用 SC-TG-L2-SESSION-LAUNCH-20260827-B 作为 TG-L2-SESSION-LAUNCH 的当前 L2 章程，权限为 user_confirmed；DEC-20260825-005 与 SC-TG-L2-SESSION-LAUNCH-20260825-A 转为已替代历史。本决策不确认席位或恢复凭据规则、U7、公开 AI、验收规则、实现规则、宿主能力或交付状态。
+follow_up: 按既定分阶段顺序进入第二个 L2“完整可玩牌桌”后继章程；三个 L2 均各自确认后，才进入产品规则分类与 supersede 链。
+
+semantic_contract:
+  contract_id: SC-TG-L2-SESSION-LAUNCH-20260827-B
+  node_id: TG-L2-SESSION-LAUNCH
+  payload_schema: dual-ai.semantic-contract.v1
+  digest: sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f
+  binding_status: verified
+  verified_at: 2026-08-27
+  verified_with: dual-ai-semantic-alignment/scripts/semantic-contract.mjs
+
+```json dual-ai.semantic-contract.v1
+{
+  "schema": "dual-ai.semantic-contract.v1",
+  "contract_id": "SC-TG-L2-SESSION-LAUNCH-20260827-B",
+  "node_id": "TG-L2-SESSION-LAUNCH",
+  "semantic_level": "L2",
+  "parent_node_id": "TG-L1-HOST-ENTRY",
+  "scope": "current_mvp",
+  "meaning": {
+    "goal": "让用户在任一已经受支持的 AI 工作宿主中，经明确授权把当前游戏会话的 AI 连接到一个宿主中立的玩家游戏会话，创建或加入临时私人德州房，并在普通中断后回到原房间与座位。",
+    "responsibility": "作为共享宿主入口下的第一个完整步骤，把尚未启用或尚未入房的用户带到可进入权威牌桌的就绪状态；负责授权说明、当前会话 AI 绑定、临时私人房创建或加入、连接与失败状态、座位归属和恢复入口，同时允许宿主采用各自可靠的交互形态，但不裁决牌局或决定赛时交流规则。",
+    "included": [
+      "说明即将启用的游戏能力及其需要的联网、文件和会话权限，并在安装、联网或绑定当前会话前取得用户明确允许",
+      "允许用户开启或关闭 AI 助手与德州扑克模式，并明确绑定当前游戏会话实际采用的模型、推理配置和可用工具，而不要求另填模型 API",
+      "创建一个临时私人房或通过邀请加入该房间，并把当前玩家游戏会话绑定到可识别的房间与座位归属",
+      "持续显示游戏是否可用、AI 来源、房间与座位、连接是等待、成功、失败、降级还是可恢复状态，并给出可理解的下一步",
+      "在宿主任务、页面或网络发生普通中断后，让玩家恢复原游戏会话、原房间和原座位，而不是静默建立第二个身份或重复完整安装",
+      "允许不同宿主使用其可靠的命令、状态卡片、内嵌界面或受控跳转完成同一用户结果，不要求主输入框行为、控件或自动化能力完全一致"
+    ],
+    "excluded": [
+      "不在未经允许时安装、联网、绑定会话或持续运行游戏能力，也不读取或发送与本局无关的项目文件、历史会话或系统提示内容",
+      "不提供公开大厅、自动匹配、正式账户、跨设备同步或跨项目身份迁移",
+      "不裁决发牌、下注、隐藏信息或胜负，也不决定哪些玩家与 AI 内容公开、私密、迟到或可主动发送",
+      "不把席位凭据的字段、存储目录、MCP 接口、URL 形式或具体页面布局冻结为产品语义；这些实现必须在后续安全规则和证据边界内选择",
+      "当前 MVP 不要求 Codex 与 Claude 两个适配器同时完成，也不保证所有宿主拥有相同输入面或自动唤醒能力"
+    ],
+    "user_visible_result": "用户能够清楚完成授权、绑定当前会话 AI、创建或加入临时私人房并进入自己的座位；过程中始终知道 AI 来源、房间与连接状态，普通中断后能够回到原座位。不同宿主的操作形式可以不同，但不会把玩家带进另一套身份、房间或牌局核心。",
+    "relationships": [
+      "上游从 TG-L1-HOST-ENTRY 接收已经获得用户允许的宿主适配器、当前游戏会话和宿主中立玩家身份",
+      "成功后向可信实时牌局能力提交创建、加入或恢复请求，以及可识别的房间、座位归属和玩家游戏会话",
+      "向公开人机博弈能力提供仅限当前游戏会话、经过边界控制的 AI 参赛入口；具体公开范围与主动发言能力由后续独立章程和规则决定"
+    ],
+    "ideal_final_form": "形成跨宿主一致的游戏会话与恢复语义：玩家可以在各宿主最自然的入口中看到同样可信的身份、房间、座位、AI 来源和恢复结果；新增宿主只需适配交互方式，不需要重做账户、房间或牌桌核心。",
+    "current_mvp_boundary": "先让至少一个宿主适配器完成一次显式启用、绑定当前会话 AI、创建或加入一个临时私人德州房、显示连接状态，并在短暂任务或网络中断后恢复原座位；另一个宿主可以稍后接入。当前不交付公开大厅、自动匹配、正式账户、跨设备恢复或统一的宿主输入界面。",
+    "expected_scenario": "玩家 A 在 Codex 中允许并启用 TokenGame，创建临时私人房后把邀请交给玩家 B；玩家 B 可在已经支持时从 Claude 的可靠入口加入。两边都显示各自的当前会话 AI 来源、同一个房间和各自座位。B 短暂关闭任务或断网后重新进入，系统把 B 带回原座位而不是创建新玩家。首个 MVP 即使只先支持 Codex，也使用同一套房间、座位和恢复含义，为以后接入 Claude 保留兼容路径。",
+    "plausible_but_wrong": "为每个宿主做一个看似能启动游戏的入口，但它们使用不同房间命名空间或独立玩家身份；页面关闭后只能重新加入并获得新座位，或者要求用户重新配置另一套 AI。这样的入口能打开界面，却没有建立可跨宿主演进、可恢复的同一个 TokenGame 游戏会话。"
+  },
+  "protected_product_rules": []
+}
+```
+
+## DEC-20260827-020：候选——宿主中立临时私人牌桌章程
+
+metadata:
+  date: 2026-08-27
+  source: advisor_question
+  scope: feature
+  status: pending_user_confirmation
+  supersedes: none
+  proposed_supersedes: DEC-20260825-008（仅在候选被精确确认并完成合同校验后）
+  affected_docs:
+    - docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
+    - PROJECT-PLAN-TREE.md
+    - STATUS.md
+    - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+  resulting_changes:
+    - doc: docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
+      change: 完整展示 TG-L2-PLAYABLE-TABLE 的宿主中立临时私人牌桌后继章程，暂不展示或确认其产品规则。
+    - doc: PROJECT-PLAN-TREE.md
+      change: 登记第二个 L2 候选，把下一用户决策停在完整可玩牌桌章程。
+
+question: 完整可玩牌桌是否应从“搜索公开测试桌”改为两至四名真人通过邀请进入同一中立权威临时私人桌，并明确真人结构化动作、隐藏信息隔离和宿主无关的唯一结算？
+why_it_matters: 旧章程明确不承诺私人房，与当前 MVP 路线直接冲突；如果仍让各宿主或邀请创建者掌握牌堆、动作或结算，就无法验证同一个 TokenGame 多人核心。
+recommended_answer: 确认宿主中立临时私人牌桌后继章程，保留成熟标准德扑裁决，把具体盲注、计时、掉线、亮牌和界面参数留到规则分类或专业实现阶段。
 user_answer: pending
-decision: 当前只登记 SC-TG-L2-SESSION-LAUNCH-20260827-B 候选，不提升该 L2，也不确认任何席位凭据、U7、公开 AI、验收或实现规则。SC-TG-L2-SESSION-LAUNCH-20260825-A 保留为最后一个已验证但与新父级冲突的历史章程。
-follow_up: 候选 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-session-launch-host-neutral.json，摘要为 sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f。只有用户明确回复 1 后，才可原样持久化、校验并替代 DEC-20260825-005；回复 2 或 3 不产生确认。
+decision: 当前只登记 SC-TG-L2-PLAYABLE-TABLE-20260827-C 候选，不提升该 L2，也不确认亮牌、计时、掉线、恢复、公开 AI、验收或实现规则。SC-TG-L2-PLAYABLE-TABLE-20260825-B 与 DEC-20260825-008 保持最后一个已验证的历史当前合同，直到候选获得精确确认和唯一绑定。
+follow_up: 候选 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-l2-playable-table-host-neutral.json，摘要为 sha256:fb692a1879e13fa440855402f6bf9069d5ec6d3e74c3f23e056ed58f1b2f4d0c。只有用户明确回复 1 后，才可原样持久化、校验并替代 DEC-20260825-008；回复 2 或 3 不产生确认。
