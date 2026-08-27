@@ -169,6 +169,38 @@ test("F3 要求 1：确认事件记到席位，且带上三元组", () => {
 //
 // 落点与玩家路径对称：门留在发布点（seat-ai-store 的 resolveEvaluation），房间事实由
 // 编排层注入，宿主没有机会传错一个房间去过确认。
+// 加入不等于表态，而且这件事必须体现在记录上，不能只体现在门的判定上。
+//
+// 这条是变异测试逼出来的。把新席位的初始 public_scope_confirmation 从 null 改成一份伪造的
+// 确认（room_binding_id 填 null），整套 F3 测试仍然全绿——因为门会拿它和真实绑房比对，null
+// 对不上，于是照样被拒。行为没变，所以行为断言杀不掉它；它也不发事件，所以事件断言也杀不掉。
+//
+// 但那份伪造记录是真缺陷：这一席从未表态，状态里却写着已同意。今天靠「null 对不上」侥幸拦住，
+// 哪天有人把 null 补成真实绑房（看起来像修 bug），伪造的同意立刻生效。所以断言要落在记录上。
+test("F3 要求 1：新加入的席位，确认记录必须是空的", () => {
+  const ctx = table();
+  for (const [index, seat] of ctx.seats.entries()) {
+    const view = ctx.s.dispatch("view.seat", { seat_id: seat.seat_id });
+    assert.equal(
+      view.ai.public_scope_confirmation,
+      null,
+      `第 ${index} 席刚入座就带着确认记录：加入被当成了表态`,
+    );
+  }
+
+  // 正面对照：确认之后记录必须出现，而且带的是真实房间事实。否则上面那条 null 断言可能
+  // 只是因为这个字段永远是 null（比如投影里写死了），那它什么也证明不了。
+  ctx.s.dispatch("room.confirm_public_scope", { ...ctx.auth(0), acknowledged: true });
+  const confirmed = ctx.s.dispatch("view.seat", { seat_id: ctx.seats[0].seat_id });
+  assert.equal(confirmed.ai.public_scope_confirmation.seat_id, ctx.seats[0].seat_id);
+  assert.equal(confirmed.ai.public_scope_confirmation.room_binding_id, ctx.room.room_binding_id);
+  assert.equal(confirmed.ai.public_scope_confirmation.table_rules_version, RULES);
+
+  // 另一席不受影响：这是 F3 的本体，顺手在这里再钉一次。
+  const other = ctx.s.dispatch("view.seat", { seat_id: ctx.seats[1].seat_id });
+  assert.equal(other.ai.public_scope_confirmation, null, "一席确认把另一席也记成已确认");
+});
+
 test("F3 延伸：未确认的席位，其 AI 也不得发布 TABLE_PUBLIC", () => {
   const ctx = table();
   // 两席都不确认。开局所需的 Ready 与连接与公开确认无关，所以牌桌照样能跑起来。
@@ -197,6 +229,60 @@ test("F3 延伸：未确认的席位，其 AI 也不得发布 TABLE_PUBLIC", () 
     probe("default_public_scope_not_confirmed"),
     "未确认的席位，其 AI 同样不得往公开时间线上说话",
   );
+});
+
+// 房间事实由权威注入，宿主传什么都不算。
+//
+// 这条不走命令面，直接打编排层，因为命令面的 ai.resolve 是显式白名单构造参数，
+// roomBindingId / tableRulesVersion 根本没有入口，从那里怎么试都试不出来。但
+// resolveEvaluation 是编排层的公开方法，宿主适配器就是它的调用方。它今天安全只是因为
+// 现有调用方恰好不传这两个字段——把关落在「恰好听话的调用方」上，不落在发生变更的地方，
+// 那就不是把关。
+//
+// 判别方式是让权威事实与宿主事实冲突，然后看谁赢：本席确认的是真房间，宿主塞进来的是
+// 假房间。权威赢则调用成功，宿主赢则确认门当场判定「没确认过这个房间」而拒掉。所以
+// 这条断言的是**成功**，一条断言拒绝的测试在这里反而抓不到东西。
+test("F3 要求 1：AI 结算路径的房间事实由权威注入，宿主传的不算", () => {
+  const ctx = table();
+  for (const index of [0, 1]) {
+    ctx.s.dispatch("seat.connect", { ...ctx.auth(index), connection_id: `c-${index}` });
+    ctx.s.dispatch("seat.ready", { ...ctx.auth(index), ready: true });
+    // 两席都就真实房间确认过。哪一席先被唤醒由引擎定，两席都确认才不会让这条用例
+    // 时不时地因为「恰好轮到没确认的那席」而变成在测别的东西。
+    ctx.s.dispatch("room.confirm_public_scope", { ...ctx.auth(index), acknowledged: true });
+  }
+  ctx.s.dispatch("hand.evaluate_start");
+  ctx.advance(4_000);
+  ctx.s.dispatch("hand.start_if_due");
+
+  const intent = ctx.s.dispatch("ai.take_intents", ctx.auth(0)).intents[0];
+  assert.ok(intent !== undefined, "开局应当唤醒席位 AI，否则这条用例证不到东西");
+  const owner = ctx.seats.findIndex((seat) => seat.seat_id === intent.seat_id);
+  const auth = ctx.auth(owner);
+  const started = ctx.s.dispatch("ai.start", { ...auth, context: intent.context });
+
+  // 冲突的前提得先成立：假值必须真的不等于真值，否则「权威赢」和「宿主赢」结果一样，
+  // 这条用例就退化成一个永远绿的空壳。
+  const hostile = { roomBindingId: "hostile-binding", tableRulesVersion: "hostile-rules" };
+  assert.notEqual(hostile.roomBindingId, ctx.room.room_binding_id);
+  assert.notEqual(hostile.tableRulesVersion, RULES);
+
+  const resolved = ctx.o.resolveEvaluation({
+    seatId: intent.seat_id,
+    turnId: started.started.turn_id,
+    decision: "public_speech",
+    text: "权威事实必须压过宿主传来的",
+    ...hostile,
+  });
+  // 编排层这一层直接返回权威事件本身（不像 submitPlayerText 会包一层 published），
+  // 所以断言落在事件类型上：发布成功才有 AI_PUBLIC_SPEECH。
+  assert.equal(
+    resolved.type,
+    "AI_PUBLIC_SPEECH",
+    "宿主传的假房间盖掉了权威事实：宿主可以指定一个自己确认过的房间去过门",
+  );
+  assert.equal(resolved.payload.scope, "TABLE_PUBLIC");
+  assert.equal(resolved.payload.seat_id, intent.seat_id);
 });
 
 test("F3 延伸：未确认的席位仍能把在途回合结算为 silent，回合不会卡死", () => {

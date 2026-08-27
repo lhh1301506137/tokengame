@@ -781,6 +781,14 @@ class SeatAiStore {
       active_turn_id: seat.active_turn === null ? null : seat.active_turn.turn_id,
       has_pending_context: seat.pending_context !== null,
       limits_version: this.limits.version,
+      // 该席自己的公开确认记录，没有就是 null。给出整个三元组而不只是一个布尔：
+      // 「确认过」和「确认的是当前这个房间与这版桌规」不是同一件事（规则 3 会让旧确认失效），
+      // 查看方要能自己判定，否则只能拿一个语义含混的 true 去猜。
+      //
+      // 三元组里没有秘密：绑房标识、桌规版本、限额版本都是公开事实，凭据从不进入这里。
+      public_scope_confirmation: seat.public_scope_confirmation === null
+        ? null
+        : { ...seat.public_scope_confirmation },
     };
   }
 
