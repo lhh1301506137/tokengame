@@ -1,0 +1,104 @@
+{
+  "name": "F4 席位状态写命令逐条把关",
+  "notes": "F4 有两层。一层是 seat.connect 本身漏出授权集合；另一层是「靠集合自身枚举生成的测试无法发现集合遗漏」。所以变异分两组：改把关点的，和改单条命令归属的。后一组是对独立期望清单的直接检验——把某条命令从集合里摘掉，如果只有集合自证型测试存在，变异就会存活。",
+  "mutations": [
+    {
+      "id": "F4-01-connect退出授权集合",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"seat.connect\",\n  \"seat.disconnect\",",
+      "replace": "  \"seat.disconnect\",",
+      "why": "F4 原始缺陷：只持传输令牌就能为他席建连，把 retention_expires_at 清成 null，让该席永远走不到释放。"
+    },
+    {
+      "id": "F4-02-disconnect退出授权集合",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"seat.connect\",\n  \"seat.disconnect\",",
+      "replace": "  \"seat.connect\",",
+      "why": "反向的同一个洞：外人能替他席掉线，凭空启动保留窗并把该席打成 DISCONNECTED。"
+    },
+    {
+      "id": "F4-03-ready退出授权集合",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"seat.ready\",\n  \"seat.sit_out_after_hand\",",
+      "replace": "  \"seat.sit_out_after_hand\",",
+      "why": "外人替他席按 Ready，把没准备好的人拖进牌局。"
+    },
+    {
+      "id": "F4-04-leave退出授权集合",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"seat.leave\",\n",
+      "replace": "",
+      "why": "外人能把他席踢下桌，并连带记一次强制弃牌。"
+    },
+    {
+      "id": "F4-05-view_hand退出授权集合",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"view.hand\",\n",
+      "replace": "",
+      "why": "全系统唯一吐底牌的出口失去把关：拿别人 seat_id 直接读走对手底牌。"
+    },
+    {
+      "id": "F4-06-授权判断反向",
+      "file": "src/authority/command-surface.cjs",
+      "find": "    if (SEAT_AUTHORIZED.includes(name)) {",
+      "replace": "    if (!SEAT_AUTHORIZED.includes(name)) {",
+      "why": "把关整体错位：该验的一条都不验。"
+    },
+    {
+      "id": "F4-07-缺凭据放行",
+      "file": "src/authority/command-surface.cjs",
+      "find": "    if (SEAT_AUTHORIZED.includes(name)) {",
+      "replace": "    if (SEAT_AUTHORIZED.includes(name) && params.recovery_credential !== undefined) {",
+      "why": "「没传就不验」式的宽松实现：不带凭据反而畅通无阻。"
+    },
+    {
+      "id": "F4-08-授权只看命令前缀",
+      "file": "src/authority/command-surface.cjs",
+      "find": "    if (SEAT_AUTHORIZED.includes(name)) {",
+      "replace": "    if (name.startsWith(\"seat.\")) {",
+      "why": "看起来更简洁的规则，实际漏掉 chat.say / ai.* / view.hand，并误伤 seat.recover。"
+    },
+    {
+      "id": "F4-09-授权不比对席位",
+      "file": "src/authority/command-surface.cjs",
+      "find": "      this.orchestrator.rooms.requireSeatCredential(\n        params.seat_id,\n        params.recovery_credential,\n      );",
+      "replace": "      requiredString(params.recovery_credential, \"recoveryCredential\", 512);",
+      "why": "只检查凭据格式不检查归属：任意一份真凭据能操作任意席位。"
+    },
+    {
+      "id": "F4-10-释放后凭据仍有效",
+      "file": "src/authority/room-store.cjs",
+      "find": "    if (seat.state === \"RELEASED\" || seat.credential_revoked) {\n      throw new ProbeError(\"seat_credential_revoked\", 403, { seat_id: seat.seat_id });\n    }",
+      "replace": "",
+      "why": "释放后的旧凭据继续可用：位子已经还给桌子，前一个人还能操作它。"
+    },
+    {
+      "id": "F4-11-凭据比对退化为长度相等",
+      "file": "src/authority/room-store.cjs",
+      "find": "    if (!sameSecret(credential, seat.recovery_credential)) {\n      // 不区分「席位不存在」与「凭据不对」之外的细节，避免成为探测口。\n      throw new ProbeError(\"recovery_credential_rejected\", 403, { seat_id: seat.seat_id });\n    }",
+      "replace": "    if (credential.length !== seat.recovery_credential.length) {\n      throw new ProbeError(\"recovery_credential_rejected\", 403, { seat_id: seat.seat_id });\n    }",
+      "why": "同长度的任意字符串都能通过，且同桌各席凭据长度本来就一样。"
+    },
+    {
+      "id": "F4-12-建连不清算保留窗归属",
+      "file": "src/authority/command-surface.cjs",
+      "find": "      \"seat.connect\": (p) => ({\n        connected: o.rooms.markConnected({\n          seatId: p.seat_id,",
+      "replace": "      \"seat.connect\": (p) => ({\n        connected: o.rooms.markConnected({\n          seatId: p.target_seat_id ?? p.seat_id,",
+      "why": "把关验的是 seat_id，动作却落到另一个字段上：门验一扇、动作走另一扇。"
+    },
+    {
+      "id": "F4-13-hand_act不自验凭据",
+      "file": "src/authority/command-surface.cjs",
+      "find": "        const seat = o.rooms.requireSeatCredential(p.seat_id, p.recovery_credential);\n        const playerId = o.requirePlayerId(seat.seat_id);\n        const envelope = o.act({",
+      "replace": "        const playerId = o.requirePlayerId(p.seat_id);\n        const envelope = o.act({",
+      "why": "hand.act 不在授权集合里，靠 handler 自验。摘掉它就没有任何一处把关——这正是「两个把关来源」的风险，独立清单必须发现它。"
+    },
+    {
+      "id": "F4-14-hand_reveal不自验凭据",
+      "file": "src/authority/command-surface.cjs",
+      "find": "        const seat = o.rooms.requireSeatCredential(p.seat_id, p.recovery_credential);\n        const playerId = o.requirePlayerId(seat.seat_id);\n        return o.revealCards({",
+      "replace": "        const playerId = o.requirePlayerId(p.seat_id);\n        return o.revealCards({",
+      "why": "同上，另一条自验命令。外人能替他席亮牌。"
+    }
+  ]
+}

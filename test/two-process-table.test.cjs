@@ -80,7 +80,10 @@ test("宿主中立：两个独立进程在同一份权威状态上打完一手�
   // F3：确认按席位记账，逐席带凭据确认。
   confirmAllSeatsViaSurface(s, seats);
   for (const seat of seats) {
-    s.dispatch("seat.connect", { seat_id: seat.seat_id, connection_id: `c-${seat.seat_id}` });
+    // F4：建连也要带本席凭据。
+    s.dispatch("seat.connect", {
+      seat_id: seat.seat_id, recovery_credential: seat.credential, connection_id: `c-${seat.seat_id}`,
+    });
     s.dispatch("ai.set_mode", {
       seat_id: seat.seat_id, recovery_credential: seat.credential, mode: "OFF",
     });

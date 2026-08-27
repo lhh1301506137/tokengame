@@ -30,6 +30,11 @@ const SEAT_AUTHORIZED = Object.freeze([
   "seat.ready",
   "seat.sit_out_after_hand",
   "seat.leave",
+  // F4：connect 与 disconnect 必须成对把关。原来只有 disconnect 在这里，于是只持传输
+  // 令牌的调用者能为任意席位建连——而 markConnected 会把 retention_expires_at 清成 null。
+  // 后果不是多一条假在线记录，而是被顶住的席位永远走不到 releaseExpiredSeats：位子不还，
+  // 桌子也凑不齐下一手。一个能被外人无限续期的保留窗等于没有保留窗。
+  "seat.connect",
   "seat.disconnect",
   "chat.say",
   "ai.set_mode",

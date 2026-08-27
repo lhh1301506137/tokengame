@@ -89,7 +89,12 @@ async function table(ctx, { playerCount = 2 } = {}) {
   for (const seat of seats) {
     // F3：确认按席位记账，过网也要带该席凭据与显式表态。
     await ctx.ok("room.confirm_public_scope", confirmParams(seat));
-    await ctx.ok("seat.connect", { seat_id: seat.seat_id, connection_id: `c-${seat.seat_id}` });
+    // F4：建连也要带该席凭据。
+    await ctx.ok("seat.connect", {
+      seat_id: seat.seat_id,
+      recovery_credential: seat.credential,
+      connection_id: `c-${seat.seat_id}`,
+    });
     await ctx.ok("ai.set_mode", {
       seat_id: seat.seat_id,
       recovery_credential: seat.credential,
