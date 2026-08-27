@@ -19,6 +19,13 @@
 const { ProbeError } = require("./event-store.cjs");
 const { RoomStore, TABLE_LIFECYCLE_V1 } = require("./room-store.cjs");
 const { SeatAiStore, LIVELY_V1 } = require("./seat-ai-store.cjs");
+const {
+  ActionLedger,
+  requiredRevision,
+  requiredKey,
+  handScope,
+  roomScope,
+} = require("./action-ledger.cjs");
 const { HoldemHand, shuffledDeck } = require("../game/holdem.cjs");
 
 // 牌局引擎事件 -> seat-ai-store 白名单事件。不在此表中的引擎事件（HOLE_CARDS_DEALT、
@@ -78,6 +85,11 @@ class TableOrchestrator {
     this.playerToSeat = new Map();
     // 待宿主执行的 AI 评估意图。本层只攒，不执行。
     this.pendingIntents = [];
+    // 官方动作的幂等账。放在本层而不是引擎里，因为要记的是**调用方拿到的整个信封**
+    // （含 intents），而 intents 是本层翻译出来的，引擎不知道它们存在。只记 result
+    // 的话，重放会返回原结果但重新跑一遍事件翻译，于是该席 AI 被唤醒两次——公开发言
+    // 配额按手计，重复唤醒会真的多发一次言。
+    this.actions = new ActionLedger();
     this.rooms.onEvent((event) => this.onRoomEvent(event));
   }
 
@@ -219,6 +231,10 @@ class TableOrchestrator {
       now: this.now,
     });
 
+    // 新的一手开始，丢掉上一手的幂等账。旧手的键本来就会被 hand_id 门禁拒绝，
+    // 所以这只是防止长会话里无界增长，不改变任何判定。
+    this.actions.forgetHandScopesExcept(this.hand.id);
+
     const intents = this.drainEngine();
     return { hand_id: this.hand.id, hand_index: started.payload.hand_index, roster, intents };
   }
@@ -240,12 +256,126 @@ class TableOrchestrator {
     return this.hand;
   }
 
+  // 玩家发起的官方行动。三个绑定字段必填，理由见 action-ledger.cjs 头部。
+  //
+  // 本层是官方动作的唯一入口：命令面的 hand.act 落到这里，而权威自己产生的动作
+  // （settleExpiredAction 的超时处置、applyPendingFold 的离桌弃牌）直接调 this.hand.act，
+  // 不经此门。那不是漏洞而是分工——权威自己的动作没有客户端可重试，硬要它们编一个
+  // 幂等键只会让权威给自己发明假身份。test/action-idempotency.test.cjs 用一份独立清单
+  // 钉住这条分工，防止将来新增的玩家入口绕过账本。
   act(input = {}) {
     const hand = this.requireHand();
-    const result = hand.act(input);
+    const gate = this.openActionGate({
+      hand,
+      handId: input.handId,
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: input.idempotencyKey,
+      fields: {
+        command: "hand.act",
+        player_id: input.playerId ?? null,
+        type: input.type ?? null,
+        amount: input.amount ?? null,
+        expected_revision: input.expectedRevision ?? null,
+      },
+    });
+    if (gate.replay) {
+      return gate.envelope;
+    }
+
+    const result = hand.act({
+      playerId: input.playerId,
+      type: input.type,
+      ...(input.amount === undefined ? {} : { amount: input.amount }),
+    });
     // all-in 状态回填给 room-store：规则 3 用它决定离桌时是强制弃牌还是等待结算。
     this.syncAllIn();
-    return { result, intents: this.drainEngine() };
+    return gate.commit({ result, intents: this.drainEngine() });
+  }
+
+  // 幂等门本体。任何可重放写命令都能用：给一个作用域、一个键、一份不含秘密的字段集。
+  // 不认识牌局，也不认识 revision——那些是官方动作的额外约束，加在外面。
+  openIdempotencyGate({ scope, idempotencyKey, fields }) {
+    const looked = this.actions.lookup({ scope, idempotencyKey, fields });
+    if (looked.replay) {
+      return { replay: true, envelope: { ...looked.envelope, replay: true } };
+    }
+    return {
+      replay: false,
+      commit: (envelope) => this.actions.commit({
+        scope,
+        idempotencyKey,
+        fingerprint: looked.fingerprint,
+        envelope,
+      }),
+    };
+  }
+
+  // 官方动作的三道门。顺序不能改，每一道都在解释里说清它挡的是什么。
+  openActionGate({ hand, handId, expectedRevision, idempotencyKey, fields }) {
+    // 第一道：hand_id。挡上一手的请求打到这一手。必须最先查——若先查账本，一个尚未
+    // 被清理的旧手条目会让指向死牌局的请求拿到一个「成功」信封。
+    if (typeof handId !== "string" || handId.length === 0) {
+      throw new ProbeError("invalid_field", 400, { field: "hand_id" });
+    }
+    if (handId !== hand.id) {
+      throw new ProbeError("hand_mismatch", 409, {
+        hand_id: handId,
+        current_hand_id: hand.id,
+      });
+    }
+    const revision = requiredRevision(expectedRevision, "expected_revision");
+
+    // 第二道：幂等账。必须**先于** revision 检查。重放天然带着过期 revision——第一次
+    // 执行本身就把版本推进了——所以顺序反过来会让每一次正常重试都撞上 revision_conflict，
+    // 状态是对的，但客户端反而无法判断自己那一手到底成没成。
+    const gate = this.openIdempotencyGate({
+      scope: handScope(handId),
+      idempotencyKey,
+      fields,
+    });
+    if (gate.replay) {
+      return gate;
+    }
+
+    // 第三道：expected_revision。挡「用过期状态形成的新请求在新状态上执行」，也就是
+    // 跨街重放本体：演员恰好又是同一人时，动作合法、席位对得上，只有版本号对不上。
+    if (revision !== hand.revision) {
+      throw new ProbeError("revision_conflict", 409, {
+        expected_revision: revision,
+        current_revision: hand.revision,
+      });
+    }
+
+    return gate;
+  }
+
+  // 规则 4：只有 all_others_folded 的赢家可自愿亮牌。走同一套幂等门。
+  //
+  // 引擎自己已经有一道按 playerId 的重放保护（第二次亮同一手牌返回 replay: true）。
+  // 那是一条规则——「你已经亮过了」——与本层的幂等键不是一回事：规则那道拦的是同一个人
+  // 亮两次，幂等键那道拦的是同一个请求被送达两次。两者都要，因为同键换 seat_id 必须
+  // 确定性拒绝，而引擎那道对不同 playerId 无话可说。
+  revealCards(input = {}) {
+    const hand = this.requireHand();
+    const gate = this.openActionGate({
+      hand,
+      handId: input.handId,
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: input.idempotencyKey,
+      fields: {
+        command: "hand.reveal",
+        player_id: input.playerId ?? null,
+        expected_revision: input.expectedRevision ?? null,
+      },
+    });
+    if (gate.replay) {
+      return gate.envelope;
+    }
+    const result = hand.revealCards(input.playerId);
+    // CARDS_VOLUNTARILY_REVEALED 不在白名单里，drain 出来只是不让它滞留在缓冲区，
+    // 不会唤醒任何席位 AI。
+    this.drainEngine();
+    return gate.commit(result);
   }
 
   settleExpiredAction() {
@@ -418,8 +548,35 @@ class TableOrchestrator {
 
   // ------------------------------------------------------------------ 公开交流通道
 
+  // 玩家公开发言。也是可重放写命令，所以也要幂等键（F2 要求 4）。
+  //
+  // 为什么它按房间记账而不按手：牌局之间也能发言，那时 hand_id 根本不存在。把发言绑到
+  // 手上等于让「等待开局时说的话」无法遵守绑定契约。
+  //
+  // 为什么它不要 expected_revision：revision 是牌局的版本，而发言不改变牌局。要求它
+  // 就等于说「牌桌状态一变你这句话就得重打」，而且开局前无从取值。缺了这一道不留洞——
+  // 跨街重放本体是「同一个动作在新状态上再执行一次」，发言没有对应的危害；真正要挡的
+  // 「重试被当成第二句话」由幂等键本身挡住。
+  //
+  // 重放必须连 evaluations 一起返回原值：AI 意图已经被第一次调用推进队列了，重放时
+  // 再产生一份就是同一句话唤醒该席 AI 两次，而公开发言配额按手计，多唤醒一次会真的多发
+  // 一次言。
   submitPlayerText(input = {}) {
     const room = this.rooms.requireRoom();
+    const gate = this.openIdempotencyGate({
+      scope: roomScope(room.room_binding_id),
+      idempotencyKey: requiredKey(input.idempotencyKey, "idempotency_key"),
+      fields: {
+        command: "chat.say",
+        seat_id: input.seatId ?? null,
+        text: input.text ?? null,
+        channel: input.channel ?? null,
+      },
+    });
+    if (gate.replay) {
+      return gate.envelope;
+    }
+
     // 绑房标识与桌规版本由本层注入：宿主不该有机会传错一个房间去过公开确认。
     const result = this.ai.submitPlayerText({
       ...input,
@@ -429,9 +586,9 @@ class TableOrchestrator {
     if (Array.isArray(result.evaluations)) {
       const accepted = this.acceptable(result.evaluations);
       this.pendingIntents.push(...accepted);
-      return { ...result, evaluations: accepted };
+      return gate.commit({ ...result, evaluations: accepted });
     }
-    return result;
+    return gate.commit(result);
   }
 
   // 宿主取走待办意图后自行调用模型，再用 resolveEvaluation 回填。

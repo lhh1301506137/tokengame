@@ -19,6 +19,7 @@ const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs")
 const { RoomStore, TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
+const { actionBinding } = require("../test-support/action-binding.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -80,6 +81,11 @@ function harness({ playerCount = 2, ...options } = {}) {
     seats,
     seatId: (index) => seats[index].seat_id,
     credential: (index) => credentials[index],
+    // F2：官方动作要带 hand_id + expected_revision + idempotency_key。这里按当前状态
+    // 自动形成，本文件测的是筹码不是幂等门。
+    act(input) {
+      return orchestrator.act({ ...input, ...actionBinding(orchestrator) });
+    },
     at: () => now,
     advance(ms) {
       now += ms;
@@ -125,9 +131,9 @@ test("F1：赢来的筹码进入下一手，不被重新发放为起始筹码", 
 
   // 单挑：小盲=庄家先行动。让先行动者加注到 20，另一席弃牌。
   const raiser = actorPlayerId(ctx);
-  ctx.o.act({ playerId: raiser, type: "raise", amount: 20 });
+  ctx.act({ playerId: raiser, type: "raise", amount: 20 });
   const folder = actorPlayerId(ctx);
-  ctx.o.act({ playerId: folder, type: "fold" });
+  ctx.act({ playerId: folder, type: "fold" });
 
   assert.equal(ctx.o.hand.status, "complete");
   const settled = new Map(ctx.o.hand.seats.map((seat) => [seat.id, seat.stack]));
@@ -156,8 +162,8 @@ test("F1：席位账本是跨手 stack 的权威，结算后幂等回写", () =>
 
   begin(ctx);
   const raiser = actorPlayerId(ctx);
-  ctx.o.act({ playerId: raiser, type: "raise", amount: 20 });
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  ctx.act({ playerId: raiser, type: "raise", amount: 20 });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
 
   const total = ledgerStack(ctx, 0) + ledgerStack(ctx, 1);
   assert.equal(total, 400, "跨手账本同样要守恒");
@@ -187,8 +193,8 @@ test("F1：席位账本是跨手 stack 的权威，结算后幂等回写", () =>
   const second = ctx.o.startHandIfDue();
   assert.equal(second.started, true, "第二手应当自动开始");
   assert.equal(ctx.o.rooms.handIndex, 2);
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
   assert.equal(ctx.o.rooms.stacksSettledForHandIndex, 2, "第二手结算后账本停在手号 2");
 
   const afterSecond = [ledgerStack(ctx, 0), ledgerStack(ctx, 1)];
@@ -216,7 +222,7 @@ test("F1：all-in 与边池结算后的 stack 跨手延续", () => {
   // 三席全部 all-in，走到摊牌。谁赢由固定牌堆决定，这里不预言赢家，
   // 只要求「结算后的三个 stack 原样进入下一手」。
   for (let guard = 0; guard < 6 && ctx.o.hand.status !== "complete"; guard += 1) {
-    ctx.o.act({ playerId: actorPlayerId(ctx), type: "all_in" });
+    ctx.act({ playerId: actorPlayerId(ctx), type: "all_in" });
   }
   assert.equal(ctx.o.hand.status, "complete");
 
@@ -238,7 +244,7 @@ test("F1：筹码归零的席位进入 sit out，不带着 0 筹码被塞进下�
   const ctx = harness({ playerCount: 3, startingStack: 200 });
   begin(ctx);
   for (let guard = 0; guard < 6 && ctx.o.hand.status !== "complete"; guard += 1) {
-    ctx.o.act({ playerId: actorPlayerId(ctx), type: "all_in" });
+    ctx.act({ playerId: actorPlayerId(ctx), type: "all_in" });
   }
   assert.equal(ctx.o.hand.status, "complete");
 
@@ -279,7 +285,7 @@ test("F1：破产席位重新 Ready 也进不了下一手名单", () => {
   begin(ctx);
   // 前两位行动者全下，其余弃牌。
   for (let guard = 0; guard < 8 && ctx.o.hand.status !== "complete"; guard += 1) {
-    ctx.o.act({ playerId: actorPlayerId(ctx), type: guard < 2 ? "all_in" : "fold" });
+    ctx.act({ playerId: actorPlayerId(ctx), type: guard < 2 ? "all_in" : "fold" });
   }
   assert.equal(ctx.o.hand.status, "complete");
 
@@ -321,7 +327,7 @@ test("F1：有筹码的席位不足两名时门禁按名单拒绝，不承诺开
   const ctx = harness({ playerCount: 3, startingStack: 200 });
   begin(ctx);
   for (let guard = 0; guard < 6 && ctx.o.hand.status !== "complete"; guard += 1) {
-    ctx.o.act({ playerId: actorPlayerId(ctx), type: "all_in" });
+    ctx.act({ playerId: actorPlayerId(ctx), type: "all_in" });
   }
   assert.equal(ctx.o.hand.status, "complete");
 
@@ -356,8 +362,8 @@ test("F1：掉线恢复回到同一席同一 stack，恢复本身不改筹码", 
   const ctx = harness({ playerCount: 2, startingStack: 200 });
   begin(ctx);
   const raiser = actorPlayerId(ctx);
-  ctx.o.act({ playerId: raiser, type: "raise", amount: 20 });
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  ctx.act({ playerId: raiser, type: "raise", amount: 20 });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
 
   const seatId = ctx.seatId(1);
   const before = ctx.o.rooms.seatState(seatId).stack;
@@ -377,8 +383,8 @@ test("F1：掉线恢复回到同一席同一 stack，恢复本身不改筹码", 
 test("F1：席位释放时筹码离桌并记在事件里，不静默消失", () => {
   const ctx = harness({ playerCount: 2, startingStack: 200 });
   begin(ctx);
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
 
   const seatId = ctx.seatId(1);
   const stack = ctx.o.rooms.seatState(seatId).stack;
@@ -414,7 +420,7 @@ test("F1：本手内离桌，带走的是结算后的筹码而不是开手前的
   // 让离桌者在这一手确实亏掉一些：先由对手加注，离桌的强制弃牌会丢掉已投入的盲注。
   const raiser = actorPlayerId(ctx);
   assert.notEqual(raiser, ctx.o.requirePlayerId(leaverSeatId), "加注的应当是另一席");
-  ctx.o.act({ playerId: raiser, type: "raise", amount: 20 });
+  ctx.act({ playerId: raiser, type: "raise", amount: 20 });
 
   // 走真实入口：room-store 只记下 pending_fold，引擎侧由 applyPendingFold 在轮到该席时补上。
   ctx.o.rooms.leaveTable({ seatId: leaverSeatId });
@@ -523,8 +529,8 @@ test("F1：起始筹码由房间账本一次发放，orchestrator 不再每手�
   for (const seat of ctx.o.hand.seats) {
     assert.equal(seat.starting_stack, 150);
   }
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
 
   const started = nextHand(ctx);
   assert.equal(started.started, true);
@@ -539,10 +545,10 @@ test("F1：engineStack 与账本在手内一致——手内不回写，结算才
   assert.equal(ledgerStack(ctx, 1), 200);
   assert.ok(engineStack(ctx, 0) < 200 || engineStack(ctx, 1) < 200, "引擎侧已扣盲注");
 
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "raise", amount: 20 });
   assert.equal(ledgerStack(ctx, 0) + ledgerStack(ctx, 1), 400, "手内账本不动");
 
-  ctx.o.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
   assert.equal(ledgerStack(ctx, 0) + ledgerStack(ctx, 1), 400);
   assert.ok(
     ledgerStack(ctx, 0) !== 200 || ledgerStack(ctx, 1) !== 200,

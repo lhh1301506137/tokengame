@@ -14,6 +14,10 @@ const TOKEN = process.env.TOKENGAME_AUTHORITY_TOKEN;
 const SEAT_ID = process.env.TOKENGAME_SEAT_ID;
 const CREDENTIAL = process.env.TOKENGAME_SEAT_CREDENTIAL;
 
+// 唯一的 require，且不在 src/ 下：绑定字段的形成规则只该有一份，
+// 各调用点各写一遍迟早有人把某个字段填成常量。
+const { actionBindingFromProjection } = require("./action-binding.cjs");
+
 const MAX_POLLS = 200;
 
 async function call(command, params = {}) {
@@ -104,7 +108,18 @@ async function main() {
     const choice = legal.includes("check")
       ? "check"
       : legal.includes("call") ? "call" : "fold";
-    await call("hand.act", seatAuth({ action: choice }));
+    // 绑定字段来自刚刚这一次轮询的投影。远端玩家能拿到的就只有这个：
+    // hand_id 与 revision 都在自己的私密视图里，不需要任何进程内知识。
+    const bound = actionBindingFromProjection(hand);
+    try {
+      await call("hand.act", seatAuth({ action: choice, ...bound }));
+    } catch (error) {
+      // 状态在读与写之间变了。真实客户端此时该重新轮询而不是崩掉，所以这里也这么做。
+      // 若动作因此永远落不了地，循环会走到 MAX_POLLS，报 poll_limit_reached，
+      // 测试仍然会失败——重试不会把真问题吞掉。
+      if (error.code === "revision_conflict" || error.code === "hand_mismatch") continue;
+      throw error;
+    }
     report.actions_taken.push(choice);
   }
 

@@ -28,6 +28,7 @@ const { RoomStore, TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.c
 const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
+const { actionBinding } = require("../test-support/action-binding.cjs");
 
 const ACTION_TIMEOUT_MS = 30_000;
 
@@ -266,7 +267,9 @@ function actAfterDeadline({ settleFirst }) {
   ctx.advance(ACTION_TIMEOUT_MS + 1);
   if (settleFirst) ctx.o.settleExpiredAction();
   try {
-    ctx.o.act({ playerId: actorId, type: "fold" });
+    // 绑定必须在 settleFirst 之后才形成：自动行动推进了 revision，用先前的快照会让
+    // 幂等门先答出 revision_conflict，两种情形就都测不到本条要测的东西了。
+    ctx.o.act({ playerId: actorId, type: "fold", ...actionBinding(ctx.o) });
     return "acted";
   } catch (error) {
     return error.code ?? "unexpected";
@@ -296,7 +299,7 @@ test("时相无关：时限内的行动照常生效（对照组）", () => {
   ctx.o.settleExpiredAction();
   // act 的返回是 resultSummary()：{accepted, hand_id, revision, status, street,
   // actor_player_id}，动作细节在 PLAYER_ACTION 事件里，不在返回值上。
-  const { result } = ctx.o.act({ playerId: actorId, type: "fold" });
+  const { result } = ctx.o.act({ playerId: actorId, type: "fold", ...actionBinding(ctx.o) });
   assert.equal(result.accepted, true, "还剩 1 毫秒，跑一趟结算不该把窗口提前关掉");
   assert.notEqual(result.actor_player_id, actorId, "行动生效后轮次应当走开");
 });

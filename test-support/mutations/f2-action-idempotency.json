@@ -1,0 +1,151 @@
+{
+  "finding": "F2",
+  "summary": "官方动作与其他可重放写命令必须绑定 hand_id + expected_revision + idempotency_key。每条变异都对应一处若失守则一次重试变成两个动作、或一次正常重试反被拒绝的地方。",
+  "test": "test/action-idempotency.test.cjs",
+  "mutations": [
+    {
+      "id": "F2-01-完全不查幂等账",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "    const looked = this.actions.lookup({ scope, idempotencyKey, fields });\n    if (looked.replay) {",
+      "replacement": "    const looked = this.actions.lookup({ scope, idempotencyKey, fields });\n    if (false) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "缺陷本体：查了账但从不认重放，每次重试都当新动作执行一遍。"
+    },
+    {
+      "id": "F2-02-不校验-hand_id-相等",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "    if (handId !== hand.id) {",
+      "replacement": "    if (false) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "指向上一手的请求打到这一手仍被受理，hand_id 变成装饰性字段。"
+    },
+    {
+      "id": "F2-03-不校验-expected_revision",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "    if (revision !== hand.revision) {",
+      "replacement": "    if (false) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "跨街重放本体：用过期状态形成的新请求在新状态上照常执行。"
+    },
+    {
+      "id": "F2-04-revision-检查排到账本之前",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "    const gate = this.openIdempotencyGate({\n      scope: handScope(handId),\n      idempotencyKey,\n      fields,\n    });\n    if (gate.replay) {\n      return gate;\n    }\n\n    // 第三道：expected_revision。挡「用过期状态形成的新请求在新状态上执行」，也就是\n    // 跨街重放本体：演员恰好又是同一人时，动作合法、席位对得上，只有版本号对不上。\n    if (revision !== hand.revision) {\n      throw new ProbeError(\"revision_conflict\", 409, {\n        expected_revision: revision,\n        current_revision: hand.revision,\n      });\n    }\n\n    return gate;",
+      "replacement": "    if (revision !== hand.revision) {\n      throw new ProbeError(\"revision_conflict\", 409, {\n        expected_revision: revision,\n        current_revision: hand.revision,\n      });\n    }\n\n    return this.openIdempotencyGate({\n      scope: handScope(handId),\n      idempotencyKey,\n      fields,\n    });",
+      "guards": "顺序反过来：重放天然带着过期 revision，于是每一次真实的网络重试都撞 revision_conflict，客户端永远无法确认自己那一手成没成——幂等键那一半失效。",
+      "test": "test/action-idempotency.test.cjs"
+    },
+    {
+      "id": "F2-05-同键不同-payload-返回原结果",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "    if (recorded.fingerprint !== print) {",
+      "replacement": "    if (false) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "同一个键换 payload 拿到上一个动作的结果，调用方以为自己那个不同的动作成功了。"
+    },
+    {
+      "id": "F2-06-指纹忽略字段值",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "  return JSON.stringify(keys.map((key) => [key, fields[key] ?? null]));",
+      "replacement": "  return JSON.stringify(keys);",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "指纹只认字段名不认取值，于是任何同形状请求都算同一个请求，同键换动作被静默放过。"
+    },
+    {
+      "id": "F2-07-执行后不记账",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "    entries.set(key, { fingerprint: print, envelope });",
+      "replacement": "    void 0;",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "账永远是空的，每次重试都是新动作。"
+    },
+    {
+      "id": "F2-08-幂等键接受空串",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "  if (typeof value !== \"string\" || value.length === 0 || value.length > 128) {",
+      "replacement": "  if (false) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "键不校验：缺字段的请求全都共享 undefined 这一个键，互相当成彼此的重放。"
+    },
+    {
+      "id": "F2-09-revision-接受字符串数字",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "  if (typeof value !== \"number\" || !Number.isSafeInteger(value) || value < 1) {",
+      "replacement": "  if (value === undefined) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "收下 \"3\" 或 1.5，比大小时静默走进 !== 分支或永不相等，把类型错误推迟到「为什么这一手重复执行了」才暴露。"
+    },
+    {
+      "id": "F2-10-作用域不隔离",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "    let bucket = this.byScope.get(scope);",
+      "replacement": "    let bucket = this.byScope.get(\"__all__\");\n    scope = \"__all__\";",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "所有作用域共用一个账：上一手用过的键在这一手被当成重放，牌局动作与聊天互相撞键。"
+    },
+    {
+      "id": "F2-11-清理时连房间作用域一起丢",
+      "file": "src/authority/action-ledger.cjs",
+      "needle": "      if (scope.startsWith(\"hand:\") && scope !== keep) {",
+      "replacement": "      if (scope !== keep) {",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "新的一手把发言账一起清掉，一次跨手到达的聊天重试重新发一遍言。"
+    },
+    {
+      "id": "F2-12-新手不清旧手账",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "    this.actions.forgetHandScopesExcept(this.hand.id);",
+      "replacement": "    void 0;",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "旧手条目长期驻留。判定上仍由 hand_id 门禁挡住，但账无界增长——这一条存活说明缺的是「清理真的发生了」的证据。"
+    },
+    {
+      "id": "F2-13-发言不经幂等门",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "    if (gate.replay) {\n      return gate.envelope;\n    }\n\n    // 绑房标识与桌规版本由本层注入",
+      "replacement": "    if (false) {\n      return gate.envelope;\n    }\n\n    // 绑房标识与桌规版本由本层注入",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "重放一次就多一条公开发言、多唤醒该席 AI 一次；公开发言配额按手计，多唤醒一次会真的多发一次言。"
+    },
+    {
+      "id": "F2-14-发言不要幂等键",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "      idempotencyKey: requiredKey(input.idempotencyKey, \"idempotency_key\"),",
+      "replacement": "      idempotencyKey: input.idempotencyKey ?? \"anonymous\",",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "不传键的发言全部共享同一个键，第二句不同的话被当成同键冲突或直接吞掉。"
+    },
+    {
+      "id": "F2-15-重放时重新产生-AI-意图",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "      return gate.commit({ ...result, evaluations: accepted });",
+      "replacement": "      this.pendingIntents.push(...accepted);\n      return gate.commit({ ...result, evaluations: accepted });",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "同一句话把意图推进队列两次，该席 AI 被唤醒两次。"
+    },
+    {
+      "id": "F2-16-命令面不透传-hand_id",
+      "file": "src/authority/command-surface.cjs",
+      "needle": "        handId: p.hand_id,",
+      "replacement": "        handId: o.requireHand().id,",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "命令面用当前手号覆盖调用方给的手号，hand_id 门禁永远自我满足，指向旧手的请求照常执行。"
+    },
+    {
+      "id": "F2-17-命令面不透传-expected_revision",
+      "file": "src/authority/command-surface.cjs",
+      "needle": "        expectedRevision: p.expected_revision,",
+      "replacement": "        expectedRevision: o.requireHand().revision,",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "命令面用当前版本覆盖调用方给的版本，revision 门禁永远自我满足，跨街重放恢复。"
+    },
+    {
+      "id": "F2-18-重放不标记-replay",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "      return { replay: true, envelope: { ...looked.envelope, replay: true } };",
+      "replacement": "      return { replay: true, envelope: { ...looked.envelope } };",
+      "test": "test/action-idempotency.test.cjs",
+      "guards": "重放返回的信封与首次执行完全无法区分，调用方无法知道自己这一次没有落地新动作。"
+    }
+  ]
+}

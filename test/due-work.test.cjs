@@ -12,6 +12,7 @@ const { createCommandServer } = require("../src/authority/command-server.cjs");
 const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs");
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
+const { actionBinding } = require("../test-support/action-binding.cjs");
 
 const RULES = "table-rules-v1";
 const UNREF_SCRIPT = path.join(__dirname, "..", "test-support", "due-work-unref.cjs");
@@ -143,7 +144,7 @@ test("规则2：截止时可 check 则自动 check，判定仍在内核", () => 
     hand.legalActions(actorId).some((action) => action.type === "call"),
     "前置条件不成立：当前行动者应当可以跟注",
   );
-  ctx.orchestrator.act({ playerId: actorId, type: "call" });
+  ctx.orchestrator.act({ playerId: actorId, type: "call", ...actionBinding(ctx.orchestrator) });
 
   const beforeStreet = ctx.orchestrator.hand.street;
   const legal = ctx.orchestrator.hand

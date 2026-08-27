@@ -171,15 +171,24 @@ class CommandSurface {
           : { started: false, decision: outcome.decision };
       },
 
+      // 三个绑定字段必填，理由见 action-ledger.cjs 头部。本层只透传，判定在编排层，
+      // 因为幂等账要记的是编排层形成的整个信封（含 intents）。
       "hand.act": (p) => {
         const seat = o.rooms.requireSeatCredential(p.seat_id, p.recovery_credential);
         const playerId = o.requirePlayerId(seat.seat_id);
-        const { result, intents } = o.act({
+        const envelope = o.act({
           playerId,
           type: p.action,
           ...(p.amount === undefined ? {} : { amount: p.amount }),
+          handId: p.hand_id,
+          expectedRevision: p.expected_revision,
+          idempotencyKey: p.idempotency_key,
         });
-        return { result, intent_count: intents.length };
+        return {
+          result: envelope.result,
+          intent_count: envelope.intents.length,
+          ...(envelope.replay === true ? { replay: true } : {}),
+        };
       },
 
       // 回收租约到期的 AI 评估回合。同样是「谁都可以催，只在真的到期时才动作」，
@@ -196,10 +205,16 @@ class CommandSurface {
       },
 
       // 规则 4：只有 all_others_folded 的赢家可自愿亮牌，由引擎裁决。
+      // 同 hand.act 的幂等门：亮牌也是一条会推进版本号的可重放写命令。
       "hand.reveal": (p) => {
         const seat = o.rooms.requireSeatCredential(p.seat_id, p.recovery_credential);
         const playerId = o.requirePlayerId(seat.seat_id);
-        return o.requireHand().revealCards(playerId);
+        return o.revealCards({
+          playerId,
+          handId: p.hand_id,
+          expectedRevision: p.expected_revision,
+          idempotencyKey: p.idempotency_key,
+        });
       },
 
       "hand.apply_pending_fold": (p) => ({
@@ -207,16 +222,20 @@ class CommandSurface {
       }),
 
       // ------------------------------------------------------------ 公开交流
+      // 公开发言也要幂等键。它按房间记账、不要 expected_revision，理由在
+      // table-orchestrator.submitPlayerText 的注释里。
       "chat.say": (p) => {
         const result = o.submitPlayerText({
           seatId: p.seat_id,
           text: p.text,
           ...(p.channel === undefined ? {} : { channel: p.channel }),
+          idempotencyKey: p.idempotency_key,
         });
         return {
           published: result.published === null ? null : result.published.payload,
           local_control: result.local_control,
           intent_count: result.evaluations.length,
+          ...(result.replay === true ? { replay: true } : {}),
         };
       },
 

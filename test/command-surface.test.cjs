@@ -10,6 +10,10 @@ const { CommandSurface, SEAT_AUTHORIZED } = require("../src/authority/command-su
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
+const {
+  actionBindingFromProjection,
+  chatBindingParams,
+} = require("../test-support/action-binding.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -322,6 +326,7 @@ test("端到端：整局只经 dispatch 打完，两个内核的手序同步推�
     seat_id: who.seat_id,
     recovery_credential: who.credential,
     action: "fold",
+    ...actionBindingFromProjection(ctx.s.dispatch("view.projection").public_hand),
   });
 
   const projection = ctx.s.dispatch("view.projection");
@@ -354,6 +359,7 @@ test("端到端：公开发言经命令面进入时间线，并产生可回填�
     seat_id: ctx.seats[0].seat_id,
     recovery_credential: ctx.seats[0].credential,
     text: "我这把跟到底",
+    ...chatBindingParams(),
   });
   assert.equal(said.published.text, "我这把跟到底");
   assert.equal(said.published.poker_action_effect, null, "公开话术永无牌局动作效力");
@@ -368,6 +374,7 @@ test("端到端：LOCAL_CONTROL 通道不公开、不进 AI 上下文", () => {
     recovery_credential: ctx.seats[0].credential,
     text: "把我的 AI 关掉",
     channel: "LOCAL_CONTROL",
+    ...chatBindingParams(),
   });
   assert.equal(said.local_control, true);
   assert.equal(said.published, null);

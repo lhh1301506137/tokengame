@@ -27,6 +27,7 @@ const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs")
 const { createDueWorkDriver } = require("../src/authority/due-work.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { AUTHORITY_DRIVEN_COMMANDS, HOST_COMMANDS } = require("../src/authority/host-surface.cjs");
+const { chatBinding } = require("../test-support/action-binding.cjs");
 
 const ROOM = "room-binding-1";
 const RULES = "table-rules-v1";
@@ -293,6 +294,7 @@ test("驱动：到期驱动自己走这一步，没有任何宿主参与", () =>
     seatId,
     text: "我先看看",
     recoveryCredential: ctx.seats[0].credential,
+    ...chatBinding(),
   }).evaluations;
   const mine = intents.find((intent) => intent.seat_id === seatId && intent.accepted === true);
   assert.notEqual(mine, undefined, "该席应被唤醒");
@@ -319,6 +321,7 @@ test("驱动：回收排在开新手之前，新手不会带着幽灵回合开�
     seatId,
     text: "开始吧",
     recoveryCredential: ctx.seats[0].credential,
+    ...chatBinding(),
   }).evaluations;
   const mine = intents.find((intent) => intent.seat_id === seatId && intent.accepted === true);
   ctx.orchestrator.startEvaluation({ seatId, context: mine.context });

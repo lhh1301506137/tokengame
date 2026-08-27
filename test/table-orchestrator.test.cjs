@@ -16,6 +16,7 @@ const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { LIVELY_V1, WHITELIST_SOURCE_EVENTS } = require("../src/authority/seat-ai-store.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
+const { actionBinding, chatBinding } = require("../test-support/action-binding.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -66,6 +67,12 @@ function harness({ playerCount = 3, ...options } = {}) {
     invite: created.invite,
     seats,
     seatId: (index) => seats[index].seat_id,
+    // F2：官方动作要带 hand_id + expected_revision + idempotency_key。按当前状态自动形成，
+    // 本文件测的是事件翻译不是幂等门。要测无牌局路径的地方仍直调 o.act，
+    // 因为这个助手自己要先 requireHand()。
+    act(input) {
+      return orchestrator.act({ ...input, ...actionBinding(orchestrator) });
+    },
     at: () => now,
     advance(ms) {
       now += ms;
@@ -211,7 +218,7 @@ test("隐私：底牌从不经翻译进入 AI 上下文，无争议结束时也�
   begin(ctx, [0, 1]);
 
   // 打完一整手（一方弃牌，走 all_others_folded 路径）。
-  ctx.o.act({ playerId: actor(ctx).playerId, type: "fold" });
+  ctx.act({ playerId: actor(ctx).playerId, type: "fold" });
   assert.equal(ctx.o.hand.finishReason, "all_others_folded");
 
   // 所有进过 AI 上下文的 payload：既包括交出去的意图，也包括内核记下的。
@@ -243,7 +250,7 @@ test("翻译：check / call / fold 不唤醒任何席位 AI", () => {
   ctx.o.takeIntents();
 
   const who = actor(ctx);
-  const { intents } = ctx.o.act({ playerId: who.playerId, type: "call" });
+  const { intents } = ctx.act({ playerId: who.playerId, type: "call" });
   const fromCall = intents.filter(
     (intent) => intent.context.source_event_type === "BET"
       || intent.context.source_event_type === "RAISE"
@@ -258,7 +265,7 @@ test("翻译：加注翻译成 RAISE 并唤醒其余在座 AI", () => {
   ctx.o.takeIntents();
 
   const who = actor(ctx);
-  const { intents } = ctx.o.act({ playerId: who.playerId, type: "raise", amount: 6 });
+  const { intents } = ctx.act({ playerId: who.playerId, type: "raise", amount: 6 });
   const raiseIntents = intents.filter(
     (intent) => intent.context.source_event_type === "RAISE",
   );
@@ -298,8 +305,8 @@ test("翻译：街推进走 advanceStreet，seat-ai-store 的 street 随之前�
   assert.equal(ctx.o.ai.street, "preflop");
 
   // 两人局：小盲补齐、大盲过牌，翻牌圈到来。
-  ctx.o.act({ playerId: actor(ctx).playerId, type: "call" });
-  ctx.o.act({ playerId: actor(ctx).playerId, type: "check" });
+  ctx.act({ playerId: actor(ctx).playerId, type: "call" });
+  ctx.act({ playerId: actor(ctx).playerId, type: "check" });
 
   assert.equal(ctx.o.ai.street, "flop");
   assert.ok(aiEventTypes(ctx).includes("STREET_ADVANCED"));
@@ -308,7 +315,7 @@ test("翻译：街推进走 advanceStreet，seat-ai-store 的 street 随之前�
 test("翻译：牌局结束触发房间结算与 HAND_SETTLED 唤醒，两侧只记一次", () => {
   const ctx = harness({ playerCount: 2 });
   begin(ctx, [0, 1]);
-  ctx.o.act({ playerId: actor(ctx).playerId, type: "fold" });
+  ctx.act({ playerId: actor(ctx).playerId, type: "fold" });
 
   assert.equal(ctx.o.hand.status, "complete");
   assert.equal(
@@ -337,7 +344,7 @@ test("编排：只把 accepted 的意图交给宿主，被合并与冷却的留�
 
   // 立刻再来一个白名单事件：冷却未满，内核应记为 cooldown 而不交给宿主。
   const who = actor(ctx);
-  const { intents: second } = ctx.o.act({ playerId: who.playerId, type: "raise", amount: 6 });
+  const { intents: second } = ctx.act({ playerId: who.playerId, type: "raise", amount: 6 });
   const stillActive = second.filter((intent) => intent.accepted !== true);
   assert.deepEqual(stillActive, [], "非 accepted 的意图不得外泄给宿主");
 });
@@ -363,7 +370,7 @@ test("规则3（桌面）：离桌围栏立即把该席 AI 切 OFF，停止唤�
   // 后续白名单事件不得再为该席产生意图。
   ctx.o.takeIntents();
   ctx.advance(LIVELY_V1.aiMinEvaluationIntervalMs);
-  const { intents } = ctx.o.act({ playerId: actor(ctx).playerId, type: "raise", amount: 6 });
+  const { intents } = ctx.act({ playerId: actor(ctx).playerId, type: "raise", amount: 6 });
   assert.deepEqual(
     intents.filter((intent) => intent.seat_id === seatId),
     [],
@@ -408,7 +415,7 @@ test("规则3（桌面）：牌内离桌的强制弃牌延迟到该席行动时�
       break;
     }
     const legal = ctx.o.hand.legalActions(who.playerId).map((entry) => entry.type);
-    ctx.o.act({ playerId: who.playerId, type: legal.includes("call") ? "call" : "check" });
+    ctx.act({ playerId: who.playerId, type: legal.includes("call") ? "call" : "check" });
     guard += 1;
   }
 
@@ -433,7 +440,7 @@ test("规则3（桌面）：轮到离桌席位时无需宿主介入，drainEngin
   const otherPlayer = ctx.o.requirePlayerId(otherSeat);
   ctx.o.rooms.leaveTable({ seatId: otherSeat });
 
-  ctx.o.act({ playerId: current.playerId, type: "call" });
+  ctx.act({ playerId: current.playerId, type: "call" });
   assert.equal(ctx.o.hand.seatById(otherPlayer).folded, true, "无需宿主调用即自动落地");
   assert.equal(ctx.o.hand.status, "complete", "只剩一人，本手结束");
 });
@@ -444,7 +451,7 @@ test("规则3（桌面）：全下席位离桌不弃牌，改为等待结算", (
   begin(ctx, [0, 1]);
 
   const who = actor(ctx);
-  ctx.o.act({ playerId: who.playerId, type: "all_in" });
+  ctx.act({ playerId: who.playerId, type: "all_in" });
   const seatId = who.seatId;
   assert.equal(ctx.o.rooms.seatState(seatId).all_in, true, "all-in 必须回填给房间");
 
@@ -465,7 +472,7 @@ test("编排：本手已结束时未落地的强制弃牌只消费记账，不�
   ctx.o.rooms.leaveTable({ seatId: leaverSeat });
   assert.equal(ctx.o.rooms.seatState(leaverSeat).pending_fold, true);
 
-  ctx.o.act({ playerId: current.playerId, type: "fold" });
+  ctx.act({ playerId: current.playerId, type: "fold" });
   assert.equal(ctx.o.hand.status, "complete");
   // 规则 3：结算时离桌席位被释放，凭据吊销。
   assert.equal(ctx.o.rooms.seatState(leaverSeat).state, "RELEASED");
@@ -514,9 +521,14 @@ test("编排：公开发言必须先有默认公开确认，未确认时拒绝�
     deckFactory: deck,
   });
   const created = o.createRoom({ hostPlayerId: "p1", tableRulesVersion: RULES });
-  // 故意跳过 confirmPublicScope。
+  // 故意跳过 confirmPublicScope。幂等键是合法的：这样拒绝的理由只能是公开确认那一条，
+  // 而不是顺带被字段校验挡下来。
   assert.throws(
-    () => o.submitPlayerText({ seatId: created.seat.seat_id, text: "开牌了吗" }),
+    () => o.submitPlayerText({
+      seatId: created.seat.seat_id,
+      text: "开牌了吗",
+      ...chatBinding(),
+    }),
     probe("default_public_scope_not_confirmed"),
   );
   assert.deepEqual(o.ai.publicTimeline(), []);
@@ -528,7 +540,11 @@ test("编排：公开发言先入公开时间线再产生 AI 意图，顺序稳�
   ctx.o.takeIntents();
   ctx.advance(LIVELY_V1.aiMinEvaluationIntervalMs);
 
-  const result = ctx.o.submitPlayerText({ seatId: ctx.seatId(0), text: "这把我跟" });
+  const result = ctx.o.submitPlayerText({
+    seatId: ctx.seatId(0),
+    text: "这把我跟",
+    ...chatBinding(),
+  });
   const timeline = ctx.o.ai.publicTimeline();
   assert.equal(timeline.at(-1).type, "PLAYER_PUBLIC_SPEECH");
   // 内核对包括发言者本席在内的所有非 OFF 席位一律唤醒，不排除发言者自己。
@@ -560,7 +576,7 @@ test("编排：整手牌走完后房间自动续局，两个内核的 handIndex 
   const ctx = harness({ playerCount: 2 });
   silenceAll(ctx);
   begin(ctx, [0, 1]);
-  ctx.o.act({ playerId: actor(ctx).playerId, type: "fold" });
+  ctx.act({ playerId: actor(ctx).playerId, type: "fold" });
 
   assert.equal(ctx.o.rooms.handIndex, 1);
   ctx.advance(TABLE_LIFECYCLE_V1.interHandDisplayMs);

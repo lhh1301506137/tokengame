@@ -13,6 +13,7 @@ const {
 } = require("../src/authority/command-server.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
+const { actionBindingFromProjection } = require("../test-support/action-binding.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -220,10 +221,13 @@ test("端到端：整局只经 HTTP 打完，且过网后手序仍然同步", as
     const choice = legal.includes("check") ? "check" : legal.includes("call") ? "call" : "fold";
     // 参数名是 action，不是 type。这是命令面的词表，我第一次写成了 type，
     // 内核回的 details.action 是空字符串才发现。
+    // 绑定字段从这一席自己的私密视图取——它就是 publicProjection 形状，
+    // 带 hand_id 与 revision。跨进程客户端能拿到的信息不比这更多。
     await ctx.ok("hand.act", {
       seat_id: actor.seat.seat_id,
       recovery_credential: actor.seat.credential,
       action: choice,
+      ...actionBindingFromProjection(actor.view),
     });
   }
   assert.ok(guard < 40, "牌局应当在有限步内结束");
