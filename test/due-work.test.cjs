@@ -13,6 +13,7 @@ const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs")
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { actionBinding } = require("../test-support/action-binding.cjs");
+const { confirmAllSeats, confirmAllSeatsViaSurface } = require("../test-support/public-scope.cjs");
 
 const RULES = "table-rules-v1";
 const UNREF_SCRIPT = path.join(__dirname, "..", "test-support", "due-work-unref.cjs");
@@ -42,7 +43,6 @@ function harness({ playerCount = 2 } = {}) {
   });
 
   const created = orchestrator.createRoom({ hostPlayerId: "p1", tableRulesVersion: RULES });
-  orchestrator.confirmPublicScope();
   const seats = [{ seat_id: created.seat.seat_id, credential: created.credential }];
   for (let index = 2; index <= playerCount; index += 1) {
     const joined = orchestrator.joinRoom({
@@ -51,6 +51,8 @@ function harness({ playerCount = 2 } = {}) {
     });
     seats.push({ seat_id: joined.seat.seat_id, credential: joined.credential });
   }
+  // F3：确认按席位记账，只能在席位存在之后逐席确认。
+  confirmAllSeats(orchestrator, seats.map((seat) => seat.seat_id));
   for (const seat of seats) {
     orchestrator.rooms.markConnected({ seatId: seat.seat_id, connectionId: conn(seat) });
     // AI 全静音：本文件测的是到期驱动，不该被自动决策的意图搅进来。
@@ -300,11 +302,15 @@ test("集成：真实服务里倒计时走完后，无人发请求也会开局",
 
   const s = service.surface;
   const created = s.dispatch("room.create", { player_id: "p1", table_rules_version: RULES });
-  s.dispatch("room.confirm_public_scope");
   const joined = s.dispatch("room.join", {
     player_id: "p2",
     invite_code: created.invite_code,
   });
+  // F3：确认按席位记账，逐席带凭据确认。
+  confirmAllSeatsViaSurface(s, [
+    { seat_id: created.seat.seat_id, credential: created.recovery_credential },
+    { seat_id: joined.seat.seat_id, credential: joined.recovery_credential },
+  ]);
 
   // 命令面把凭据叫 recovery_credential，且只在创建/加入的返回里出现这一次。
   const both = [

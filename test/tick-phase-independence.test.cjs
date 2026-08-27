@@ -29,11 +29,22 @@ const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs")
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { actionBinding } = require("../test-support/action-binding.cjs");
+const { confirmAllSeats } = require("../test-support/public-scope.cjs");
 
 const ACTION_TIMEOUT_MS = 30_000;
 
 const ROOM = "room-binding-1";
 const RULES = "table-rules-v1";
+
+// F3：AI 发布点也要过该席的公开确认。产品里房间事实由编排层注入；本文件直接驱动
+// SeatAiStore，就在这里注入。
+function resolveVia(store, input) {
+  return store.resolveEvaluation({
+    ...input,
+    roomBindingId: ROOM,
+    tableRulesVersion: RULES,
+  });
+}
 
 function aiTable(options = {}) {
   let now = 1_000;
@@ -43,12 +54,14 @@ function aiTable(options = {}) {
     idFactory: () => `id-${++id}`,
     ...options,
   });
+  // F3：确认按席位记账，所以必须先注册席位——不存在的席位没有人能替它表态。
+  store.registerSeat({ seatId: "seat-1", playerId: "player-seat-1" });
   store.confirmDefaultPublicScope({
+    seatId: "seat-1",
     roomBindingId: ROOM,
     tableRulesVersion: RULES,
     acknowledged: true,
   });
-  store.registerSeat({ seatId: "seat-1", playerId: "player-seat-1" });
   return { store, advance: (ms) => (now += ms) };
 }
 
@@ -95,12 +108,13 @@ function orchestrated(playerCount = 3) {
     actionTimeoutMs: ACTION_TIMEOUT_MS,
   });
   const created = o.createRoom({ hostPlayerId: "p1", tableRulesVersion: RULES });
-  o.confirmPublicScope();
   const seats = [created.seat];
   for (let index = 2; index <= playerCount; index += 1) {
     const joined = o.joinRoom({ playerId: `p${index}`, inviteCode: created.invite.invite_code });
     seats.push(joined.seat);
   }
+  // F3：确认按席位记账，只能在席位存在之后逐席确认。
+  confirmAllSeats(o, seats.map((seat) => seat.seat_id));
   for (const seat of seats) {
     o.rooms.markConnected({ seatId: seat.seat_id, connectionId: `conn-${seat.seat_id}` });
   }
@@ -123,7 +137,7 @@ function resolveAfterLease({ reclaimFirst }) {
   const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
   t.advance(EVALUATION_LEASE_MS + 1);
   if (reclaimFirst) t.store.reclaimExpiredEvaluations();
-  return t.store.resolveEvaluation({
+  return resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "public_speech",
@@ -204,7 +218,7 @@ test("时相无关：冷却未满时被拒，与驱动无关（对照组）", ()
   const t = aiTable();
   const first = wake(t.store, "event-1");
   const started = t.store.startEvaluation({ seatId: "seat-1", context: first.context });
-  t.store.resolveEvaluation({
+  resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "public_speech",

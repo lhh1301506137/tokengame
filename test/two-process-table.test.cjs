@@ -14,6 +14,7 @@ const { spawn } = require("node:child_process");
 const { createCommandServer, DEFAULT_AUTHORITY_TOKEN } = require("../src/authority/command-server.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
+const { confirmAllSeatsViaSurface, confirmParams } = require("../test-support/public-scope.cjs");
 
 const PLAYER_SCRIPT = path.join(__dirname, "..", "test-support", "remote-player.cjs");
 const RULES = "table-rules-v1";
@@ -70,13 +71,14 @@ test("宿主中立：两个独立进程在同一份权威状态上打完一手�
 
   const s = service.surface;
   const created = s.dispatch("room.create", { player_id: "p1", table_rules_version: RULES });
-  s.dispatch("room.confirm_public_scope");
   const joined = s.dispatch("room.join", { player_id: "p2", invite_code: created.invite_code });
 
   const seats = [
     { seat_id: created.seat.seat_id, credential: created.recovery_credential },
     { seat_id: joined.seat.seat_id, credential: joined.recovery_credential },
   ];
+  // F3：确认按席位记账，逐席带凭据确认。
+  confirmAllSeatsViaSurface(s, seats);
   for (const seat of seats) {
     s.dispatch("seat.connect", { seat_id: seat.seat_id, connection_id: `c-${seat.seat_id}` });
     s.dispatch("ai.set_mode", {
@@ -140,7 +142,10 @@ test("宿主中立：远端进程拿错凭据时进程失败，且权威状态�
 
   const s = service.surface;
   const created = s.dispatch("room.create", { player_id: "p1", table_rules_version: RULES });
-  s.dispatch("room.confirm_public_scope");
+  s.dispatch("room.confirm_public_scope", confirmParams({
+    seat_id: created.seat.seat_id,
+    credential: created.recovery_credential,
+  }));
   const before = JSON.stringify(s.dispatch("view.projection"));
 
   await assert.rejects(

@@ -18,6 +18,7 @@ const test = require("node:test");
 const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs");
 const { RoomStore, TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
+const { confirmAllSeats } = require("../test-support/public-scope.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { actionBinding } = require("../test-support/action-binding.cjs");
 
@@ -54,7 +55,6 @@ function harness({ playerCount = 2, ...options } = {}) {
   });
 
   const created = orchestrator.createRoom({ hostPlayerId: "p1", tableRulesVersion: RULES });
-  orchestrator.confirmPublicScope();
   const seats = [created.seat];
   const credentials = [created.credential];
   for (let index = 2; index <= playerCount; index += 1) {
@@ -65,6 +65,8 @@ function harness({ playerCount = 2, ...options } = {}) {
     seats.push(joined.seat);
     credentials.push(joined.credential);
   }
+  // F3：确认按席位记账，只能在席位存在之后逐席确认。
+  confirmAllSeats(orchestrator, seats.map((seat) => seat.seat_id));
   for (const seat of seats) {
     orchestrator.rooms.markConnected({
       seatId: seat.seat_id,

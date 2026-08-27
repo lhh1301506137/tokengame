@@ -85,7 +85,6 @@ async function main() {
     const hostSeat = created.body.result.seat.seat_id;
     const hostCredential = created.body.result.recovery_credential;
 
-    await post(origin, "room.confirm_public_scope", {}, TOKEN);
     const joined = await post(origin, "room.join", {
       player_id: "p2",
       invite_code: inviteCode,
@@ -98,6 +97,12 @@ async function main() {
       { seat_id: guestSeat, credential: guestCredential },
     ];
     for (const seat of seats) {
+      // F3：确认按席位记账，逐席带凭据与显式表态。
+      await post(origin, "room.confirm_public_scope", {
+        seat_id: seat.seat_id,
+        recovery_credential: seat.credential,
+        acknowledged: true,
+      }, TOKEN);
       await post(origin, "seat.connect", {
         seat_id: seat.seat_id,
         recovery_credential: seat.credential,

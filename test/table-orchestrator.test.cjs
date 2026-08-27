@@ -17,6 +17,7 @@ const { LIVELY_V1, WHITELIST_SOURCE_EVENTS } = require("../src/authority/seat-ai
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { actionBinding, chatBinding } = require("../test-support/action-binding.cjs");
+const { confirmAllSeats } = require("../test-support/public-scope.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -45,7 +46,6 @@ function harness({ playerCount = 3, ...options } = {}) {
   });
 
   const created = orchestrator.createRoom({ hostPlayerId: "p1", tableRulesVersion: RULES });
-  orchestrator.confirmPublicScope();
   const seats = [created.seat];
   for (let index = 2; index <= playerCount; index += 1) {
     const joined = orchestrator.joinRoom({
@@ -54,6 +54,8 @@ function harness({ playerCount = 3, ...options } = {}) {
     });
     seats.push(joined.seat);
   }
+  // F3：确认按席位记账，所以必须逐席确认，且只能在席位存在之后。
+  confirmAllSeats(orchestrator, seats.map((seat) => seat.seat_id));
   for (const seat of seats) {
     orchestrator.rooms.markConnected({
       seatId: seat.seat_id,
@@ -118,7 +120,9 @@ test("编排：两个内核共享同一时间源与 ID 源，房间创建后才�
   assert.equal(ctx.o.rooms.now, ctx.o.ai.now);
   assert.equal(ctx.o.rooms.idFactory, ctx.o.ai.idFactory);
 
-  const confirmation = ctx.o.requireConfirmedScope();
+  // F3：确认按席位查，所以要指名是哪一席。
+  const confirmation = ctx.o.requireConfirmedScope({ seatId: ctx.seatId(0) });
+  assert.equal(confirmation.seat_id, ctx.seatId(0));
   assert.equal(confirmation.room_binding_id, ctx.room.room_binding_id);
   assert.equal(confirmation.table_rules_version, RULES);
   assert.equal(confirmation.limits_version, LIVELY_V1.version);

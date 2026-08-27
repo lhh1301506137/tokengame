@@ -28,9 +28,20 @@ const { createDueWorkDriver } = require("../src/authority/due-work.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { AUTHORITY_DRIVEN_COMMANDS, HOST_COMMANDS } = require("../src/authority/host-surface.cjs");
 const { chatBinding } = require("../test-support/action-binding.cjs");
+const { confirmAllSeats } = require("../test-support/public-scope.cjs");
 
 const ROOM = "room-binding-1";
 const RULES = "table-rules-v1";
+
+// F3：AI 发布点也要过该席的公开确认。产品里房间事实由编排层注入；本文件直接驱动
+// SeatAiStore，就在这里注入。
+function resolveVia(store, input) {
+  return store.resolveEvaluation({
+    ...input,
+    roomBindingId: ROOM,
+    tableRulesVersion: RULES,
+  });
+}
 
 function probe(code) {
   return (error) => error instanceof ProbeError && error.code === code;
@@ -44,13 +55,15 @@ function table(seatIds = ["seat-1"], options = {}) {
     idFactory: () => `id-${++id}`,
     ...options,
   });
-  store.confirmDefaultPublicScope({
-    roomBindingId: ROOM,
-    tableRulesVersion: RULES,
-    acknowledged: true,
-  });
+  // F3：确认按席位记账，所以先注册再逐席确认。
   for (const seatId of seatIds) {
     store.registerSeat({ seatId, playerId: `player-${seatId}` });
+    store.confirmDefaultPublicScope({
+      seatId,
+      roomBindingId: ROOM,
+      tableRulesVersion: RULES,
+      acknowledged: true,
+    });
   }
   return {
     store,
@@ -84,7 +97,6 @@ function wired() {
     ]),
   });
   const created = orchestrator.createRoom({ hostPlayerId: "p1", tableRulesVersion: RULES });
-  orchestrator.confirmPublicScope();
   const joined = orchestrator.joinRoom({
     playerId: "p2",
     inviteCode: created.invite.invite_code,
@@ -93,6 +105,8 @@ function wired() {
     { seat_id: created.seat.seat_id, credential: created.credential },
     { seat_id: joined.seat.seat_id, credential: joined.credential },
   ];
+  // F3：确认按席位记账，只能在席位存在之后逐席确认。
+  confirmAllSeats(orchestrator, seats.map((seat) => seat.seat_id));
   for (const seat of seats) {
     orchestrator.rooms.markConnected({
       seatId: seat.seat_id,
@@ -142,7 +156,7 @@ test("缺陷A：摘下回合不能破坏规则6——OFF 期间的迟到输出�
   // 适配器其实没死，只是慢。它带着 OFF 之前拿到的 turn_id 回来了。
   // 规则 6：OFF 后任何迟到结果都不得发布。摘下 active_turn 不能把这条变成一个
   // turn_not_active 异常就算了事——必须仍然留下「已丢弃」的证据。
-  const late = t.store.resolveEvaluation({
+  const late = resolveVia(t.store, {
     seatId: "seat-1",
     turnId,
     decision: "public_speech",
@@ -165,7 +179,7 @@ test("缺陷A：OFF 再 ON 之后，被取消回合的迟到输出理由是 turn
 
   // 这是 resolveEvaluation 里那个三元表达式的另一支：回合被取消过，但席位现在是 ON。
   // 摘下回合之后这一支仍须可达——否则「取消」的证据就随着修复一起消失了。
-  const late = t.store.resolveEvaluation({
+  const late = resolveVia(t.store, {
     seatId: "seat-1",
     turnId,
     decision: "public_speech",
@@ -210,7 +224,7 @@ test("缺陷B：回收不得退还每手额度，否则崩溃重启就是绕过�
   // 先真正发一条，消耗一格额度。
   const first = wake(t.store, "evt-1");
   const startedFirst = t.store.startEvaluation({ seatId: "seat-1", context: first.context });
-  t.store.resolveEvaluation({
+  resolveVia(t.store, {
     seatId: "seat-1",
     turnId: startedFirst.payload.turn_id,
     decision: "public_speech",
@@ -245,7 +259,7 @@ test("缺陷B：被回收回合的迟到输出不得发布", () => {
 
   // 适配器"复活"了，带着一个早已过期的上下文回来。席位仍是 ON，所以这里不能
   // 走 OFF 那条路——但也绝不能发布：那条话是针对一手牌之前的局面想出来的。
-  const late = t.store.resolveEvaluation({
+  const late = resolveVia(t.store, {
     seatId: "seat-1",
     turnId,
     decision: "public_speech",

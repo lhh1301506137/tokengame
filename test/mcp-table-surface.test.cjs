@@ -110,10 +110,6 @@ test("MCP：只用宿主面命令就能进入牌局，且开局由核心自己�
   await coreAt(t);
 
   const host = (await table("room.create", { player_id: "p-a", table_rules_version: RULES })).body.result;
-  await table("room.confirm_public_scope", {
-    room_binding_id: host.room.room_binding_id,
-    table_rules_version: RULES,
-  });
   const guest = (await table("room.join", {
     player_id: "p-b",
     invite_code: host.invite_code,
@@ -126,6 +122,9 @@ test("MCP：只用宿主面命令就能进入牌局，且开局由核心自己�
   ];
   for (const seat of seats) {
     const auth = { seat_id: seat.seat_id, recovery_credential: seat.credential };
+    // F3：确认按席位记账，过 MCP 也要逐席带凭据与显式表态。
+    const confirmed = await table("room.confirm_public_scope", { ...auth, acknowledged: true });
+    assert.equal(confirmed.isError, false, confirmed.raw);
     const connected = await table("seat.connect", { ...auth, connection_id: `mcp-${seat.player}` });
     assert.equal(connected.isError, false, connected.raw);
     const ready = await table("seat.ready", { ...auth, ready: true });

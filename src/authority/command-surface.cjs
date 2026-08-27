@@ -24,6 +24,9 @@ const { TableOrchestrator } = require("./table-orchestrator.cjs");
 // 需要凭据授权的命令：任何会改变某一席位状态或以该席位名义说话的操作。
 // 只读投影不在其中；创建与加入房间此时还没有凭据可验。
 const SEAT_AUTHORIZED = Object.freeze([
+  // F3：默认公开确认是隐私同意，只有该席的人能替自己接受。不验凭据就等于谁都能
+  // 替全桌承诺「你打的自由文本默认公开」，而被代为承诺的人从未见过这句话。
+  "room.confirm_public_scope",
   "seat.ready",
   "seat.sit_out_after_hand",
   "seat.leave",
@@ -107,7 +110,13 @@ class CommandSurface {
       },
 
       // 默认公开确认必须由玩家在宿主界面上明确点过，适配器不得代为承诺。
-      "room.confirm_public_scope": () => ({ confirmed: o.confirmPublicScope().payload }),
+      // acknowledged 必须原样透传：在这里或编排层填 true 就让门永远自我满足。
+      "room.confirm_public_scope": (p) => ({
+        confirmed: o.confirmPublicScope({
+          seatId: p.seat_id,
+          acknowledged: p.acknowledged,
+        }).payload,
+      }),
 
       "room.join": (p) => {
         const joined = o.joinRoom({

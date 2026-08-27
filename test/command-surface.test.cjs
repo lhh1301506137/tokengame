@@ -14,6 +14,7 @@ const {
   actionBindingFromProjection,
   chatBindingParams,
 } = require("../test-support/action-binding.cjs");
+const { confirmAllSeatsViaSurface } = require("../test-support/public-scope.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -45,8 +46,6 @@ function surface({ playerCount = 2 } = {}) {
     player_id: "p1",
     table_rules_version: RULES,
   });
-  s.dispatch("room.confirm_public_scope");
-
   const seats = [{ seat_id: created.seat.seat_id, credential: created.recovery_credential }];
   for (let index = 2; index <= playerCount; index += 1) {
     const joined = s.dispatch("room.join", {
@@ -55,6 +54,8 @@ function surface({ playerCount = 2 } = {}) {
     });
     seats.push({ seat_id: joined.seat.seat_id, credential: joined.recovery_credential });
   }
+  // F3：确认按席位记账，逐席带凭据确认。
+  confirmAllSeatsViaSurface(s, seats);
   for (const seat of seats) {
     s.dispatch("seat.connect", { seat_id: seat.seat_id, connection_id: `c-${seat.seat_id}` });
   }

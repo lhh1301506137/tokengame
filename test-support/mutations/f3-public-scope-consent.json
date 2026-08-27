@@ -1,0 +1,104 @@
+{
+  "name": "F3 默认公开确认按席位记账",
+  "notes": "每条变异都对应一句「本该被拒的事」。存活即说明测试没有真的钉住那条同意边界。",
+  "mutations": [
+    {
+      "id": "F3-01-确认不认席位",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "  confirmDefaultPublicScope(input = {}) {\n    const seat = this.requireSeat(input.seatId);",
+      "replace": "  confirmDefaultPublicScope(input = {}) {\n    const seat = this.seats.values().next().value;",
+      "why": "拿桌上任意一席当主体：退回整桌单例，一个人确认全桌生效。"
+    },
+    {
+      "id": "F3-02-确认不要表态",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (input.acknowledged !== true) {\n      throw new ProbeError(\"default_public_scope_not_acknowledged\", 400, {\n        seat_id: seat.seat_id,\n      });\n    }",
+      "replace": "",
+      "why": "去掉显式表态：没看过那句话也算确认过。"
+    },
+    {
+      "id": "F3-03-表态放宽为真值",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (input.acknowledged !== true) {",
+      "replace": "    if (!input.acknowledged && input.acknowledged !== undefined) {",
+      "why": "字符串 \"false\" 之类的真值也算确认，且缺字段直接放行。"
+    },
+    {
+      "id": "F3-04-确认门不比对绑房",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      || confirmation.room_binding_id !== roomBindingId",
+      "replace": "",
+      "why": "换了房间旧确认还算：恢复到新绑定后不必重新确认。"
+    },
+    {
+      "id": "F3-05-确认门不比对桌规版本",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      || confirmation.table_rules_version !== tableRulesVersion",
+      "replace": "",
+      "why": "改了桌规旧确认还算：规则变了也不用重新告知。"
+    },
+    {
+      "id": "F3-06-发言查错席位的确认",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    this.requireConfirmedScope(\n      seat.seat_id,\n      requiredString(input.roomBindingId, \"roomBindingId\", 256),\n      requiredString(input.tableRulesVersion, \"tableRulesVersion\", 64),\n    );\n\n    const graphemes = countGraphemes(text);",
+      "replace": "    for (const other of this.seats.values()) {\n      if (other.public_scope_confirmation !== null) break;\n      if (other === [...this.seats.values()].pop()) {\n        throw new ProbeError(\"default_public_scope_not_confirmed\", 409, {});\n      }\n    }\n\n    const graphemes = countGraphemes(text);",
+      "why": "只要桌上有任意一席确认过就放行：这正是复现里那个洞。"
+    },
+    {
+      "id": "F3-07-AI发布点不查确认",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    this.requireConfirmedScope(\n      seat.seat_id,\n      requiredString(input.roomBindingId, \"roomBindingId\", 256),\n      requiredString(input.tableRulesVersion, \"tableRulesVersion\", 64),\n    );\n\n    const text = requiredString(input.text, \"text\");",
+      "replace": "    const text = requiredString(input.text, \"text\");",
+      "why": "去掉第二个发布点的门：未确认席位的 AI 照样能公开发言。"
+    },
+    {
+      "id": "F3-08-新席位默认已确认",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      public_scope_confirmation: null,",
+      "replace": "      public_scope_confirmation: { seat_id: seatId, room_binding_id: null, table_rules_version: null, limits_version: this.limits.version, confirmed_at: 0 },",
+      "why": "入座即视为已表态。绑房为 null 时若门不比对就会放行。"
+    },
+    {
+      "id": "F3-09-编排层代填表态",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      acknowledged: input.acknowledged,",
+      "replace": "      acknowledged: true,",
+      "why": "退回原缺陷：门永远自我满足，调用方不可能没确认。"
+    },
+    {
+      "id": "F3-10-命令面代填表态",
+      "file": "src/authority/command-surface.cjs",
+      "find": "          acknowledged: p.acknowledged,",
+      "replace": "          acknowledged: true,",
+      "why": "同上，只是把代填挪到命令面。"
+    },
+    {
+      "id": "F3-11-确认命令不需凭据",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"room.confirm_public_scope\",\n  \"seat.ready\",",
+      "replace": "  \"seat.ready\",",
+      "why": "退出席位授权集合：只持传输令牌就能替任意席位确认。"
+    },
+    {
+      "id": "F3-12-AI路径不注入房间事实",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "    return this.ai.resolveEvaluation({\n      ...input,\n      roomBindingId: room.room_binding_id,\n      tableRulesVersion: room.table_rules_version,\n    });",
+      "replace": "    return this.ai.resolveEvaluation({\n      roomBindingId: room.room_binding_id,\n      tableRulesVersion: room.table_rules_version,\n      ...input,\n    });",
+      "why": "让宿主传的房间事实覆盖权威的：宿主可以指定一个自己确认过的房间去过门。"
+    },
+    {
+      "id": "F3-13-确认落在共享对象上",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    seat.public_scope_confirmation = {",
+      "replace": "    this.sharedConfirmation = this.sharedConfirmation ?? {};\n    for (const other of this.seats.values()) other.public_scope_confirmation = this.sharedConfirmation;\n    Object.assign(this.sharedConfirmation, {",
+      "why": "所有席位共用一份确认：写法变了，语义还是整桌单例。"
+    },
+    {
+      "id": "F3-14-silent也要确认",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    // 规则 3：silent 不消耗 AI 发布额度。\n    if (decision === \"silent\") {",
+      "replace": "    // 规则 3：silent 不消耗 AI 发布额度。\n    if (decision === \"silent\" && this.requireConfirmedScope(seat.seat_id, input.roomBindingId, input.tableRulesVersion)) {",
+      "why": "把门提到 silent 之前：未确认席位的在途回合再也结算不掉，闸门永久关闭。"
+    }
+  ]
+}

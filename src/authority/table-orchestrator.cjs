@@ -102,18 +102,28 @@ class TableOrchestrator {
     return created;
   }
 
-  confirmPublicScope() {
+  // F3：确认按席位记账，acknowledged 由调用方表态。
+  //
+  // 本层不再代填 acknowledged: true。原来硬编码在这里，等于任何调用方都不可能「没确认」——
+  // 一个永远自我满足的门不是门。绑房与桌规版本仍由本层从房间取：那是权威事实，
+  // 让调用方传就等于让它自己决定确认的是哪一套规则。
+  confirmPublicScope(input = {}) {
     const room = this.rooms.requireRoom();
     return this.ai.confirmDefaultPublicScope({
+      seatId: input.seatId,
       roomBindingId: room.room_binding_id,
       tableRulesVersion: room.table_rules_version,
-      acknowledged: true,
+      acknowledged: input.acknowledged,
     });
   }
 
-  requireConfirmedScope() {
+  requireConfirmedScope(input = {}) {
     const room = this.rooms.requireRoom();
-    return this.ai.requireConfirmedScope(room.room_binding_id, room.table_rules_version);
+    return this.ai.requireConfirmedScope(
+      input.seatId,
+      room.room_binding_id,
+      room.table_rules_version,
+    );
   }
 
   joinRoom(input = {}) {
@@ -612,8 +622,15 @@ class TableOrchestrator {
     return this.ai.startEvaluation(input);
   }
 
+  // 绑房标识与桌规版本由本层注入，理由与 submitPlayerText 相同：宿主不该有机会传错一个
+  // 房间去过公开确认。规则 1 的两个 TABLE_PUBLIC 出口因此走同一份权威事实。
   resolveEvaluation(input = {}) {
-    return this.ai.resolveEvaluation(input);
+    const room = this.rooms.requireRoom();
+    return this.ai.resolveEvaluation({
+      ...input,
+      roomBindingId: room.room_binding_id,
+      tableRulesVersion: room.table_rules_version,
+    });
   }
 
   setSeatAiMode(input = {}) {

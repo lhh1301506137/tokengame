@@ -22,6 +22,7 @@ const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { LIVELY_V1 } = require("../src/authority/seat-ai-store.cjs");
+const { confirmAllSeatsViaSurface, confirmParams } = require("../test-support/public-scope.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -59,7 +60,6 @@ function harness({ playerCount = 2, silenceAi = true, ...options } = {}) {
     player_id: "p1",
     table_rules_version: RULES,
   });
-  surface.dispatch("room.confirm_public_scope", {});
   const seats = [{ seat_id: created.seat.seat_id, credential: created.recovery_credential }];
   for (let index = 2; index <= playerCount; index += 1) {
     const joined = surface.dispatch("room.join", {
@@ -68,6 +68,8 @@ function harness({ playerCount = 2, silenceAi = true, ...options } = {}) {
     });
     seats.push({ seat_id: joined.seat.seat_id, credential: joined.recovery_credential });
   }
+  // F3：确认按席位记账，逐席带凭据确认。
+  confirmAllSeatsViaSurface(surface, seats);
   for (const seat of seats) {
     o.rooms.markConnected({ seatId: seat.seat_id, connectionId: `conn-${seat.seat_id}` });
     if (silenceAi) o.setSeatAiMode({ seatId: seat.seat_id, mode: "OFF" });
@@ -589,7 +591,9 @@ test("F2 要求 4：被判为收敛型的席位写命令，重复调用不产生
     ["seat.connect", { ...auth, connection_id: "conn-repeat" }],
     ["seat.ready", { ...auth, ready: true }],
     ["ai.set_mode", { ...auth, mode: "OFF" }],
-    ["room.confirm_public_scope", {}],
+    // F3 之后它要带凭据与表态。重复确认仍然收敛：落到同一条三元组记录上，
+    // 只有 confirmed_at 会刷新，而那不进席位投影。
+    ["room.confirm_public_scope", confirmParams(seat)],
   ];
 
   for (const [command, params] of repeatable) {

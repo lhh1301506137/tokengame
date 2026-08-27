@@ -117,13 +117,21 @@ class SeatAiStore {
     this.listeners = new Set();
     this.handIndex = 0;
     this.street = "preflop";
-    // 规则 1：默认公开确认按「绑房 + 桌规版本」记账，任一变化都要重新确认。
-    this.publicScopeConfirmation = null;
     this.sequence = 0;
   }
 
   // 规则 1：每次新房绑定或桌规版本变化都必须先明确确认默认公开。
+  //
+  // F3：确认按 (room_binding_id, table_rules_version, seat_id) 记账，存在该席记录上。
+  // 原来是整桌一个值，于是先到的一个调用者一按确认，全桌从未见过这句话的玩家都被
+  // 代为承诺了。确认的内容是「我在游戏任务频道打的自由文本默认公开」——这是隐私同意，
+  // 只有该席的人能替自己接受。
+  //
+  // 为什么存在席位记录上而不是另开一张按三元组索引的表：席位记录本身就以 seat_id 为键，
+  // 把另两个维度作为比对字段存进去，语义等价，而且增长天然有界——一席一条，不需要淘汰
+  // 策略。代价是必须先注册席位才能确认，而这正是想要的：不存在的席位没有人可以代它表态。
   confirmDefaultPublicScope(input = {}) {
+    const seat = this.requireSeat(input.seatId);
     const roomBindingId = requiredString(input.roomBindingId, "roomBindingId", 256);
     const tableRulesVersion = requiredString(
       input.tableRulesVersion,
@@ -131,27 +139,33 @@ class SeatAiStore {
       64,
     );
     if (input.acknowledged !== true) {
-      throw new ProbeError("default_public_scope_not_acknowledged", 400);
+      throw new ProbeError("default_public_scope_not_acknowledged", 400, {
+        seat_id: seat.seat_id,
+      });
     }
-    this.publicScopeConfirmation = {
+    seat.public_scope_confirmation = {
+      seat_id: seat.seat_id,
       room_binding_id: roomBindingId,
       table_rules_version: tableRulesVersion,
       limits_version: this.limits.version,
       confirmed_at: this.now(),
     };
     return this.record("DEFAULT_PUBLIC_SCOPE_CONFIRMED", {
-      ...this.publicScopeConfirmation,
+      ...seat.public_scope_confirmation,
     });
   }
 
-  requireConfirmedScope(roomBindingId, tableRulesVersion) {
-    const confirmation = this.publicScopeConfirmation;
+  // 只看这一席自己的确认。别席确认过不算，整桌确认过也不存在了。
+  requireConfirmedScope(seatIdValue, roomBindingId, tableRulesVersion) {
+    const seat = this.requireSeat(seatIdValue);
+    const confirmation = seat.public_scope_confirmation;
     if (
       confirmation === null
       || confirmation.room_binding_id !== roomBindingId
       || confirmation.table_rules_version !== tableRulesVersion
     ) {
       throw new ProbeError("default_public_scope_not_confirmed", 409, {
+        seat_id: seat.seat_id,
         room_binding_id: roomBindingId,
         table_rules_version: tableRulesVersion,
       });
@@ -169,6 +183,8 @@ class SeatAiStore {
       seat_id: seatId,
       player_id: playerId,
       ai_persona: typeof input.aiPersona === "string" ? input.aiPersona : null,
+      // 规则 1（F3）：该席自己的默认公开确认。新席位一律未确认——加入不等于表态。
+      public_scope_confirmation: null,
       mode: "ON",
       status: "IDLE",
       hand_index: this.handIndex,
@@ -264,7 +280,9 @@ class SeatAiStore {
       return { published: null, local_control: true, evaluations: [] };
     }
 
+    // F3 要求 3：只检查发言席自己的确认。
     this.requireConfirmedScope(
+      seat.seat_id,
       requiredString(input.roomBindingId, "roomBindingId", 256),
       requiredString(input.tableRulesVersion, "tableRulesVersion", 64),
     );
@@ -595,6 +613,20 @@ class SeatAiStore {
         hand_index: this.handIndex,
       });
     }
+
+    // 规则 1（F3）：AI_PUBLIC_SPEECH 是 TABLE_PUBLIC 的第二个出口，同样要该席自己的确认。
+    //
+    // 席位 AI 默认 mode 是 ON，而唤醒来源不止玩家发言——行动窗口、BET、RAISE 都能唤醒。
+    // 少了这道门，一个从未见过「你的自由文本默认公开」的席位，只要牌桌开始行动，
+    // 它的 AI 就会替它往公开时间线上说话。
+    //
+    // 门放在 silent 分支之后：silent 什么都不发布，不需要任何同意。放在前面会让未确认
+    // 席位的在途回合再也结算不掉，该席闸门永久关闭——那是用一个活性洞换一个同意洞。
+    this.requireConfirmedScope(
+      seat.seat_id,
+      requiredString(input.roomBindingId, "roomBindingId", 256),
+      requiredString(input.tableRulesVersion, "tableRulesVersion", 64),
+    );
 
     const text = requiredString(input.text, "text");
     const graphemes = countGraphemes(text);

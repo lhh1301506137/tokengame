@@ -14,6 +14,7 @@ const {
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { actionBindingFromProjection } = require("../test-support/action-binding.cjs");
+const { confirmParams } = require("../test-support/public-scope.cjs");
 
 const RULES = "table-rules-v1";
 
@@ -76,7 +77,6 @@ async function serve(t, { token = DEFAULT_AUTHORITY_TOKEN } = {}) {
 // 经 HTTP 建起一张两人桌并开局，返回各席的 seat_id 与凭据。
 async function table(ctx, { playerCount = 2 } = {}) {
   const created = await ctx.ok("room.create", { player_id: "p1", table_rules_version: RULES });
-  await ctx.ok("room.confirm_public_scope");
 
   const seats = [{ seat_id: created.seat.seat_id, credential: created.recovery_credential }];
   for (let index = 2; index <= playerCount; index += 1) {
@@ -87,6 +87,8 @@ async function table(ctx, { playerCount = 2 } = {}) {
     seats.push({ seat_id: joined.seat.seat_id, credential: joined.recovery_credential });
   }
   for (const seat of seats) {
+    // F3：确认按席位记账，过网也要带该席凭据与显式表态。
+    await ctx.ok("room.confirm_public_scope", confirmParams(seat));
     await ctx.ok("seat.connect", { seat_id: seat.seat_id, connection_id: `c-${seat.seat_id}` });
     await ctx.ok("ai.set_mode", {
       seat_id: seat.seat_id,

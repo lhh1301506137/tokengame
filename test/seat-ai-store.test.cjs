@@ -15,6 +15,16 @@ const { ProbeError } = require("../src/authority/event-store.cjs");
 
 const ROOM = "room-binding-1";
 const RULES = "table-rules-v1";
+
+// F3：AI_PUBLIC_SPEECH 也是 TABLE_PUBLIC 的出口，所以 resolveEvaluation 也要过该席的
+// 公开确认。产品里房间事实由编排层注入；本文件直接驱动 SeatAiStore，就在这里注入。
+function resolveVia(store, input) {
+  return store.resolveEvaluation({
+    ...input,
+    roomBindingId: ROOM,
+    tableRulesVersion: RULES,
+  });
+}
 // UTF-16 长度 8，字素数 1。用 String#length 计数会让 140 上限被放大 8 倍。
 const FAMILY = "\u{1F468}‍\u{1F469}‍\u{1F467}";
 
@@ -42,13 +52,15 @@ function harness() {
 // 已确认默认公开、已注册席位的牌桌。
 function table(seatIds = ["seat-1"]) {
   const h = harness();
-  h.store.confirmDefaultPublicScope({
-    roomBindingId: ROOM,
-    tableRulesVersion: RULES,
-    acknowledged: true,
-  });
+  // F3：确认按席位记账，所以先注册再逐席确认。整桌按一次已经不存在了。
   for (const seatId of seatIds) {
     h.store.registerSeat({ seatId, playerId: `player-${seatId}` });
+    h.store.confirmDefaultPublicScope({
+      seatId,
+      roomBindingId: ROOM,
+      tableRulesVersion: RULES,
+      acknowledged: true,
+    });
   }
   return h;
 }
@@ -87,7 +99,7 @@ function runIntent(store, intent, ai) {
     context: intent.context,
   });
   const step = ai.decide(intent.context);
-  return store.resolveEvaluation({
+  return resolveVia(store, {
     seatId: intent.seat_id,
     turnId: started.payload.turn_id,
     decision: step.decision,
@@ -109,6 +121,7 @@ test("规则1：未确认默认公开时拒绝发布，确认后才放行", () =
   );
 
   h.store.confirmDefaultPublicScope({
+    seatId: "seat-1",
     roomBindingId: ROOM,
     tableRulesVersion: RULES,
     acknowledged: true,
@@ -119,8 +132,11 @@ test("规则1：未确认默认公开时拒绝发布，确认后才放行", () =
 
 test("规则1：确认必须显式；桌规版本或绑房变化都要重新确认", () => {
   const h = harness();
+  // F3：席位是确认的主体，所以先注册才谈得上表态。不存在的席位没有人能替它确认。
+  h.store.registerSeat({ seatId: "seat-1", playerId: "player-1" });
   assert.throws(
     () => h.store.confirmDefaultPublicScope({
+      seatId: "seat-1",
       roomBindingId: ROOM,
       tableRulesVersion: RULES,
       acknowledged: false,
@@ -472,7 +488,7 @@ test("规则4：思考期内多事件合并为一个最新上下文，不排队�
 
   // 只保留最新上下文；两条事件没有各自排出一个回合。
   assert.equal(t.store.seatState("seat-1").has_pending_context, true);
-  t.store.resolveEvaluation({
+  resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "silent",
@@ -499,7 +515,7 @@ test("规则5：同手同街的迟到输出照常公开，无需标注", () => {
 
   // 模型慢了 30 秒才回来：权威层不因此触碰任何行动窗口。
   t.advance(30_000);
-  const published = t.store.resolveEvaluation({
+  const published = resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "public_speech",
@@ -523,7 +539,7 @@ test("规则5：同手已跨街的迟到输出必须带醒目标注", () => {
   const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
 
   t.store.advanceStreet({ street: "flop" });
-  const published = t.store.resolveEvaluation({
+  const published = resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "public_speech",
@@ -542,7 +558,7 @@ test("规则5：跨手的迟到输出必须丢弃，且不占用新一手额度"
   const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
 
   t.store.startHand();
-  const resolved = t.store.resolveEvaluation({
+  const resolved = resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "public_speech",
@@ -566,7 +582,7 @@ test("规则5：AI 输出同样受 140 字素上限约束，超限进入可理�
   const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
 
   assert.throws(
-    () => t.store.resolveEvaluation({
+    () => resolveVia(t.store, {
       seatId: "seat-1",
       turnId: started.payload.turn_id,
       decision: "public_speech",
@@ -624,7 +640,7 @@ test("规则6：OFF 后回来的迟到结果一律丢弃，不得公开", () => 
   t.store.setSeatAiMode({ seatId: "seat-1", mode: "OFF" });
 
   t.advance(2_000);
-  const resolved = t.store.resolveEvaluation({
+  const resolved = resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
     decision: "public_speech",
