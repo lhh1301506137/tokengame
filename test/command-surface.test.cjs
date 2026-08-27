@@ -360,3 +360,120 @@ test("端到端：LOCAL_CONTROL 通道不公开、不进 AI 上下文", () => {
   assert.equal(said.intent_count, 0);
   assert.equal(ctx.s.dispatch("view.timeline").timeline.length, before);
 });
+
+// ---------------------------------------------------------------- 隐藏信息边界
+// L0 根合同把「隐藏信息边界」列为产品核心，并要求不由任一玩家宿主掌握牌堆、对手底牌
+// 或结算权。view.hand 是全系统唯一吐出底牌的出口，下面几条钉住它的边界。
+
+test("隐藏信息：本席看得见自己的两张底牌，看不见对手的", () => {
+  const ctx = surface({ playerCount: 2 });
+  begin(ctx);
+  const me = ctx.seats[0];
+  const view = ctx.s.dispatch("view.hand", {
+    seat_id: me.seat_id,
+    recovery_credential: me.credential,
+  }).hand;
+
+  const myPlayerId = ctx.s.orchestrator.requirePlayerId(me.seat_id);
+  const mine = view.seats.find((seat) => seat.id === myPlayerId);
+  const others = view.seats.filter((seat) => seat.id !== myPlayerId);
+
+  assert.equal(mine.hole_cards.length, 2, "自己的底牌应当可见");
+  assert.ok(others.length > 0, "必须真的有对手，否则这条测试是空的");
+  for (const seat of others) {
+    assert.equal(seat.hole_cards, null, `对手 ${seat.id} 的底牌必须为 null`);
+  }
+});
+
+test("隐藏信息：拿别人的 seat_id 配自己的凭据，读不到对手的牌", () => {
+  const ctx = surface({ playerCount: 2 });
+  begin(ctx);
+  const attacker = ctx.seats[0];
+  const victim = ctx.seats[1];
+
+  // 用受害者的 seat_id 加攻击者自己的凭据——凭据是真的，只是不属于这个席位。
+  assert.throws(
+    () => ctx.s.dispatch("view.hand", {
+      seat_id: victim.seat_id,
+      recovery_credential: attacker.credential,
+    }),
+    probe("recovery_credential_rejected"),
+  );
+});
+
+test("隐藏信息：牌堆与未来的牌不出现在任何投影里", () => {
+  const ctx = surface({ playerCount: 2 });
+  begin(ctx);
+  const me = ctx.seats[0];
+  const serialized = JSON.stringify({
+    seat_view: ctx.s.dispatch("view.hand", {
+      seat_id: me.seat_id,
+      recovery_credential: me.credential,
+    }),
+    projection: ctx.s.dispatch("view.projection"),
+  });
+  for (const key of ["deck", "deckCursor", "deck_cursor"]) {
+    assert.equal(serialized.includes(key), false, `投影里不得出现 ${key}`);
+  }
+});
+
+test("隐藏信息：无凭据的公开投影有公共牌与底池，但没有任何底牌", () => {
+  const ctx = surface({ playerCount: 2 });
+  begin(ctx);
+  const publicHand = ctx.s.dispatch("view.projection").public_hand;
+
+  assert.ok(publicHand !== null, "开局后公开投影应当有牌局");
+  assert.ok(Array.isArray(publicHand.board), "公共牌属公开信息");
+  assert.equal(typeof publicHand.pot_total, "number", "底池属公开信息");
+  assert.ok(publicHand.actor_player_id !== undefined, "当前行动者属公开信息");
+  for (const seat of publicHand.seats) {
+    assert.equal(seat.hole_cards, null, "公开投影不得出现任何底牌");
+  }
+  assert.deepEqual(publicHand.legal_actions, [], "无观众身份就没有合法动作");
+});
+
+test("隐藏信息：开局后入座的席位拿到旁观视图，而不是 unknown_player 错误", () => {
+  const ctx = surface({ playerCount: 2 });
+  begin(ctx);
+  const latecomer = ctx.s.dispatch("room.join", {
+    player_id: "p-late",
+    invite_code: ctx.inviteCode,
+  });
+
+  // 已绑房但不在本手 roster 里。这是正常状态，不是错误。
+  const view = ctx.s.dispatch("view.hand", {
+    seat_id: latecomer.seat.seat_id,
+    recovery_credential: latecomer.recovery_credential,
+  }).hand;
+
+  assert.ok(view !== null);
+  for (const seat of view.seats) {
+    assert.equal(seat.hole_cards, null, "轮空席位不得看见任何底牌");
+  }
+  assert.deepEqual(view.legal_actions, []);
+});
+
+test("隐藏信息：开局前问牌返回 null，不是错误", () => {
+  const ctx = surface({ playerCount: 2 });
+  const me = ctx.seats[0];
+  const view = ctx.s.dispatch("view.hand", {
+    seat_id: me.seat_id,
+    recovery_credential: me.credential,
+  });
+  assert.equal(view.hand, null);
+});
+
+test("隐藏信息：当前行动者能从私密视图拿到合法动作", () => {
+  const ctx = surface({ playerCount: 2 });
+  begin(ctx);
+  silenceAll(ctx);
+  const actor = actorSeat(ctx);
+  const view = ctx.s.dispatch("view.hand", {
+    seat_id: actor.seat_id,
+    recovery_credential: actor.credential,
+  }).hand;
+
+  const types = view.legal_actions.map((action) => action.type);
+  assert.ok(types.includes("fold"), `行动者应能弃牌，实得 ${JSON.stringify(types)}`);
+  assert.ok(types.length > 1, "行动者的选择不应只有一个");
+});

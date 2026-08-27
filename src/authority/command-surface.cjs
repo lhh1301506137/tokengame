@@ -31,6 +31,10 @@ const SEAT_AUTHORIZED = Object.freeze([
   "chat.say",
   "ai.set_mode",
   "ai.hide_local",
+  // 唯一需要凭据的只读命令。它是全系统唯一会吐出底牌的出口，viewerId 就是解锁参数：
+  // 不验证就等于谁都能拿别人的 seat_id 读走对手底牌，而「隐藏信息边界」是 L0 定义的
+  // 产品核心。公开信息走 view.projection，不需要凭据。
+  "view.hand",
 ]);
 
 function requiredString(value, field, max = 256) {
@@ -242,6 +246,10 @@ class CommandSurface {
           p.viewer_seat_id === undefined ? {} : { viewerSeatId: p.viewer_seat_id },
         ),
       }),
+
+      // 私密视图。dispatch 已用 requireSeatCredential 证明调用者拥有该席，这里才敢把
+      // seat_id 当 viewerId 用。牌局不存在时返回 null，不是错误——开局前问牌很正常。
+      "view.hand": (p) => ({ hand: o.seatHandView(p.seat_id) }),
 
       "view.seat": (p) => ({
         seat: o.rooms.seatState(requiredString(p.seat_id, "seat_id", 64)),

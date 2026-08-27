@@ -413,10 +413,35 @@ class TableOrchestrator {
 
   // ------------------------------------------------------------------------ 投影
 
+  // 旁观视图。viewerId 传 null，引擎的 visibleHoleCards 因此对所有未摊牌的席位返回 null。
+  // 摊牌后未弃牌席位的底牌确实会出现在这里，那是公开摊牌本身，不是泄露。
+  publicHandView() {
+    if (this.hand === null) return null;
+    return this.hand.publicProjection(null);
+  }
+
+  // 私密视图。这是整个系统里唯一会吐出「自己的底牌」的地方，viewerId 就是解锁参数，
+  // 所以调用方必须已经证明自己拥有该席（命令面用 requireSeatCredential 做这件事）。
+  // 本层只做 seatId -> playerId 的翻译，不判断谁有权看：越权判断留在信任边界上。
+  seatHandView(seatId) {
+    if (this.hand === null) return null;
+    // 不校验 seatId 的形状：查不到就是查不到，落到旁观视图。这条路径宁可少给不可多给，
+    // 一个非法 seatId 永远解不开任何底牌。
+    const playerId = this.seatToPlayer.get(seatId);
+    // 已绑房但不在本手牌 roster 里的席位（开局后才入座、或本手轮空）只能拿旁观视图。
+    // 不能无条件把 playerId 交给引擎：seatById 对陌生 playerId 抛 unknown_player，
+    // 那会把「这手牌轮不到你」变成一个错误，而它其实是正常状态。
+    const inHand = playerId !== undefined
+      && this.hand.seats.some((seat) => seat.id === playerId);
+    return this.hand.publicProjection(inHand ? playerId : null);
+  }
+
   projection() {
     return {
       room: this.rooms.roomState(),
       hand: this.hand === null ? null : { id: this.hand.id, status: this.hand.status },
+      // 公共牌、底池、当前行动者、行动截止时间都属公开信息，房间级只读面就该有。
+      public_hand: this.publicHandView(),
       public_timeline: this.ai.publicTimeline(),
       pending_intent_count: this.pendingIntents.length,
     };
