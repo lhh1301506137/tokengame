@@ -182,6 +182,13 @@ class CommandSurface {
         return { result, intent_count: intents.length };
       },
 
+      // 回收租约到期的 AI 评估回合。同样是「谁都可以催，只在真的到期时才动作」，
+      // 平时由 due-work 驱动按真实时钟调用，这条命令只为跨进程可观测与测试而存在。
+      "ai.reclaim_expired": () => {
+        const events = o.reclaimExpiredEvaluations();
+        return { reclaimed: events.map((event) => event.payload) };
+      },
+
       // 到期自动处置。谁都可以催，因为它只在真的到期时才动作。
       "hand.settle_expired": () => {
         const { result, intents } = o.settleExpiredAction();

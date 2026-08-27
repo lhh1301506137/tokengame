@@ -47,11 +47,15 @@ const HOST_COMMANDS = Object.freeze([
 // 把「规则要靠有人在场才前进」这件事又写回来一次，而那正是驱动存在要否定的东西。
 //
 // hand.apply_pending_fold 同理：引擎 drain 时会自动补上离桌席位的弃牌，宿主不必介入。
+//
+// ai.reclaim_expired 也归这里，而且理由最直接：它要修的正是「适配器死了」这件事。
+// 一个死掉的适配器不可能自己来催回收，所以把它放进宿主面等于把解药交给病人。
 const AUTHORITY_DRIVEN_COMMANDS = Object.freeze([
   "hand.evaluate_start",
   "hand.start_if_due",
   "hand.settle_expired",
   "hand.apply_pending_fold",
+  "ai.reclaim_expired",
 ]);
 
 // 诊断用的原始权威日志。不给适配器，因为它们绕过规则 7：本地隐藏只改该查看者的渲染、

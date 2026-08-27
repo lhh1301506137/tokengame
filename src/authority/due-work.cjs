@@ -36,7 +36,13 @@ function createDueWorkDriver(options = {}) {
   // 再释放保留窗到期的席位，最后才看下一手能不能开。反过来会用上一手的席位状态开新手。
   function tick() {
     ticks += 1;
-    const done = { settled: null, released: [], started: false, decision: null };
+    const done = {
+      settled: null,
+      released: [],
+      reclaimed: [],
+      started: false,
+      decision: null,
+    };
 
     try {
       const expired = orchestrator.settleExpiredAction();
@@ -47,6 +53,15 @@ function createDueWorkDriver(options = {}) {
     }
 
     done.released = orchestrator.rooms.releaseExpiredSeats();
+
+    // 回收被遗弃的 AI 评估回合。适配器是独立进程，可以死在 ai.start 与 ai.resolve
+    // 之间；没有这一步，那一席就永久停在「已有回合在飞」，从此不再被唤醒——而且
+    // 换手也救不回来（seat-ai-store.startHand 故意不取消在途回合，它指望 resolve
+    // 时按 hand_advanced 丢弃，可死掉的适配器永远不会 resolve）。
+    // 必须排在 startHandIfDue 之前，这不是整洁问题：开新手会开第一个行动窗口，而
+    // SEAT_ACTION_WINDOW_OPENED 是白名单唤醒源。反过来的话这次唤醒会撞在幽灵回合上
+    // 被吞掉，之后再回收也追不回来，那一席得等到下一个来源事件才说得上话。
+    done.reclaimed = orchestrator.reclaimExpiredEvaluations();
 
     const start = orchestrator.startHandIfDue();
     done.started = start.started;

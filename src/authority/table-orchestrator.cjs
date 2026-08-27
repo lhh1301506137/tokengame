@@ -175,6 +175,12 @@ class TableOrchestrator {
     return this.rooms.evaluateStart();
   }
 
+  // 回收租约到期的 AI 评估回合。判定全在 seat-ai-store 里，本层只转发：
+  // 「这个回合是不是已经不可能回来了」不是编排层该知道的事。
+  reclaimExpiredEvaluations() {
+    return this.ai.reclaimExpiredEvaluations();
+  }
+
   startHandIfDue() {
     const decision = this.rooms.evaluateStart();
     // 字段名是 can_start。用别名会静默恒假，把「开不了局」伪装成正常状态。

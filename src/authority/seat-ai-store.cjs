@@ -21,6 +21,18 @@ const LIVELY_V1 = Object.freeze({
   bubbleDisplayMs: 10_000,
 });
 
+// 评估回合租约。适配器是独立进程，可以死在 ai.start 与 ai.resolve 之间；不给回合
+// 设期限，那一席就永久停在「已有回合在飞」，从此不再被唤醒。
+//
+// 30 秒不是新造的数字：项目对「外部行动者可以拖多久」已经有过一个答案——真人行动
+// 时限 actionTimeoutMs 在四处默认 30_000。沿用它而不是再发明一个阈值。
+//
+// 故意不放进 LIVELY_V1：那里是规则 3 的四层发言预算，而 version 字符串会作为
+// limits_version 报给宿主、也进过已验收的证据。往里加键会让两份不同的限制对象都
+// 自称 LIVELY_V1，而改版本号是语义决定，不由这一层做。租约是活性期限，不是预算，
+// 它一格额度也没放宽。
+const EVALUATION_LEASE_MS = 30_000;
+
 // 规则 2：白名单来源事件。AI_PUBLIC_SPEECH 故意不在其中——AI 发言可以进入以后
 // 合法评估的上下文，但不能单独唤醒任何席位 AI。
 const WHITELIST_SOURCE_EVENTS = Object.freeze([
@@ -83,10 +95,13 @@ class SeatAiStore {
     now = () => Date.now(),
     idFactory = () => require("node:crypto").randomUUID(),
     limits = LIVELY_V1,
+    evaluationLeaseMs = EVALUATION_LEASE_MS,
   } = {}) {
     this.now = now;
     this.idFactory = idFactory;
     this.limits = Object.freeze({ ...LIVELY_V1, ...limits });
+    // 与 limits 分开存放，正是为了不把活性期限混进发言预算。
+    this.evaluationLeaseMs = evaluationLeaseMs;
     this.resetState();
   }
 
@@ -155,8 +170,12 @@ class SeatAiStore {
       player_recent_timestamps: [],
       ai_published_this_hand: 0,
       last_evaluation_started_at: null,
-      // 规则 4：每席同时最多一个模型回合。
+      // 规则 4：每席同时最多一个模型回合。只回答「能不能再开一个」。
       active_turn: null,
+      // 规则 6：已摘下但仍可能有迟到输出的回合。只回答「迟到的输出该不该发布」。
+      // 这两件事以前共用 active_turn 一个字段，于是「取消回合」和「让该席能重新
+      // 开始」互相绑死：标了 cancelled 却不摘下来，闸门就永久关着。
+      detached_turn: null,
       // 规则 4：思考/冷却期间的新事件合并为一个待评估最新上下文，不排队。
       pending_context: null,
       // 规则 2：每个来源事件对每席最多触发一次评估。
@@ -196,7 +215,10 @@ class SeatAiStore {
     if (mode === "OFF") {
       if (seat.active_turn !== null) {
         cancelledTurnId = seat.active_turn.turn_id;
-        seat.active_turn.cancelled = true;
+        // 摘下来，不只是打标记。留在 active_turn 上会让这一席从此开不了新回合，
+        // 连再打开都救不回来——而下面 else 分支承诺的「从下一个合法事件开始」
+        // 就永远到不了。
+        this.detachTurn(seat, "cancelled");
       }
       seat.pending_context = null;
       seat.status = "OFF";
@@ -367,6 +389,57 @@ class SeatAiStore {
     return intents;
   }
 
+  // 把在途回合从 active_turn 移到 detached_turn。只保留最近一个：迟到输出带的是
+  // 具体 turn_id，对不上就按 turn_not_active 拒绝，所以留一个就够，也不会无界增长。
+  detachTurn(seat, kind) {
+    const turn = seat.active_turn;
+    if (turn === null) return null;
+    seat.active_turn = null;
+    seat.detached_turn = { turn, kind };
+    return turn;
+  }
+
+  // 回收租约到期的评估回合。
+  //
+  // 这是权威自己走表的一步，由到期驱动按真实时钟调用，不需要任何宿主在场——一个被
+  // 遗弃的回合就是权威性时序，把回收交给宿主等于又把「规则要靠有人在场才前进」写
+  // 回来一次。本方法不做任何"该不该说话"的判定，只回答"这个回合是不是已经不可能
+  // 再回来了"。
+  //
+  // 三件明确不做的事：
+  //   1. 不退还每手额度。否则崩溃重启就是绕过规则 3 的刷额度手法。反正没发布出去，
+  //      本来也没消耗，无须退还。
+  //   2. 不重置冷却。cooldown 由 last_evaluation_started_at 算，回收不碰它，所以
+  //      规则 3 的最小启动间隔照旧生效。
+  //   3. 不清 pending_context。卡住期间合并进去的最新上下文仍然有效，下一个来源
+  //      事件会带着它开新回合——这正是规则 4「合并为最新上下文」要的效果。
+  reclaimExpiredEvaluations() {
+    const at = this.now();
+    const events = [];
+    for (const seat of this.seats.values()) {
+      const turn = seat.active_turn;
+      if (turn === null) continue;
+      if (turn.lease_deadline_at === null || at < turn.lease_deadline_at) continue;
+      this.detachTurn(seat, "reclaimed");
+      // 无条件 IDLE，不用判 mode：OFF 的席位不可能有在途回合。mode 全局只有
+      // setSeatAiMode 一个写入点，而它切 OFF 时就把回合摘下来了。这条不变量由
+      // 「OFF 的席位永远没有在途回合」那条测试钉住——依赖一个假设就得把它测出来，
+      // 否则这里写成判 mode 只是看着稳妥，实际是一段没人能验证的死分支。
+      seat.status = "IDLE";
+      events.push(
+        this.record("SEAT_AI_EVALUATION_RECLAIMED", {
+          seat_id: seat.seat_id,
+          turn_id: turn.turn_id,
+          started_at: turn.started_at,
+          lease_deadline_at: turn.lease_deadline_at,
+          reclaimed_at: at,
+          status: seat.status,
+        }),
+      );
+    }
+    return events;
+  }
+
   startEvaluation(input = {}) {
     const seat = this.requireSeat(input.seatId);
     if (seat.mode === "OFF") {
@@ -408,7 +481,8 @@ class SeatAiStore {
       started_hand_index: this.handIndex,
       started_street: this.street,
       started_at: at,
-      cancelled: false,
+      // 租约期限。适配器死在这之后就再也不会回来，权威到期自己收回。
+      lease_deadline_at: at + this.evaluationLeaseMs,
     };
     seat.last_evaluation_started_at = at;
     seat.status = "THINKING";
@@ -428,23 +502,47 @@ class SeatAiStore {
   resolveEvaluation(input = {}) {
     const seat = this.requireSeat(input.seatId);
     const turnId = requiredString(input.turnId, "turnId", 128);
-    const turn = seat.active_turn;
-    if (turn === null || turn.turn_id !== turnId) {
+    // 先看在途回合，再看已摘下的回合。摘下的回合仍须能被 resolve——不然规则 6
+    // 那条「迟到结果必须被丢弃」的证据就变成一个 turn_not_active 异常，适配器
+    // 分不清「我说的话被拒了」和「我调错了」。
+    const detached =
+      seat.detached_turn !== null && seat.detached_turn.turn.turn_id === turnId
+        ? seat.detached_turn
+        : null;
+    const turn = seat.active_turn !== null && seat.active_turn.turn_id === turnId
+      ? seat.active_turn
+      : detached === null
+        ? null
+        : detached.turn;
+    if (turn === null) {
       throw new ProbeError("turn_not_active", 409, {
         seat_id: seat.seat_id,
         turn_id: turnId,
       });
     }
-    seat.active_turn = null;
+    if (detached !== null) {
+      seat.detached_turn = null;
+    } else {
+      seat.active_turn = null;
+    }
     const decision = requiredEnum(input.decision, AI_DECISIONS, "decision");
 
-    // 规则 6：OFF 后任何迟到结果都不得发布。
-    if (seat.mode === "OFF" || turn.cancelled === true) {
-      seat.status = "OFF";
+    // 规则 6：OFF 后任何迟到结果都不得发布；被取消或被回收的回合同样不得发布。
+    // 理由在此刻计算而非摘下时固定：同一个被取消的回合，席位仍 OFF 时理由是
+    // seat_ai_off，已经重新打开时是 turn_cancelled。这两支都得留着。
+    if (seat.mode === "OFF" || detached !== null) {
+      // 状态跟 mode 走。以前这里无条件写 OFF，在「取消后又打开」的情况下会把一个
+      // ON 的席位改成 OFF——等于丢弃一条迟到输出顺手又静音一次。
+      seat.status = seat.mode === "OFF" ? "OFF" : "IDLE";
       return this.record("SEAT_AI_OUTPUT_DISCARDED", {
         seat_id: seat.seat_id,
         turn_id: turnId,
-        reason: seat.mode === "OFF" ? "seat_ai_off" : "turn_cancelled",
+        reason:
+          seat.mode === "OFF"
+            ? "seat_ai_off"
+            : detached.kind === "reclaimed"
+              ? "turn_reclaimed"
+              : "turn_cancelled",
         decision,
       });
     }
@@ -655,4 +753,10 @@ class SeatAiStore {
   }
 }
 
-module.exports = { SeatAiStore, LIVELY_V1, WHITELIST_SOURCE_EVENTS, countGraphemes };
+module.exports = {
+  SeatAiStore,
+  LIVELY_V1,
+  EVALUATION_LEASE_MS,
+  WHITELIST_SOURCE_EVENTS,
+  countGraphemes,
+};
