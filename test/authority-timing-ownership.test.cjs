@@ -37,18 +37,22 @@ const CORE_FILES = Object.freeze([
   "game/holdem.cjs",
 ]);
 
-// 到期驱动的四步。owner 只能取这四个之一，而且下面有一条测试反过来要求 tick() 里
+// 到期驱动的各步。owner 只能取其中之一，而且下面有一条测试反过来要求 tick() 里
 // 真的调了它——光在登记表里写个名字太便宜，字符串可以是任何东西。
 const DRIVER_STEPS = Object.freeze([
   "settleExpiredAction",
   "releaseExpiredSeats",
   "reclaimExpiredEvaluations",
+  // F5 新增两步。意图 claim 的租约到期要放回可领状态；冷却到期要把唯一 dirty context
+  // 变成可领工作项。两者都是纯时间事件，没有任何命令会顺带触发。
+  "releaseExpiredIntentClaims",
+  "promotePendingContexts",
   "startHandIfDue",
 ]);
 
 // 登记表。每条归三类之一：
 //
-//   driver    到期必须有人做事，owner 指明是四步中的哪一步。驱动提供**活性**：
+//   driver    到期必须有人做事，owner 指明是驱动里的哪一步。驱动提供**活性**：
 //             没人来问的时候，事情照样发生。
 //   enforced  在被问到的那一刻现场判定同一条期限，让答案不取决于 tick 落在请求的
 //             哪一边。这一类提供**正确性**，必须写出同一条期限的 owner——只有正确性
@@ -137,15 +141,39 @@ const CLOCK_COMPARISONS = Object.freeze([
     code: "if (seat.active_turn !== null || cooldown > 0) {",
     kind: "on_demand",
     reason:
-      "规则 3 最小评估间隔的闸门，在唤醒到达时才检查。冷却期满不需要做任何事：" +
-      "评估只由来源事件触发，没有事件就没有该发生的动作。且它不会永久静默一席——" +
-      "下一个来源事件照样唤醒，这与租约缺陷（不可自愈）的区别正在于此",
+      "规则 3 最小评估间隔的闸门，在唤醒到达时才检查。这一行本身到期时不需要做事——" +
+      "它只决定这一条事件是合并还是直接起回合。但合并进 pending_context 之后确实有事" +
+      "要做（把它变成可领工作项），那件事由 promotePendingContexts 那条 driver 负责。" +
+      "F5 之前这里写的理由是「下一个来源事件照样唤醒，所以不会永久静默」——那句话是错的：" +
+      "牌局可以就此再无白名单事件（比如所有人都已行动完、等着某一席回话），于是那份最新" +
+      "上下文永远搁着。错的不是这一行，是「没有跟进步骤」，所以补的是一条 driver",
   },
   {
     file: "authority/seat-ai-store.cjs",
     code: "if (cooldown > 0) {",
     kind: "on_demand",
-    reason: "同上，startEvaluation 侧的同一道闸门",
+    reason:
+      "同上，startEvaluation 侧的同一道闸门。F5 之后走公开接口撞不到它（工作项只在" +
+      "冷却为 0 时才登记），保留它是因为回合创建点该有的检查就得在回合创建点",
+  },
+  {
+    file: "authority/seat-ai-store.cjs",
+    code: "if (item.claim_deadline_at === null || at < item.claim_deadline_at) continue;",
+    kind: "driver",
+    owner: "releaseExpiredIntentClaims",
+    // 领走工作项之后、调 ai.start 之前崩掉的适配器：不放回去，那个工作项就永远挂在
+    // 一个不会回来的领取者名下。判定住在 releaseExpiredIntentClaims 里，claimIntents
+    // 每次也先调它，驱动那一步只是「没人来领的时候也照样放回去」。
+  },
+  {
+    file: "authority/seat-ai-store.cjs",
+    code: "if (this.cooldownRemainingMs(seat, this.now()) > 0) return null;",
+    kind: "driver",
+    owner: "promotePendingContexts",
+    // 冷却到期就该把那份唯一 dirty context 变成可领工作项，没人在场也一样。缺了这一步，
+    // 思考中或冷却内到达的最新上下文只写进 pending_context 然后停在那儿——宿主除了自己
+    // 去 view.seat 里翻 has_pending_context 之外无从知道有活要干，而那等于把受保护的
+    // 跟进时序交回宿主。
   },
 ]);
 
@@ -256,7 +284,7 @@ test("到期：driver 归属的 owner 都是 tick() 真的会调的方法", () =
   );
   assert.ok(owners.length > 0, "登记表里一条 driver 都没有，本条断言会变成空跑");
   for (const owner of new Set(owners)) {
-    assert.ok(DRIVER_STEPS.includes(owner), `${owner} 不是到期驱动的四步之一`);
+    assert.ok(DRIVER_STEPS.includes(owner), `${owner} 不是到期驱动的步骤之一`);
     assert.ok(tickBody.includes(`${owner}(`), `登记表把比较归给了 ${owner}，但 tick() 里没调它`);
   }
 });
@@ -295,14 +323,14 @@ test("到期：每条 enforced 都有同一条期限的 driver 提供活性", ()
   }
 });
 
-// 四步一步都不能少：删掉任一步都会让某一类期限重新变成没人问的状态，而那种失败是
+// 一步都不能少：删掉任一步都会让某一类期限重新变成没人问的状态，而那种失败是
 // 静默的——桌子只是不动了，没有任何报错。
-test("到期：四步都在，且每步都有归属它的到期状态", () => {
+test("到期：每步都在，且每步都有归属它的到期状态", () => {
   const source = fs.readFileSync(path.join(ROOT, "authority", "due-work.cjs"), "utf8");
   const owned = new Set(
     CLOCK_COMPARISONS.filter((entry) => entry.kind === "driver").map((entry) => entry.owner),
   );
-  assert.deepEqual([...owned].sort(), [...DRIVER_STEPS].sort(), "四步之外多了或少了一类到期状态");
+  assert.deepEqual([...owned].sort(), [...DRIVER_STEPS].sort(), "驱动步骤之外多了或少了一类到期状态");
   for (const step of DRIVER_STEPS) {
     assert.ok(source.includes(step), `due-work.cjs 里找不到 ${step}`);
   }

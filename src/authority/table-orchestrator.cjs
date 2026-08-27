@@ -83,8 +83,16 @@ class TableOrchestrator {
     // 座位 -> 玩家。牌局引擎按 playerId 索引，两个内核按 seatId 索引，翻译要有依据。
     this.seatToPlayer = new Map();
     this.playerToSeat = new Map();
-    // 待宿主执行的 AI 评估意图。本层只攒，不执行。
-    this.pendingIntents = [];
+    // 待宿主执行的 AI 评估意图不在本层保存（F5）。
+    //
+    // 原来这里有个 this.pendingIntents 数组，takeIntents 取走即清空。宿主在「取走」与
+    // 「ai.start」之间崩溃，权威侧就 pending 0、active turn 0、可回收 0——这次唤醒连
+    // 存在过的痕迹都没有。队列搬进 SeatAiStore 后，取走变成打租约标记，崩了会到期重领。
+    //
+    // 搬进内核而不是留在本层，还有个更硬的理由：一个待办能不能起，取决于 active_turn、
+    // pending_context、cooldown 与每手额度，这四样全在内核里。留在本层就得把这四样的
+    // 判定复制一份，或者让本层反过来窥探席位内部——要求 4 的「回合结束或冷却到期后自动
+    // 跟进」正是这两条路都走不通的地方。
     // 官方动作的幂等账。放在本层而不是引擎里，因为要记的是**调用方拿到的整个信封**
     // （含 intents），而 intents 是本层翻译出来的，引擎不知道它们存在。只记 result
     // 的话，重放会返回原结果但重新跑一遍事件翻译，于是该席 AI 被唤醒两次——公开发言
@@ -465,7 +473,8 @@ class TableOrchestrator {
     for (const intent of this.flushPendingFoldForActor()) {
       intents.push(intent);
     }
-    this.pendingIntents.push(...intents);
+    // 不再往本层队列里塞：accepted 的意图在 notifyDomainEvent 里就已经作为工作项
+    // 登记进权威队列了。这里的返回值只是「这次排空唤醒了谁」的回执。
     return intents;
   }
 
@@ -595,31 +604,35 @@ class TableOrchestrator {
     });
     if (Array.isArray(result.evaluations)) {
       const accepted = this.acceptable(result.evaluations);
-      this.pendingIntents.push(...accepted);
       return gate.commit({ ...result, evaluations: accepted });
     }
     return gate.commit(result);
   }
 
-  // 宿主取走待办意图后自行调用模型，再用 resolveEvaluation 回填。
+  // 宿主领取待办意图后自行调用模型，再用 resolveEvaluation 回填。
   //
-  // 传 seatId 就只取走该席的，别席的留在队列里。双宿主部署下这是必需的：取走即消费，
-  // 一方全取会让另一方负责的席位永远等不到意图。不传仍然全取——单宿主与既有编排层
-  // 测试就是这么用的，而「哪个适配器负责哪些席」不是内核该知道的事。
+  // 传 seatId 就只领该席的，别席的留在队列里。双宿主部署下这是必需的：一方全领会让
+  // 另一方负责的席位在租约期内等不到意图。不传仍然全领——单宿主与既有编排层测试就是
+  // 这么用的，而「哪个适配器负责哪些席」不是内核该知道的事。
+  //
+  // F5：这是 claim，不是取走。返回的快照带 intent_id，工作项留在权威侧并打上租约期限；
+  // 领走方按期用 ai.start 消费掉，或者不回来、期限一过重新可领。
   takeIntents(input = {}) {
-    if (input.seatId === undefined) {
-      const intents = this.pendingIntents;
-      this.pendingIntents = [];
-      return intents;
-    }
-    const seatId = input.seatId;
-    const taken = this.pendingIntents.filter((intent) => intent.seat_id === seatId);
-    this.pendingIntents = this.pendingIntents.filter((intent) => intent.seat_id !== seatId);
-    return taken;
+    return this.ai.claimIntents(input);
   }
 
   startEvaluation(input = {}) {
     return this.ai.startEvaluation(input);
+  }
+
+  // 把到期的 claim 放回可领状态。由到期驱动调用。
+  releaseExpiredIntentClaims() {
+    return this.ai.releaseExpiredIntentClaims();
+  }
+
+  // 把回合结束 / 冷却到期后的唯一 dirty context 变成可领工作项（要求 4）。
+  promotePendingContexts() {
+    return this.ai.promotePendingContexts();
   }
 
   // 绑房标识与桌规版本由本层注入，理由与 submitPlayerText 相同：宿主不该有机会传错一个
@@ -669,7 +682,7 @@ class TableOrchestrator {
       // 公共牌、底池、当前行动者、行动截止时间都属公开信息，房间级只读面就该有。
       public_hand: this.publicHandView(),
       public_timeline: this.ai.publicTimeline(),
-      pending_intent_count: this.pendingIntents.length,
+      pending_intent_count: this.ai.workItems.size,
     };
   }
 }

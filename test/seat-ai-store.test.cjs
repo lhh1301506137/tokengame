@@ -96,7 +96,7 @@ function fakeAi(script = []) {
 function runIntent(store, intent, ai) {
   const started = store.startEvaluation({
     seatId: intent.seat_id,
-    context: intent.context,
+    intentId: intent.intent_id,
   });
   const step = ai.decide(intent.context);
   return resolveVia(store, {
@@ -395,10 +395,10 @@ test("规则3：AI 每手 8 条公开上限，silent 不消耗额度", () => {
   });
   assert.equal(ninth.accepted, false);
   assert.equal(ninth.reason, "ai_hand_quota_exhausted");
-  assert.throws(
-    () => t.store.startEvaluation({ seatId: "seat-1", context: { source_event_id: "evt-9" } }),
-    probe("ai_hand_quota_exhausted"),
-  );
+  // 额度耗尽同样表现为「没有活可领」：notifyDomainEvent 在登记工作项之前就先看额度，
+  // promotePendingContext 也一样。startEvaluation 里那道额度闸门保留着，但走公开接口
+  // 到不了它——不为一道到不了的闸门编造覆盖。
+  assert.deepEqual(t.store.claimIntents({ seatId: "seat-1" }), [], "额度耗尽时不该有活可领");
 
   // 换手重置额度。
   t.store.startHand();
@@ -443,9 +443,13 @@ test("规则3：AI 评估启动间隔不少于 5 秒", () => {
   assert.equal(tooSoon.accepted, false);
   assert.equal(tooSoon.reason, "cooldown");
   assert.equal(tooSoon.cooldown_remaining_ms, 1);
+  // 冷却期内没有活可领。以前这里是拿一个自制 context 直接调 startEvaluation 撞
+  // evaluation_cooldown；现在宿主拿不到 intent_id，所以先撞的是「无活可领」。
+  // 那道冷却闸门保留在回合创建点，只是走公开接口到不了——工作项只在冷却为 0 时登记。
+  assert.deepEqual(t.store.claimIntents({ seatId: "seat-1" }), [], "冷却期内不该有活可领");
   assert.throws(
-    () => t.store.startEvaluation({ seatId: "seat-1", context: { source_event_id: "evt-b" } }),
-    probe("evaluation_cooldown"),
+    () => t.store.startEvaluation({ seatId: "seat-1", intentId: "intent-does-not-exist" }),
+    probe("intent_not_found"),
   );
 
   t.advance(1);
@@ -461,19 +465,29 @@ test("规则3：AI 评估启动间隔不少于 5 秒", () => {
 test("规则4：同席不得并发两个模型回合", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
+  // 同一个 intent_id 再起一次：工作项已被消费，撞的是 intent_not_found。
   assert.throws(
-    () => t.store.startEvaluation({ seatId: "seat-1", context: intent.context }),
-    probe("seat_turn_already_active"),
+    () => t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id }),
+    probe("intent_not_found"),
   );
+  // 思考期内的新事件合并成 pending，不排第二个工作项——所以「能领到的活」本身就不含
+  // 这一席。并发不再靠 startEvaluation 里那道闸门挡住，而是队列压根不发第二份工作。
+  //
+  // 那道闸门保留着（回合创建点该有的检查就得在回合创建点），但走公开接口已经撞不到它：
+  // 工作项只在 active_turn 为空时才登记，而回合只由消费工作项产生。这里不假装覆盖它。
+  const [next] = t.store.notifyDomainEvent({ type: "RAISE", eventId: "evt-2", payload: {} });
+  assert.equal(next.accepted, false, "思考期内的新事件应当合并，不该再排一个工作项");
+  assert.equal(next.reason, "merged_into_pending");
+  assert.deepEqual(t.store.claimIntents({ seatId: "seat-1" }), [], "思考中的席位不该有活可领");
   assert.equal(t.store.seatState("seat-1").status, "THINKING");
 });
 
 test("规则4：思考期内多事件合并为一个最新上下文，不排队逐条调用", () => {
   const t = table(["seat-1"]);
   const [first] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: { n: 1 } });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: first.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: first.intent_id });
 
   const [second] = t.store.notifyDomainEvent({ type: "RAISE", eventId: "evt-2", payload: { n: 2 } });
   const [third] = t.store.notifyDomainEvent({
@@ -495,7 +509,16 @@ test("规则4：思考期内多事件合并为一个最新上下文，不排队�
   });
   t.advance(LIVELY_V1.aiMinEvaluationIntervalMs);
 
-  const resumed = t.store.startEvaluation({ seatId: "seat-1" });
+  // F5 要求 4：冷却过后这份 dirty context 自己变成可领工作项。
+  // 以前这里是测试代码手动再调一次 startEvaluation，真实适配器要么去 view.seat 里翻
+  // has_pending_context，要么这条上下文永远搁着。现在宿主只做它本来就要做的事：领活。
+  const [resumedIntent] = t.store.claimIntents({ seatId: "seat-1" });
+  assert.ok(resumedIntent !== undefined, "冷却到期后这份上下文没有变成可领工作项");
+  assert.equal(resumedIntent.context.source_event_id, "evt-3");
+  const resumed = t.store.startEvaluation({
+    seatId: "seat-1",
+    intentId: resumedIntent.intent_id,
+  });
   assert.equal(resumed.payload.source_event_id, "evt-3");
   assert.equal(t.store.seatState("seat-1").has_pending_context, false);
   assert.equal(
@@ -511,7 +534,7 @@ test("规则4：思考期内多事件合并为一个最新上下文，不排队�
 test("规则5：同手同街的迟到输出照常公开，无需标注", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   // 模型慢了 30 秒才回来：权威层不因此触碰任何行动窗口。
   t.advance(30_000);
@@ -536,7 +559,7 @@ test("规则5：同手同街的迟到输出照常公开，无需标注", () => {
 test("规则5：同手已跨街的迟到输出必须带醒目标注", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   t.store.advanceStreet({ street: "flop" });
   const published = resolveVia(t.store, {
@@ -555,7 +578,7 @@ test("规则5：同手已跨街的迟到输出必须带醒目标注", () => {
 test("规则5：跨手的迟到输出必须丢弃，且不占用新一手额度", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   t.store.startHand();
   const resolved = resolveVia(t.store, {
@@ -579,7 +602,7 @@ test("规则5：跨手的迟到输出必须丢弃，且不占用新一手额度"
 test("规则5：AI 输出同样受 140 字素上限约束，超限进入可理解的降级状态", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   assert.throws(
     () => resolveVia(t.store, {
@@ -597,7 +620,7 @@ test("规则5：AI 输出同样受 140 字素上限约束，超限进入可理�
 test("规则5：重复结算同一回合被拒绝", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   const args = {
     seatId: "seat-1",
     turnId: started.payload.turn_id,
@@ -615,7 +638,7 @@ test("规则5：重复结算同一回合被拒绝", () => {
 test("规则6：切到 OFF 后停止新评估，并取消在途回合", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   const changed = t.store.setSeatAiMode({ seatId: "seat-1", mode: "OFF" });
   assert.equal(changed.payload.mode, "OFF");
@@ -628,7 +651,7 @@ test("规则6：切到 OFF 后停止新评估，并取消在途回合", () => {
     [],
   );
   assert.throws(
-    () => t.store.startEvaluation({ seatId: "seat-1", context: intent.context }),
+    () => t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id }),
     probe("seat_ai_off"),
   );
 });
@@ -636,7 +659,7 @@ test("规则6：切到 OFF 后停止新评估，并取消在途回合", () => {
 test("规则6：OFF 后回来的迟到结果一律丢弃，不得公开", () => {
   const t = table(["seat-1"]);
   const [intent] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: {} });
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   t.store.setSeatAiMode({ seatId: "seat-1", mode: "OFF" });
 
   t.advance(2_000);

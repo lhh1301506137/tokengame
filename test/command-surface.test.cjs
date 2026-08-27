@@ -282,13 +282,15 @@ test("AI：意图取走后由适配器回填，命令面自己不产生话术", 
     intents.every((i) => i.seat_id === holder.seat_id),
     `按席位取只应拿到本席的意图: ${JSON.stringify(intents)}`,
   );
-  assert.deepEqual(take(), [], "取走即清空");
+  assert.deepEqual(take(), [], "租约期内不重复派发同一份工作");
 
   const intent = intents[0];
+  assert.equal(typeof intent.intent_id, "string", "工作项必须带权威生成的 intent_id");
+  // F5 要求 2：只递 intent_id。适配器自带的 context 不再是入口，权威自己那份说了算。
   const started = ctx.s.dispatch("ai.start", {
     seat_id: intent.seat_id,
     recovery_credential: holder.credential,
-    context: intent.context,
+    intent_id: intent.intent_id,
   });
   assert.equal(typeof started.started.turn_id, "string");
 
@@ -304,6 +306,46 @@ test("AI：意图取走后由适配器回填，命令面自己不产生话术", 
   assert.equal(timeline.at(-1).type, "AI_PUBLIC_SPEECH");
   assert.equal(timeline.at(-1).payload.text, "这手我看看");
   assert.equal(timeline.at(-1).payload.poker_action_effect, null, "AI 话术永无动作效力");
+});
+
+test("AI：ai.start 只把 seatId 与 intentId 递进核心，不透传适配器自带的上下文", () => {
+  const ctx = surface({ playerCount: 3 });
+  const holder = ctx.seats[0];
+  begin(ctx);
+  const intents = ctx.s.dispatch("ai.take_intents", {
+    seat_id: holder.seat_id,
+    recovery_credential: holder.credential,
+  }).intents;
+  assert.ok(intents.length > 0);
+
+  // F5 要求 2 的落点在契约形状上，不在核心的宽容度上：核心当前忽略多余的键，所以
+  // 「命令面还透传 p.context」不会有任何可观测差异——直到某天核心开始读它。这里钉住
+  // 递进去的入参本身，让那条退路加不回来。
+  const seen = [];
+  const core = ctx.s.orchestrator;
+  const original = core.startEvaluation.bind(core);
+  core.startEvaluation = (input) => {
+    seen.push(input);
+    return original(input);
+  };
+  try {
+    ctx.s.dispatch("ai.start", {
+      seat_id: intents[0].seat_id,
+      recovery_credential: holder.credential,
+      intent_id: intents[0].intent_id,
+      // 适配器伪造一份上下文一起递过来。
+      context: { source_event_id: "evt-forged", hand_index: 999 },
+    });
+  } finally {
+    core.startEvaluation = original;
+  }
+
+  assert.equal(seen.length, 1);
+  assert.deepEqual(
+    Object.keys(seen[0]).sort(),
+    ["intentId", "seatId"],
+    `命令面把额外的键递进了核心: ${JSON.stringify(seen[0])}`,
+  );
 });
 
 test("AI：本地隐藏不写权威事件", () => {
@@ -523,14 +565,17 @@ test("授权：ai.resolve 不得让别人以某席 AI 的名义公开发言", ()
   const attacker = ctx.seats[0];
 
   // 受害席的 AI 开着（默认），并且真的有一个在途回合可被回填。
+  // F5 之后回合只能由权威工作项起，所以这里用受害席自己的凭据领自己的活——
+  // 这也顺带说明：本用例攻击的是回填那一步，不是起回合那一步。
+  const [work] = ctx.s.dispatch("ai.take_intents", {
+    seat_id: victim.seat_id,
+    recovery_credential: victim.credential,
+  }).intents;
+  assert.ok(work !== undefined, "开局应当为受害席产生工作项，否则本用例证不到东西");
   const started = ctx.s.dispatch("ai.start", {
     seat_id: victim.seat_id,
     recovery_credential: victim.credential,
-    context: {
-      source_event_id: "evt-manual",
-      source_event_type: "PLAYER_PUBLIC_SPEECH",
-      payload: {},
-    },
+    intent_id: work.intent_id,
   });
   const turnId = started.started.turn_id;
 

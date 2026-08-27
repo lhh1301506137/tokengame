@@ -134,7 +134,7 @@ function begin(ctx, seatIndexes = [0, 1, 2]) {
 function resolveAfterLease({ reclaimFirst }) {
   const t = aiTable();
   const intent = wake(t.store, "event-1");
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   t.advance(EVALUATION_LEASE_MS + 1);
   if (reclaimFirst) t.store.reclaimExpiredEvaluations();
   return resolveVia(t.store, {
@@ -167,7 +167,7 @@ test("时相无关：租约过期后的 resolve，回收跑没跑都必须丢弃
 function wakeAfterLease({ reclaimFirst }) {
   const t = aiTable();
   const intent = wake(t.store, "event-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   t.advance(EVALUATION_LEASE_MS + 1);
   if (reclaimFirst) t.store.reclaimExpiredEvaluations();
   return wake(t.store, "event-2");
@@ -185,29 +185,41 @@ test("时相无关：租约过期后的唤醒，回收跑没跑都必须被接�
   );
 });
 
-// ai.start 是宿主面自己的一条命令，可以带着先前取到的上下文在任何时刻到达，中间不一定
-// 有过唤醒。所以 startEvaluation 那个入口必须自己判租约，不能指望 notifyDomainEvent
-// 已经清过——这一条最初漏了，是变异测试（删掉那一行仍然全绿）暴露出来的。
-function startAfterLease({ reclaimFirst }) {
+// 领活 + 起回合这条链路上的同一件事。适配器崩在半路留下一个幽灵回合，租约过期之后
+// 那一席必须重新领得到活、起得来回合，而这不能取决于驱动跑没跑。
+//
+// F5 之前这里是「带着先前取到的上下文再调一次 ai.start」，测的是 startEvaluation 自己
+// 那句 reclaimSeatIfExpired。现在宿主没有自带上下文这条路了：促进与回收都收在
+// claimIntents 里（它先促进、促进又先按席回收），所以走公开接口时 startEvaluation
+// 面前永远不会有幽灵回合。那句 reclaim 作为回合创建点的自保留着，但这条用例不再覆盖它，
+// 覆盖的是 claimIntents 这条新的惰性路径。
+function claimAfterLease({ reclaimFirst }) {
   const t = aiTable();
   const intent = wake(t.store, "event-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
+  // 思考期内到达的新事件：合并成待办，等这个回合让位。
+  const merged = wake(t.store, "event-2");
+  if (merged.accepted !== false || merged.reason !== "merged_into_pending") {
+    return `前置条件不成立: ${JSON.stringify(merged)}`;
+  }
   t.advance(EVALUATION_LEASE_MS + 1);
   if (reclaimFirst) t.store.reclaimExpiredEvaluations();
+  const [work] = t.store.claimIntents({ seatId: "seat-1" });
+  if (work === undefined) return "no_work_available";
+  if (work.context.source_event_id !== "event-2") return `wrong_context: ${work.context.source_event_id}`;
   try {
-    const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
-    return started.type;
+    return t.store.startEvaluation({ seatId: "seat-1", intentId: work.intent_id }).type;
   } catch (error) {
     return error.code ?? "unexpected";
   }
 }
 
-test("时相无关：租约过期后的 ai.start，回收跑没跑都必须放行", () => {
-  assert.equal(startAfterLease({ reclaimFirst: true }), "SEAT_AI_EVALUATION_STARTED");
+test("时相无关：租约过期后重新领活并起回合，回收跑没跑都必须放行", () => {
+  assert.equal(claimAfterLease({ reclaimFirst: true }), "SEAT_AI_EVALUATION_STARTED");
   assert.equal(
-    startAfterLease({ reclaimFirst: false }),
+    claimAfterLease({ reclaimFirst: false }),
     "SEAT_AI_EVALUATION_STARTED",
-    "租约已过期，幽灵回合不该还挡着 ai.start，而这不能取决于驱动跑没跑",
+    "租约已过期，幽灵回合不该还挡着这一席重新说话，而这不能取决于驱动跑没跑",
   );
 });
 
@@ -217,7 +229,7 @@ test("时相无关：租约过期后的 ai.start，回收跑没跑都必须放�
 test("时相无关：冷却未满时被拒，与驱动无关（对照组）", () => {
   const t = aiTable();
   const first = wake(t.store, "event-1");
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: first.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: first.intent_id });
   resolveVia(t.store, {
     seatId: "seat-1",
     turnId: started.payload.turn_id,

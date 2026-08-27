@@ -366,7 +366,11 @@ test("F2：公开发言的重放不得多出一条时间线记录，也不得多
   const first = ctx.s.dispatch("chat.say", sayParams(ctx));
   assert.notEqual(first.published, null, "第一次发言应当进入公开时间线");
   const afterFirst = ctx.s.dispatch("view.timeline").timeline.length;
-  const intentsAfterFirst = ctx.o.pendingIntents.length;
+  // F5：待办队列在权威侧。数条数之外还要记下每席的 context_revision——每产生一份新
+  // 上下文就 +1，所以「重放又唤醒了一次」即使条数不变也逃不掉（每席只留最新一份，
+  // 重复唤醒表现为就地覆盖而不是多一条）。
+  const intentsAfterFirst = ctx.o.ai.workItems.size;
+  const revisionsAfterFirst = [...ctx.o.ai.seats.values()].map((seat) => seat.context_revision);
   assert.ok(intentsAfterFirst > 0, "前置条件：发言应当唤醒至少一席");
 
   const replay = ctx.s.dispatch("chat.say", sayParams(ctx));
@@ -378,9 +382,14 @@ test("F2：公开发言的重放不得多出一条时间线记录，也不得多
     "重放不得往公开时间线里再加一条",
   );
   assert.equal(
-    ctx.o.pendingIntents.length,
+    ctx.o.ai.workItems.size,
     intentsAfterFirst,
     "重放不得再产生一轮 AI 意图：多唤醒一次就是多发一次言",
+  );
+  assert.deepEqual(
+    [...ctx.o.ai.seats.values()].map((seat) => seat.context_revision),
+    revisionsAfterFirst,
+    "重放不得推进任何一席的 context_revision：推进了就说明又组了一份上下文",
   );
 });
 
@@ -619,11 +628,21 @@ test("F2：一次发言对同一席只产生一个意图，唤醒不重复记账
   ctx.o.takeIntents();
   ctx.advance(LIVELY_V1.aiMinEvaluationIntervalMs + 1);
 
+  // F5：待办队列在权威侧（o.ai.workItems），不再是编排层那个数组。判据不变，取数的
+  // 地方变了：只看本次来源事件唤醒出来的那些工作项。
   const said = ctx.s.dispatch("chat.say", sayParams(ctx));
-  const pending = ctx.o.pendingIntents;
-  assert.ok(pending.length > 0, "前置条件：发言应当唤醒至少一席");
+  assert.ok(said.published !== null, "前置条件：这句话应当发布出去");
+  // 命令面返回的是 payload，不含 event_id；唤醒用的 source_event_id 是那条事件自己的
+  // event_id，所以从权威事件流里取最后一条 PLAYER_PUBLIC_SPEECH。
+  const speech = [...ctx.o.ai.events].reverse()
+    .find((event) => event.type === "PLAYER_PUBLIC_SPEECH");
+  assert.ok(speech !== undefined, "前置条件：权威事件流里应当有这条公开发言");
+  const woken = [...ctx.o.ai.workItems.values()].filter(
+    (item) => item.context.source_event_id === speech.event_id,
+  );
+  assert.ok(woken.length > 0, `前置条件：发言应当唤醒至少一席（source=${speech.event_id}）`);
 
-  const seen = pending.map((intent) => `${intent.seat_id}|${intent.context.source_event_id}`);
+  const seen = woken.map((item) => `${item.seat_id}|${item.context.source_event_id}`);
   assert.deepEqual(
     [...new Set(seen)].sort(),
     [...seen].sort(),
@@ -632,7 +651,7 @@ test("F2：一次发言对同一席只产生一个意图，唤醒不重复记账
   // 信封声称的意图数必须与队列里真实的条数一致：不一致说明有人多推或少推了一份。
   assert.equal(
     said.intent_count,
-    pending.length,
+    woken.length,
     "返回的 intent_count 与待办队列必须一致",
   );
 });

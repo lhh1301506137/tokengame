@@ -39,6 +39,24 @@ const LIVELY_V1 = Object.freeze({
 // 它一格额度也没放宽。
 const EVALUATION_LEASE_MS = 120_000;
 
+// 意图 claim 租约（F5 要求 1）。
+//
+// 原来的 takeIntents 是「取走即从队列删除」，而评估租约只在随后的 ai.start 建立。
+// 两步之间没有任何权威记录：适配器死在这里，权威侧 pending 为 0、active turn 为 0、
+// 可回收项为 0，这次唤醒就永久消失了——玩家的问题既没有回答也没有失败状态。
+//
+// 修法是让 take 变成 claim：工作项留在权威侧，只被标上「已被领走，期限到 X」。
+// 领走方按期把它变成回合（ai.start 消费掉），或者不回来、期限一过重新可领。
+//
+// 30 秒的理由与评估租约的 120 秒不同，所以是两个常量而不是一个。这段租约覆盖的是
+// 「宿主拿到工作项 → 调 ai.start」，全程在宿主本机、模型还没开始跑；模型耗时落在
+// 评估租约那一段。按 120 秒收会让一个崩掉的适配器把工作项压住两分钟，而这段窗口
+// 本来只该是毫秒级。
+//
+// 也不放进 LIVELY_V1，理由同 EVALUATION_LEASE_MS：那是规则 3 的发言预算，version
+// 字符串会作为 limits_version 报给宿主并进过已验收证据；租约是活性期限，不是预算。
+const INTENT_CLAIM_LEASE_MS = 30_000;
+
 // 规则 2：白名单来源事件。AI_PUBLIC_SPEECH 故意不在其中——AI 发言可以进入以后
 // 合法评估的上下文，但不能单独唤醒任何席位 AI。
 const WHITELIST_SOURCE_EVENTS = Object.freeze([
@@ -102,12 +120,14 @@ class SeatAiStore {
     idFactory = () => require("node:crypto").randomUUID(),
     limits = LIVELY_V1,
     evaluationLeaseMs = EVALUATION_LEASE_MS,
+    intentClaimLeaseMs = INTENT_CLAIM_LEASE_MS,
   } = {}) {
     this.now = now;
     this.idFactory = idFactory;
     this.limits = Object.freeze({ ...LIVELY_V1, ...limits });
     // 与 limits 分开存放，正是为了不把活性期限混进发言预算。
     this.evaluationLeaseMs = evaluationLeaseMs;
+    this.intentClaimLeaseMs = intentClaimLeaseMs;
     this.resetState();
   }
 
@@ -118,6 +138,13 @@ class SeatAiStore {
     this.handIndex = 0;
     this.street = "preflop";
     this.sequence = 0;
+    // F5：待办工作项。intent_id -> item。权威持有，claim 只是打标不删除。
+    //
+    // 为什么队列搬进内核而不留在编排层：一个工作项的生死取决于 active_turn、
+    // pending_context、cooldown 与每手额度，这四样全在本模块。放在编排层就得把这四样
+    // 的判定复制一份过去，或者让编排层反过来窥探席位内部——F5 要求 4 的「回合结束或
+    // 冷却到期自动跟进」正是这两者都做不到的那一步。
+    this.workItems = new Map();
   }
 
   // 规则 1：每次新房绑定或桌规版本变化都必须先明确确认默认公开。
@@ -200,6 +227,10 @@ class SeatAiStore {
       detached_turn: null,
       // 规则 4：思考/冷却期间的新事件合并为一个待评估最新上下文，不排队。
       pending_context: null,
+      // F5 要求 3：该席上下文的版本号，每产生一份新上下文就 +1。宿主拿到的是只读快照，
+      // 快照自带这个号，于是「我手上这份还是最新的吗」是宿主能自己回答的问题，不必去
+      // 猜，也不必反过来读席位内部状态。
+      context_revision: 0,
       // 规则 2：每个来源事件对每席最多触发一次评估。
       consumed_source_events: new Set(),
       // 规则 7：本地隐藏只改变该查看者渲染。
@@ -243,11 +274,14 @@ class SeatAiStore {
         this.detachTurn(seat, "cancelled");
       }
       seat.pending_context = null;
+      this.discardWorkItem(seat.seat_id);
       seat.status = "OFF";
     } else {
       seat.status = "IDLE";
       // 重新开启后只从下一个合法事件或一次明确的立即评估开始，不补跑旧事件。
       seat.pending_context = null;
+      // 关期间攒下的工作项同样不补跑。留着它就是「关了又开，旧事件照样冒出来」。
+      this.discardWorkItem(seat.seat_id);
     }
     return this.record("SEAT_AI_MODE_CHANGED", {
       seat_id: seat.seat_id,
@@ -349,6 +383,171 @@ class SeatAiStore {
     return remaining > 0 ? remaining : 0;
   }
 
+  // ---------------------------------------------------------------- F5：工作项
+
+  // 把一份上下文登记成权威侧的待办工作项，返回给宿主看的只读快照。
+  //
+  // intent_id 由权威生成（要求 2）。宿主之后只能拿这个 id 回来启动评估，不能自带
+  // 上下文——source_event_id 是「这句公开话术因何而起」的审计依据，让适配器自己填
+  // 等于让被审计方写审计记录。
+  //
+  // 上下文原本存在权威侧，快照是深拷贝（要求 3）。宿主改自己那份改不动权威这份。
+  registerWorkItem(seat, context) {
+    seat.context_revision += 1;
+    const stored = { ...clone(context), context_revision: seat.context_revision };
+    // 新上下文严格地更新，pending 里那份旧的就不再是待办了。
+    seat.pending_context = null;
+
+    // 每席最多一个工作项——要求 4 说的是「唯一 dirty context」。
+    //
+    // 不这么做的话：两条事件在同一个冷却窗口外接连到达，各排一个工作项，宿主领走两个，
+    // 起了第一个，第二个被冷却拒掉、留在队列里、租约到期又可领……最后在几秒后拿一份
+    // 过期上下文说一句已经不合时宜的话。规则 4 合并 pending 就是为了避免这个，工作项
+    // 队列不能把它漏回来。
+    const existing = this.findWorkItemBySeat(seat.seat_id);
+    if (existing !== null) {
+      // 就地换上下文，保留 intent_id 与 claim 状态。宿主手上那个 id 依然有效，只是它
+      // ai.start 起来的会是最新上下文，而不是它当初看到的那份——这正是要求 3 的意思：
+      // 权威保存事实，适配器拿的是只读快照。快照自带 context_revision，宿主能自己发现
+      // 手里那份旧了，不必去猜也不必反过来读席位内部。
+      existing.context = stored;
+      existing.superseded_count += 1;
+      return existing;
+    }
+
+    const item = {
+      intent_id: `intent-${this.idFactory()}`,
+      seat_id: seat.seat_id,
+      // 权威保存的那一份。source_event_id / hand_index / street 都在 context 里，
+      // 由 notifyDomainEvent 组装，宿主碰不到。
+      context: stored,
+      created_at: this.now(),
+      claimed_at: null,
+      claim_deadline_at: null,
+      claim_count: 0,
+      superseded_count: 0,
+    };
+    this.workItems.set(item.intent_id, item);
+    return item;
+  }
+
+  findWorkItemBySeat(seatId) {
+    for (const item of this.workItems.values()) {
+      if (item.seat_id === seatId) return item;
+    }
+    return null;
+  }
+
+  // 丢弃某席的待办。换手、关闭 AI、退席都走这里。
+  discardWorkItem(seatId) {
+    const item = this.findWorkItemBySeat(seatId);
+    if (item === null) return null;
+    this.workItems.delete(item.intent_id);
+    return item;
+  }
+
+  // 宿主可见的工作项快照。凭据不进这里，claim 状态也不进——那是权威的调度内务，
+  // 宿主要知道的只有「这是哪一席的什么活、我该用哪个 id 回来」。
+  intentSnapshot(item) {
+    return {
+      intent_id: item.intent_id,
+      seat_id: item.seat_id,
+      accepted: true,
+      context: clone(item.context),
+    };
+  }
+
+  // 释放 claim 已过期的工作项，使其重新可领（要求 1 的另一半）。
+  //
+  // 与 reclaimSeatIfExpired 同一个道理：必须在每个会读到 claim 的地方问一次，不能只在
+  // 驱动那一步问。只在驱动里问，判定就取决于 tick 落在请求的哪一边——同一次 claim，
+  // 抢在 tick 前到达拿不到活、晚到就拿得到。
+  releaseExpiredIntentClaims() {
+    const at = this.now();
+    const released = [];
+    for (const item of this.workItems.values()) {
+      if (item.claim_deadline_at === null || at < item.claim_deadline_at) continue;
+      item.claimed_at = null;
+      item.claim_deadline_at = null;
+      released.push(this.record("SEAT_AI_INTENT_CLAIM_RELEASED", {
+        intent_id: item.intent_id,
+        seat_id: item.seat_id,
+        released_at: at,
+        claim_count: item.claim_count,
+      }));
+    }
+    return released;
+  }
+
+  // 领取待办。取走即打标，不删除——这正是 F5 的修复点。
+  claimIntents(input = {}) {
+    // 先按当前时钟促进与释放，再领。同 reclaimSeatIfExpired 的道理：判定不能取决于
+    // 驱动的 tick 落在这次请求的哪一边。冷却刚好过期 10 毫秒时，抢在 tick 前领取的
+    // 宿主拿不到活、晚到的拿得到——同样的输入两种活性结果，而 tick 间隔是宿主选项。
+    this.promotePendingContexts();
+    this.releaseExpiredIntentClaims();
+    const seatId = input.seatId === undefined ? null : requiredString(input.seatId, "seatId", 64);
+    const at = this.now();
+    const claimed = [];
+    for (const item of this.workItems.values()) {
+      if (seatId !== null && item.seat_id !== seatId) continue;
+      // 已被别人领着且未到期的跳过。这一条保住了双宿主语义：先轮询的一方不会把另一方
+      // 负责的席位吞掉，而它此前是靠「取走即删除」实现的，代价就是丢失窗口。
+      if (item.claim_deadline_at !== null) continue;
+      item.claimed_at = at;
+      item.claim_deadline_at = at + this.intentClaimLeaseMs;
+      item.claim_count += 1;
+      claimed.push(this.intentSnapshot(item));
+    }
+    return claimed;
+  }
+
+  // 回合结束或冷却到期后，把唯一的 dirty context 变成可领工作项（要求 4）。
+  //
+  // 关键在于「不要求宿主轮询席位内部状态来恢复活性」。原来 pending_context 只是个字段，
+  // 权威不为它产生任何意图，宿主除了自己去 view.seat 里翻 has_pending_context 之外没有
+  // 别的办法知道有活要干——而那等于把受保护的跟进时序重新交给宿主。
+  promotePendingContext(seat) {
+    if (seat.pending_context === null) return null;
+    if (seat.mode === "OFF") return null;
+    // 回合还在飞、冷却还没过，都不是「可以开新回合」的时刻。到那时再促。
+    if (seat.active_turn !== null) return null;
+    if (this.cooldownRemainingMs(seat, this.now()) > 0) return null;
+    // 额度耗尽就地丢弃。这一手内 ai_published_this_hand 只增不减（只在 startHand
+    // 归零，而那里同样会清 pending_context），所以留着它永远等不到能用的时刻，只会让
+    // has_pending_context 在这一手余下的时间里一直谎报「有活要干」。丢掉之后本席状态
+    // 与「额度耗尽时又来了一个事件」一致——notifyDomainEvent 在那条路上也不写
+    // pending_context。
+    if (seat.ai_published_this_hand >= this.limits.aiMaxPublicPerHand) {
+      seat.pending_context = null;
+      return null;
+    }
+    // registerWorkItem 会把 pending_context 清掉，这里只需把它交出去。
+    const item = this.registerWorkItem(seat, seat.pending_context);
+    return this.record("SEAT_AI_INTENT_QUEUED", {
+      intent_id: item.intent_id,
+      seat_id: seat.seat_id,
+      source_event_id: item.context.source_event_id ?? null,
+      hand_index: item.context.hand_index ?? null,
+      street: item.context.street ?? null,
+      context_revision: item.context.context_revision,
+      origin: "pending_context_promoted",
+    });
+  }
+
+  // 全席促进。由到期驱动调用：冷却到期这件事没有任何命令会顺带触发，只能走表。
+  promotePendingContexts() {
+    const events = [];
+    for (const seat of this.seats.values()) {
+      // 先按当前时钟回收过期回合。不然一个被遗弃的回合会一直挡着促进，而它该不该
+      // 挡取决于驱动跑没跑。
+      this.reclaimSeatIfExpired(seat);
+      const event = this.promotePendingContext(seat);
+      if (event !== null) events.push(event);
+    }
+    return events;
+  }
+
   // 规则 2 + 规则 4。返回「评估意向」而不直接调模型：权威层保持宿主中立且可确定性
   // 测试，宿主适配器再据此驱动自己的模型形态。
   notifyDomainEvent(input = {}) {
@@ -409,11 +608,10 @@ class SeatAiStore {
         continue;
       }
 
-      intents.push({
-        seat_id: seat.seat_id,
-        accepted: true,
-        context,
-      });
+      // F5：登记成权威侧工作项再返回快照。返回值里带 intent_id，宿主拿它回来
+      // 启动评估；即使这份返回值在传输途中丢了，工作项仍在权威队列里等人来领。
+      const item = this.registerWorkItem(seat, context);
+      intents.push(this.intentSnapshot(item));
     }
     return intents;
   }
@@ -478,10 +676,33 @@ class SeatAiStore {
     return events;
   }
 
+  // 启动评估。只认权威生成的 intent_id（要求 2），不接受适配器自带上下文。
+  //
+  // 之前的签名收 { seatId, context }，context 是宿主回传的任意对象。source_event_id
+  // 是「这句公开话术因何而起」的唯一审计依据，让被审计方填等于没有审计——宿主可以
+  // 把任何一句话挂到任何一个事件上，也可以挂到一个不存在的事件上。
   startEvaluation(input = {}) {
     const seat = this.requireSeat(input.seatId);
+    const intentId = requiredString(input.intentId, "intentId", 128);
+    // 先看席位模式，再看工作项。顺序有意如此：关掉 AI 时该席的待办会被一起丢弃，所以
+    // 反过来的话「拿着旧 id 去起一个已关席位」永远只报 intent_not_found，宿主看不出
+    // 「这一席被关了」这个真正的原因。
     if (seat.mode === "OFF") {
       throw new ProbeError("seat_ai_off", 409, { seat_id: seat.seat_id });
+    }
+    const item = this.workItems.get(intentId);
+    if (item === undefined) {
+      // 已被消费的 id 也走这里。宿主看到的是同一个错误码：从它的角度，「这个 id
+      // 现在不是可用工作项」是同一件事，区分二者只会泄露别席的调度节奏。
+      throw new ProbeError("intent_not_found", 404, { intent_id: intentId });
+    }
+    if (item.seat_id !== seat.seat_id) {
+      // 跨席 claim。要求 5 点名的用例：宿主拿着 A 席的工作项去开 B 席的回合，
+      // 就能让 B 席替 A 席说话，而 B 席的额度和冷却都还是满的。
+      throw new ProbeError("intent_seat_mismatch", 403, {
+        intent_id: intentId,
+        seat_id: seat.seat_id,
+      });
     }
     // 同上：租约过期的回合不该再挡住新回合，而这不能等驱动来清。
     this.reclaimSeatIfExpired(seat);
@@ -508,11 +729,10 @@ class SeatAiStore {
       });
     }
 
-    const context = clone(input.context) ?? seat.pending_context;
-    if (context === null || context === undefined) {
-      throw new ProbeError("invalid_field", 400, { field: "context" });
-    }
-    seat.pending_context = null;
+    // 消费工作项。到这里为止的每个闸门都可能抛出，抛出时工作项仍在队列里且仍被
+    // claim 着——租约到期后重新可领，不会因为一次冷却拒绝就丢掉这次唤醒。
+    this.workItems.delete(intentId);
+    const context = item.context;
     seat.active_turn = {
       turn_id: `turn-${this.idFactory()}`,
       seat_id: seat.seat_id,
@@ -537,9 +757,27 @@ class SeatAiStore {
     });
   }
 
+  // 回合结束即促进（F5 要求 4 的前半句「回合结束后」）。
+  //
+  // 包一层而不是在 resolveTurn 的每个 return 前各写一遍：那个方法有五个正常出口和两个
+  // 抛出出口，逐个加等于漏一个就少一条活性路径。finally 顺带把抛出路径也覆盖了——
+  // message_too_long 和额度耗尽这两支已经把回合摘下来了，回合确实结束了，只是结论是拒绝。
+  //
+  // 冷却常常会让这一步当场变成空操作（启动间隔从回合开始算）。那不是缺陷：模型跑得比
+  // 冷却久时这里直接促进，跑得快时留给冷却到期那一支。两支都必须存在，缺前者就得等
+  // 一个 tick，缺后者就永远等不到。
+  resolveEvaluation(input = {}) {
+    try {
+      return this.resolveTurn(input);
+    } finally {
+      const seat = this.seats.get(input.seatId);
+      if (seat !== undefined) this.promotePendingContext(seat);
+    }
+  }
+
   // 规则 5 + 规则 6。AI 生成永不暂停或延长真人行动倒计时：本方法不触碰任何
   // 行动窗口，只决定迟到输出能否发布、是否需要标注、还是必须丢弃。
-  resolveEvaluation(input = {}) {
+  resolveTurn(input = {}) {
     const seat = this.requireSeat(input.seatId);
     const turnId = requiredString(input.turnId, "turnId", 128);
     // 先按当前时钟回收，再查回合。这一步决定了迟到输出走发布还是走 turn_reclaimed，
@@ -693,6 +931,10 @@ class SeatAiStore {
       seat.ai_published_this_hand = 0;
       seat.consumed_source_events = new Set();
       seat.pending_context = null;
+      // 上一手的待办不带进新一手：它的 hand_index/street 都是旧的，起来就是对着
+      // 已经结束的牌面说话。规则 5 本来会在 resolve 时按 hand_advanced 丢弃它，
+      // 但那要先白跑一次模型；在这里丢掉更省，语义也一样。
+      this.discardWorkItem(seat.seat_id);
       // 在途回合不取消：它会在 resolveEvaluation 里按 hand_advanced 丢弃。
       // 冷却计时不因换手重置——启动间隔是时间维度的反刷屏，不是每手配额。
     }
@@ -780,6 +1022,15 @@ class SeatAiStore {
       cooldown_remaining_ms: this.cooldownRemainingMs(seat, at),
       active_turn_id: seat.active_turn === null ? null : seat.active_turn.turn_id,
       has_pending_context: seat.pending_context !== null,
+      // F5 要求 3/4：待办的可见性。宿主不再需要靠 has_pending_context 猜「是不是该
+      // 去催一下」——有活时这里直接给 intent_id，没有就是 null，而促进由权威走表完成。
+      // 保留 has_pending_context 是因为它答的是另一个问题：有一份上下文正在被合并等待，
+      // 但当前回合/冷却还没让它变成可领的活。
+      pending_intent_id: (() => {
+        const item = this.findWorkItemBySeat(seat.seat_id);
+        return item === null ? null : item.intent_id;
+      })(),
+      context_revision: seat.context_revision,
       limits_version: this.limits.version,
       // 该席自己的公开确认记录，没有就是 null。给出整个三元组而不只是一个布尔：
       // 「确认过」和「确认的是当前这个房间与这版桌规」不是同一件事（规则 3 会让旧确认失效），
@@ -822,6 +1073,7 @@ module.exports = {
   SeatAiStore,
   LIVELY_V1,
   EVALUATION_LEASE_MS,
+  INTENT_CLAIM_LEASE_MS,
   WHITELIST_SOURCE_EVENTS,
   countGraphemes,
 };

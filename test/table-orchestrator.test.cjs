@@ -225,8 +225,15 @@ test("隐私：底牌从不经翻译进入 AI 上下文，无争议结束时也�
   ctx.act({ playerId: actor(ctx).playerId, type: "fold" });
   assert.equal(ctx.o.hand.finishReason, "all_others_folded");
 
-  // 所有进过 AI 上下文的 payload：既包括交出去的意图，也包括内核记下的。
-  const contexts = ctx.o.pendingIntents.map((intent) => intent.context);
+  // 所有进过 AI 上下文的 payload。F5 之后队列在权威侧，每席只留最新一份，所以这里
+  // 把两处都收齐：权威队列里的工作项，以及被合并等着的 pending_context。上下文只可能
+  // 在这两个地方，任何一处漏了底牌都算泄露。
+  const contexts = [
+    ...[...ctx.o.ai.workItems.values()].map((item) => item.context),
+    ...[...ctx.o.ai.seats.values()]
+      .map((seat) => seat.pending_context)
+      .filter((context) => context !== null),
+  ];
   assert.ok(contexts.length > 0, "本手必然产生过上下文");
   const serialized = JSON.stringify(contexts);
   assert.ok(!serialized.includes("hole_cards"), "上下文不得出现 hole_cards 字段");
@@ -353,12 +360,17 @@ test("编排：只把 accepted 的意图交给宿主，被合并与冷却的留�
   assert.deepEqual(stillActive, [], "非 accepted 的意图不得外泄给宿主");
 });
 
-test("编排：takeIntents 取走后清空，不会让宿主重复执行同一意图", () => {
+test("编排：takeIntents 领走后租约期内不再发同一份，但工作项留在权威侧", () => {
   const ctx = harness();
   begin(ctx);
   const first = ctx.o.takeIntents();
   assert.ok(first.length > 0);
+  // 租约期内不重复派发：宿主不会被要求执行同一意图两次。
   assert.deepEqual(ctx.o.takeIntents(), []);
+  // 但它没有被删掉。F5 的整个修法就在这一行：领走不等于消失，宿主死在
+  // 「领走」与「ai.start」之间时，权威这边还留着可回收的工作。
+  assert.equal(ctx.o.ai.workItems.size, first.length);
+  assert.equal(ctx.o.projection().pending_intent_count, first.length);
 });
 
 test("规则3（桌面）：离桌围栏立即把该席 AI 切 OFF，停止唤醒", () => {

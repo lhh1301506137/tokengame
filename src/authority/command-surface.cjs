@@ -42,8 +42,9 @@ const SEAT_AUTHORIZED = Object.freeze([
   // AI 回填三件套。双宿主部署里两个适配器都持有传输令牌才能通信，所以传输令牌区分不了
   // 它们；把关只能落在席位凭据上。ai.resolve 带 public_speech 就是「以该席 AI 的名义
   // 公开发言」——真人版的 chat.say 一直要凭据，AI 版不要就是冒名洞。
-  // ai.take_intents 取走即消费：不按席位把关，先轮询的一方会把另一方的意图吞掉，
-  // 让对面那些席的 AI 静默。
+  // ai.take_intents 是领取（claim）：不按席位把关，先轮询的一方会把另一方的工作项
+  // 全领走，让对面那些席的 AI 在整个租约期内静默。租约到期会放回去，所以不再是永久
+  // 静默——但「等 30 秒才轮到你」和「不该被你碰到」是两件事，闸门照旧要有。
   "ai.take_intents",
   "ai.start",
   "ai.resolve",
@@ -267,11 +268,13 @@ class CommandSurface {
       // 只取走本席的意图。适配器只该看见自己负责那些席的待办。
       "ai.take_intents": (p) => ({ intents: o.takeIntents({ seatId: p.seat_id }) }),
 
+      // 只收权威生成的 intent_id（F5 要求 2）。
+      //
+      // 以前这里透传适配器回传的 p.context。source_event_id 是「这句公开话术因何而起」的
+      // 唯一审计依据，让被审计方填等于没有审计：宿主可以把任何一句话挂到任何一个事件上，
+      // 也可以挂到一个根本没发生过的事件上。现在上下文只从权威队列里取。
       "ai.start": (p) => ({
-        started: o.startEvaluation({
-          seatId: p.seat_id,
-          ...(p.context === undefined ? {} : { context: p.context }),
-        }).payload,
+        started: o.startEvaluation({ seatId: p.seat_id, intentId: p.intent_id }).payload,
       }),
 
       "ai.resolve": (p) => ({

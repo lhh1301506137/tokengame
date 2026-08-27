@@ -40,6 +40,8 @@ function createDueWorkDriver(options = {}) {
       settled: null,
       released: [],
       reclaimed: [],
+      released_claims: [],
+      promoted: [],
       started: false,
       decision: null,
     };
@@ -62,6 +64,25 @@ function createDueWorkDriver(options = {}) {
     // SEAT_ACTION_WINDOW_OPENED 是白名单唤醒源。反过来的话这次唤醒会撞在幽灵回合上
     // 被吞掉，之后再回收也追不回来，那一席得等到下一个来源事件才说得上话。
     done.reclaimed = orchestrator.reclaimExpiredEvaluations();
+
+    // 把到期的意图 claim 放回可领状态（F5）。适配器同样可以死在「领取工作项」与
+    // 「ai.start」之间；没有这一步，那个工作项就永远挂在一个不会回来的领取者名下。
+    //
+    // 排在回收之后：一个刚被回收的回合会让该席重新可以开新回合，而释放出来的 claim
+    // 正是要被重新领走去开那个回合的。反过来的顺序也能收敛，但要多等一个 tick。
+    done.released_claims = orchestrator.releaseExpiredIntentClaims();
+
+    // 冷却到期后把唯一 dirty context 变成可领工作项（F5 要求 4 的后半句）。
+    //
+    // 这一步没有任何命令会顺带触发：冷却到期是纯时间事件，没人在场时也照样到期。缺了它，
+    // 「思考中或冷却内到达的新事件」就只写进 pending_context 然后停在那儿——宿主除了自己
+    // 去 view.seat 里翻 has_pending_context 之外没有别的办法知道有活要干，而那等于把
+    // 受保护的跟进时序重新交回宿主。
+    //
+    // 排在 startHandIfDue 之前，理由与回收那步相同：新手的第一个行动窗口是白名单唤醒源，
+    // 而 startHand 会丢弃上一手的待办。先促进再开手，语义是「上一手的活按上一手的牌面
+    // 结算」；反过来则是让它带着旧街道混进新一手。
+    done.promoted = orchestrator.promotePendingContexts();
 
     const start = orchestrator.startHandIfDue();
     done.started = start.started;

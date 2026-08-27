@@ -128,7 +128,7 @@ test("缺陷A：OFF 再 ON 之后该席必须能重新被唤醒", () => {
   const t = table();
   const first = wake(t.store, "evt-1");
   assert.equal(first.accepted, true);
-  t.store.startEvaluation({ seatId: "seat-1", context: first.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: first.intent_id });
 
   // 适配器此时死掉：不调用 resolveEvaluation。宿主唯一能做的补救是关掉再打开。
   t.store.setSeatAiMode({ seatId: "seat-1", mode: "OFF" });
@@ -148,7 +148,7 @@ test("缺陷A：OFF 再 ON 之后该席必须能重新被唤醒", () => {
 test("缺陷A：摘下回合不能破坏规则6——OFF 期间的迟到输出仍须被丢弃而非发布", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   const turnId = started.payload.turn_id;
 
   t.store.setSeatAiMode({ seatId: "seat-1", mode: "OFF" });
@@ -171,7 +171,7 @@ test("缺陷A：摘下回合不能破坏规则6——OFF 期间的迟到输出�
 test("缺陷A：OFF 再 ON 之后，被取消回合的迟到输出理由是 turn_cancelled", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   const turnId = started.payload.turn_id;
 
   t.store.setSeatAiMode({ seatId: "seat-1", mode: "OFF" });
@@ -196,7 +196,7 @@ test("缺陷A：OFF 再 ON 之后，被取消回合的迟到输出理由是 turn
 test("缺陷B：租约到期后权威自己回收回合，无需任何宿主动作", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   assert.notEqual(t.store.seatState("seat-1").active_turn_id, null);
 
   // 租约未到期时不回收：回收得基于时钟，不是「一被问到就清」。
@@ -223,7 +223,7 @@ test("缺陷B：回收不得退还每手额度，否则崩溃重启就是绕过�
   const t = table();
   // 先真正发一条，消耗一格额度。
   const first = wake(t.store, "evt-1");
-  const startedFirst = t.store.startEvaluation({ seatId: "seat-1", context: first.context });
+  const startedFirst = t.store.startEvaluation({ seatId: "seat-1", intentId: first.intent_id });
   resolveVia(t.store, {
     seatId: "seat-1",
     turnId: startedFirst.payload.turn_id,
@@ -237,7 +237,7 @@ test("缺陷B：回收不得退还每手额度，否则崩溃重启就是绕过�
     t.advance(LIVELY_V1.aiMinEvaluationIntervalMs + 1);
     const intent = wake(t.store, `evt-rot-${round}`);
     assert.equal(intent.accepted, true, `第 ${round} 轮应可唤醒`);
-    t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+    t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
     t.advance(EVALUATION_LEASE_MS + 1);
     assert.equal(t.store.reclaimExpiredEvaluations().length, 1);
   }
@@ -251,7 +251,7 @@ test("缺陷B：回收不得退还每手额度，否则崩溃重启就是绕过�
 test("缺陷B：被回收回合的迟到输出不得发布", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  const started = t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   const turnId = started.payload.turn_id;
 
   t.advance(EVALUATION_LEASE_MS + 1);
@@ -279,13 +279,13 @@ test("缺陷B：被回收回合的迟到输出不得发布", () => {
 test("回收只动到期的席位，不碰正在正常思考的另一席", () => {
   const t = table(["seat-1", "seat-2"]);
   const first = wake(t.store, "evt-1", "seat-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: first.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: first.intent_id });
 
   // seat-2 晚一点才开始想，所以它的租约也晚一点才到期。
   t.advance(EVALUATION_LEASE_MS - 1_000);
   const second = wake(t.store, "evt-2", "seat-2");
   assert.equal(second.accepted, true);
-  t.store.startEvaluation({ seatId: "seat-2", context: second.context });
+  t.store.startEvaluation({ seatId: "seat-2", intentId: second.intent_id });
 
   t.advance(1_001);
   const reclaimed = t.store.reclaimExpiredEvaluations();
@@ -312,7 +312,7 @@ test("驱动：到期驱动自己走这一步，没有任何宿主参与", () =>
   }).evaluations;
   const mine = intents.find((intent) => intent.seat_id === seatId && intent.accepted === true);
   assert.notEqual(mine, undefined, "该席应被唤醒");
-  ctx.orchestrator.startEvaluation({ seatId, context: mine.context });
+  ctx.orchestrator.startEvaluation({ seatId, intentId: mine.intent_id });
   assert.notEqual(ctx.orchestrator.ai.seatState(seatId).active_turn_id, null);
 
   // 租约未到期：驱动看得见这个回合，但不该动它。
@@ -338,17 +338,21 @@ test("驱动：回收排在开新手之前，新手不会带着幽灵回合开�
     ...chatBinding(),
   }).evaluations;
   const mine = intents.find((intent) => intent.seat_id === seatId && intent.accepted === true);
-  ctx.orchestrator.startEvaluation({ seatId, context: mine.context });
+  ctx.orchestrator.startEvaluation({ seatId, intentId: mine.intent_id });
 
-  // 让两件事在同一个 tick 里同时到期：租约，以及开局倒计时。
   for (const seat of ctx.seats) {
     ctx.orchestrator.setReady({ seatId: seat.seat_id, ready: true });
   }
   ctx.orchestrator.evaluateStart();
-  ctx.advance(EVALUATION_LEASE_MS + 1);
 
-  // 只看新手带来的意图，把之前累积的清掉。
+  // 只看新手带来的意图，把之前累积的领走。必须在推进时钟之前领：takeIntents 现在会
+  // 按当前时钟先促进再释放（同 reclaimSeatIfExpired 的道理，判定不能取决于 tick 落在
+  // 请求的哪一边），推进之后再领就等于让这次领取顺手把租约回收掉，本用例要验的
+  // 「回收排在开新手之前」就没得验了。
   ctx.orchestrator.takeIntents();
+
+  // 让两件事在同一个 tick 里同时到期：租约，以及开局倒计时。
+  ctx.advance(EVALUATION_LEASE_MS + 1);
 
   const done = ctx.driver.tick();
   assert.equal(done.reclaimed.length, 1);
@@ -401,7 +405,7 @@ test("租约时长沿用掉线保留窗，且未混入 LIVELY_V1 预算", () => 
 test("租约可注入，但缺省不依赖注入", () => {
   const t = table(["seat-1"], { evaluationLeaseMs: 5_000 });
   const intent = wake(t.store, "evt-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   t.advance(4_999);
   assert.deepEqual(t.store.reclaimExpiredEvaluations(), []);
@@ -415,7 +419,7 @@ test("租约可注入，但缺省不依赖注入", () => {
 test("不变量：OFF 的席位永远没有在途回合，所以回收无需判 mode", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
   assert.notEqual(t.store.seatState("seat-1").active_turn_id, null);
 
   // 切 OFF 当场就把回合摘下来。mode 全局只有 setSeatAiMode 一个写入点，
@@ -435,7 +439,7 @@ test("不变量：OFF 的席位永远没有在途回合，所以回收无需判 
 test("卡住的回合会跨手存活，所以 hand_advanced 那条丢弃救不了死掉的适配器", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
   // startHand 故意不取消在途回合（它指望 resolve 时按 hand_advanced 丢弃）。
   // 对活着的适配器这没问题，对死掉的适配器意味着这个回合永远挂着。
@@ -455,23 +459,28 @@ test("卡住的回合会跨手存活，所以 hand_advanced 那条丢弃救不�
   assert.equal(t.store.seatState("seat-1").active_turn_id, null);
 });
 
-test("回收后 startEvaluation 不再报 seat_turn_already_active", () => {
+test("回收后该席重新可领可起，卡住的回合不再挡路", () => {
   const t = table();
   const intent = wake(t.store, "evt-1");
-  t.store.startEvaluation({ seatId: "seat-1", context: intent.context });
+  t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
 
-  // 回收前：显式启动被规则 4 挡住，这是对的。
+  // 回收前：这一席在思考中，队列不发第二份工作。
+  //
+  // 原来这里断言的是「显式启动被 seat_turn_already_active 挡住」，用的是自制 context。
+  // F5 之后宿主拿不到自制上下文，规则 4 的并发保护前移到了队列：思考中的席位压根领不到活。
+  // 那道闸门仍在回合创建点，只是走公开接口到不了它。
   t.advance(LIVELY_V1.aiMinEvaluationIntervalMs + 1);
-  assert.throws(
-    () => t.store.startEvaluation({ seatId: "seat-1", context: { source_event_id: "evt-x" } }),
-    probe("seat_turn_already_active"),
-  );
+  const merged = wake(t.store, "evt-x");
+  assert.equal(merged.accepted, false);
+  assert.equal(merged.reason, "merged_into_pending");
+  assert.deepEqual(t.store.claimIntents({ seatId: "seat-1" }), [], "思考中不该有活可领");
 
+  // 回收后：那份被合并的最新上下文自己变成可领工作项，该席重新说得上话。
   t.advance(EVALUATION_LEASE_MS);
   t.store.reclaimExpiredEvaluations();
-  const started = t.store.startEvaluation({
-    seatId: "seat-1",
-    context: { source_event_id: "evt-x" },
-  });
+  const [resumed] = t.store.claimIntents({ seatId: "seat-1" });
+  assert.ok(resumed !== undefined, "回收后没有活可领，这一席被永久静音了");
+  assert.equal(resumed.context.source_event_id, "evt-x");
+  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: resumed.intent_id });
   assert.equal(started.type, "SEAT_AI_EVALUATION_STARTED");
 });

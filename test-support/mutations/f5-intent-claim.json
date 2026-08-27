@@ -1,0 +1,217 @@
+{
+  "name": "F5：取意图与建立租约是一次权威 claim，上下文由权威持有",
+  "test": "test/ai-intent-claim.test.cjs",
+  "notes": [
+    "F5 五条要求各自的承重点：",
+    "1. 取意图 + 建立租约合成一次原子 claim → claimIntents 的租约标记、take 不再删。",
+    "2. ai.start 只接受权威生成的 intent ID → startEvaluation 的 intentId 契约与三道拒绝。",
+    "3. 权威保存 source event / hand / street / context revision，适配器只拿只读快照 → registerWorkItem 的深拷贝与 context_revision。",
+    "4. 回合结束或冷却到期后由权威把唯一 dirty context 变成可 claim 工作 → promotePendingContext、resolveEvaluation 的 finally、两条 driver 步骤。",
+    "5. 八种情形的覆盖 → 本规格每条都得死在 test/ai-intent-claim.test.cjs 上。",
+    "",
+    "跨文件杀手：要求 4 的后半句「不要求宿主轮询」只能在真编排层 + 真驱动上证明，",
+    "所以 due-work.cjs 的两条突变也由同一个测试文件负责。",
+    "",
+    "键名用 find/replace，与 f3/f4/f6 一致。f1/f2 用的是 needle/replacement——两套写法",
+    "并存是治理债，驱动兼容两者，统一留给治理阶段。"
+  ],
+  "mutations": [
+    {
+      "id": "F5-01-take 又变回取走即删",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      item.claimed_at = at;\n      item.claim_deadline_at = at + this.intentClaimLeaseMs;\n      item.claim_count += 1;",
+      "replace": "      this.workItems.delete(item.intent_id);",
+      "why": "Codex 复现的原状：取走即从权威队列删除。适配器死在 claim 与 ai.start 之间，权威侧 pending 为 0、可回收项为 0，本次事件永久丢失。"
+    },
+    {
+      "id": "F5-02-claim 不标租约",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      item.claim_deadline_at = at + this.intentClaimLeaseMs;",
+      "replace": "      item.claim_deadline_at = null;",
+      "why": "领走但不落期限，于是同一份工作项可以被无限次同时领走：两个宿主各起一个回合，同一个来源事件被说两遍，规则 2 的「每事件每席一次」失效。"
+    },
+    {
+      "id": "F5-03-租约期内也照发",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      if (item.claim_deadline_at !== null) continue;",
+      "replace": "",
+      "why": "无视已存在的租约继续派发。与 F5-02 是同一个后果的两个入口，两条都得死。"
+    },
+    {
+      "id": "F5-04-租约永不到期",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      if (item.claim_deadline_at === null || at < item.claim_deadline_at) continue;",
+      "replace": "      if (item.claim_deadline_at === null) continue;\n      if (true) continue;",
+      "why": "到期的 claim 不再释放，工作项永远挂在一个不会回来的领取者名下。这正是 claim 后崩溃那一类，只是从「不丢」退化成「丢在别人名下」。"
+    },
+    {
+      "id": "F5-05-claim 租约与评估租约共用一个常量",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "const INTENT_CLAIM_LEASE_MS = 30_000;",
+      "replace": "const INTENT_CLAIM_LEASE_MS = EVALUATION_LEASE_MS;",
+      "why": "把「宿主本地领活到 ai.start」的窗口和「模型跑完」的窗口并成一条期限。两者量级差 4 倍，合并意味着一次本地崩溃要等 120 秒才有人接手。"
+    },
+    {
+      "id": "F5-06-ai.start 回收适配器自带上下文",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    const intentId = requiredString(input.intentId, \"intentId\", 128);",
+      "replace": "    const intentId = input.intentId === undefined ? null : String(input.intentId);",
+      "why": "intent ID 变成可选。缺失、空串都能过，回合就能凭空起来——source_event_id 的审计依据随之失效。这是要求 2 的正身。"
+    },
+    {
+      "id": "F5-07-未知 intent ID 放行",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      throw new ProbeError(\"intent_not_found\", 404, { intent_id: intentId });",
+      "replace": "      return this.record(\"SEAT_AI_EVALUATION_STARTED\", { seat_id: seat.seat_id });",
+      "why": "编造的 id 也能起回合。宿主于是可以把任何一句公开话术挂到任何事件上，或挂到一个不存在的事件上。"
+    },
+    {
+      "id": "F5-08-跨席 claim 放行",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      throw new ProbeError(\"intent_seat_mismatch\", 403, {\n        intent_id: intentId,\n        seat_id: seat.seat_id,\n      });",
+      "replace": "",
+      "why": "拿 A 席的工作项去起 B 席的回合。B 席替 A 席说话，而 B 席的额度和冷却都还是满的——绕过了规则 3 的两条限额。"
+    },
+    {
+      "id": "F5-09-起过的工作项不消费",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    this.workItems.delete(intentId);",
+      "replace": "",
+      "why": "同一个 intent 可以反复起回合。上一个回合还在飞就起下一个，同一个来源事件被说多遍。"
+    },
+    {
+      "id": "F5-10-关掉 AI 的席位仍留着待办",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (seat.mode === \"OFF\") {\n      throw new ProbeError(\"seat_ai_off\", 409, { seat_id: seat.seat_id });\n    }",
+      "replace": "",
+      "why": "关掉 AI 之后拿旧 id 来起回合报的是 intent_not_found，宿主看不出真正的原因是这一席被关了；顺序反了就永远给不出有用的错误。"
+    },
+    {
+      "id": "F5-11-快照不深拷贝",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      context: clone(item.context),",
+      "replace": "      context: item.context,",
+      "why": "宿主拿到的是权威那份的引用，改自己手里的对象就改掉了权威保存的 source_event_id。要求 3 的「只读快照」名存实亡。"
+    },
+    {
+      "id": "F5-12-每席可并出多份工作项",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    const existing = this.findWorkItemBySeat(seat.seat_id);\n    if (existing !== null) {",
+      "replace": "    const existing = null;\n    if (existing !== null) {",
+      "why": "同一席排两份工作项。宿主领走两个，起了第一个，第二个被冷却拒掉、租约到期又可领，几秒后拿一份过期上下文说一句已经不合时宜的话。要求 4 说的是「唯一 dirty context」。"
+    },
+    {
+      "id": "F5-13-就地更新顺手清掉租约",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      existing.context = stored;\n      existing.superseded_count += 1;",
+      "replace": "      existing.context = stored;\n      existing.superseded_count += 1;\n      existing.claimed_at = null;\n      existing.claim_deadline_at = null;",
+      "why": "任何一个新事件都能让别的宿主插进来抢走正在被处理的工作。租约的意义是「这段时间内别派给第二个人」，被新事件重置就等于没有租约。"
+    },
+    {
+      "id": "F5-14-上下文版本号不动",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    seat.context_revision += 1;",
+      "replace": "",
+      "why": "上下文换了但版本号不变。宿主手里那份旧了却看不出来，只能回去轮询席位内部状态——要求 3/4 想消灭的正是这条退路。"
+    },
+    {
+      "id": "F5-15-登记新上下文时不清 pending",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    // 新上下文严格地更新，pending 里那份旧的就不再是待办了。\n    seat.pending_context = null;",
+      "replace": "",
+      "why": "已经成为工作项的上下文还挂在 pending 里。下一次促进会把同一份内容再排一遍，has_pending_context 也一直谎报有活要干。"
+    },
+    {
+      "id": "F5-16-促进无视在途回合",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (seat.active_turn !== null) return null;",
+      "replace": "",
+      "why": "回合还在飞就把 pending 促成工作项，于是一席同时有一个在飞的回合和一份可领工作。规则 4 的合并语义被绕开。"
+    },
+    {
+      "id": "F5-17-促进无视冷却",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (this.cooldownRemainingMs(seat, this.now()) > 0) return null;",
+      "replace": "",
+      "why": "冷却未满就促进。规则 3 的最小评估间隔本来靠「这段时间内不产生可领工作」来落地，促进跳过它就等于取消了间隔。"
+    },
+    {
+      "id": "F5-18-额度耗尽仍促进",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (seat.ai_published_this_hand >= this.limits.aiMaxPublicPerHand) {\n      seat.pending_context = null;\n      return null;\n    }",
+      "replace": "",
+      "why": "这一手额度已用尽还排新活。宿主领了、跑了模型、在 resolve 时被 ai_hand_quota_exhausted 拒掉——白跑一次模型，而且每次促进都重算同一个拒绝。"
+    },
+    {
+      "id": "F5-19-回合结束不跟进",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    } finally {\n      const seat = this.seats.get(input.seatId);\n      if (seat !== undefined) this.promotePendingContext(seat);\n    }",
+      "replace": "    } finally {\n      // 突变：回合结束不跟进。\n    }",
+      "why": "Codex 点名的原状之一：思考期内合并的上下文在回合结束后没人管。旧测试是靠测试代码手动再调一次 startEvaluation 才继续下去的。"
+    },
+    {
+      "id": "F5-20-跟进只覆盖正常返回，不覆盖抛出",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    try {\n      return this.resolveTurn(input);\n    } finally {",
+      "replace": "    const out = this.resolveTurn(input);\n    if (true) {",
+      "why": "message_too_long、额度耗尽这两条抛出路径已经把回合摘掉了，却不再跟进。异常退出恰恰是最需要跟进的时刻——那一席刚失去回合。"
+    },
+    {
+      "id": "F5-21-促进不带回收",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      this.reclaimSeatIfExpired(seat);\n      const event = this.promotePendingContext(seat);",
+      "replace": "      const event = this.promotePendingContext(seat);",
+      "why": "一个租约已过期的幽灵回合会一直挡着促进，而它该不该挡取决于回收步骤跑没跑。判定不能取决于驱动的调用顺序。"
+    },
+    {
+      "id": "F5-22-领活不带促进",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    this.promotePendingContexts();\n    this.releaseExpiredIntentClaims();",
+      "replace": "",
+      "why": "促进与释放只在 tick 里做。冷却刚过 1 毫秒时领活就拿不到东西，宽限期实际等于 tick 间隔——而 tick 间隔是宿主选项，宿主配置于是能改变规则结果。"
+    },
+    {
+      "id": "F5-23-驱动不释放到期 claim",
+      "file": "src/authority/due-work.cjs",
+      "find": "    done.released_claims = orchestrator.releaseExpiredIntentClaims();",
+      "replace": "",
+      "why": "适配器死在领活与 ai.start 之间以后，没有任何一步会把那份工作放回可领状态。要求 4 说的是不要求宿主轮询来恢复活性。"
+    },
+    {
+      "id": "F5-24-驱动不促进 pending",
+      "file": "src/authority/due-work.cjs",
+      "find": "    done.promoted = orchestrator.promotePendingContexts();",
+      "replace": "",
+      "why": "冷却到期是纯时间事件，没有任何命令会顺带触发。缺了这一步，宿主除了自己去 view.seat 里翻 has_pending_context 之外没有别的办法知道有活要干。"
+    },
+    {
+      "id": "F5-25-促进排在开新手之后",
+      "file": "src/authority/due-work.cjs",
+      "find": "    done.promoted = orchestrator.promotePendingContexts();\n\n    const start = orchestrator.startHandIfDue();",
+      "replace": "    const start = orchestrator.startHandIfDue();\n    done.promoted = orchestrator.promotePendingContexts();",
+      "why": "startHand 会丢弃上一手的待办，所以反过来的顺序让上一手的活按新一手的牌面结算，或干脆被丢掉。"
+    },
+    {
+      "id": "F5-26-命令面继续收适配器上下文",
+      "file": "src/authority/command-surface.cjs",
+      "test": "test/command-surface.test.cjs",
+      "find": "      started: o.startEvaluation({ seatId: p.seat_id, intentId: p.intent_id }).payload,",
+      "replace": "      started: o.startEvaluation({ seatId: p.seat_id, context: p.context, intentId: p.intent_id })\n        .payload,",
+      "why": "命令面把适配器回传的 context 一起交给核心。核心当前忽略它，但契约上留着这个口就是留着回退到「被审计方写审计记录」的路。"
+    },
+    {
+      "id": "F5-27-换手不丢上一手的待办工作项",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      this.discardWorkItem(seat.seat_id);\n      // 在途回合不取消：它会在 resolveEvaluation 里按 hand_advanced 丢弃。",
+      "replace": "      // 在途回合不取消：它会在 resolveEvaluation 里按 hand_advanced 丢弃。",
+      "why": "上一手的工作项带进新一手，hand_index 与 street 都是旧的，起来就是对着已经结束的牌面说话。"
+    },
+    {
+      "id": "F5-28-关掉 AI 不丢工作项",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      seat.pending_context = null;\n      this.discardWorkItem(seat.seat_id);",
+      "replace": "      seat.pending_context = null;",
+      "why": "关掉 AI 之后那一席仍有活可领，宿主照着领走就替一个已关闭的 AI 说话。"
+    }
+  ]
+}
