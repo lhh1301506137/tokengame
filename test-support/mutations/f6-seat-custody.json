@@ -1,0 +1,117 @@
+{
+  "name": "F6：席位凭据由本机协调器托管，不进模型可见面",
+  "test": "test/seat-custody.test.cjs",
+  "notes": [
+    "F6 的四条要求各自的承重点：",
+    "1. 核心继续校验 seat credential，但由宿主协调器托管 → bind/resolve/inject。",
+    "2. 面向模型的高层工具只收句柄，不收原文 → inject 的三道拒绝。",
+    "3. create/join 的返回净化 secret，错误与日志同样扫 → stripSecrets/sanitizeResult。",
+    "4. 工具返回与模型可见 transcript 不含 credential → assertNoLeak。",
+    "",
+    "跨文件杀手是刻意的：托管层的洞往往只在真实 MCP 路径上才显形，所以有几条要靠",
+    "test/mcp-table-surface.test.cjs 抓。规格里逐条注明由哪个测试负责。",
+    "",
+    "键名用 find/replace，与 f3/f4 一致。f1/f2 用的是 needle/replacement——两套写法",
+    "并存是治理债，驱动兼容两者，统一留给治理阶段。"
+  ],
+  "mutations": [
+    {
+      "id": "F6-01-句柄制形同虚设：模型自带凭据被采信",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    if (incoming.recovery_credential !== undefined) {\n      throw new CustodyError(\"credential_not_model_supplied\", { command });\n    }",
+      "replace": "",
+      "why": "模型自己传凭据原文时不再报错，直接放行。整个托管的目的就是让模型手上不存在凭据；一旦静默采信，泄漏就升级成可用权限。"
+    },
+    {
+      "id": "F6-02-模型可指定任意席位",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    if (incoming.seat_id !== undefined) {\n      throw new CustodyError(\"seat_id_not_model_supplied\", { command });\n    }",
+      "replace": "",
+      "why": "模型传公开的 seat_id 就能指定动作落点。seat_id 不是秘密，所以这条不靠凭据保密性挡，只能靠拒绝。"
+    },
+    {
+      "id": "F6-03-缺句柄时按单席猜",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    if (incoming.seat_handle === undefined) {\n      // 不按「反正只绑了一席」去猜。单席时猜对了，多席适配器上就是替错的人行动。\n      throw new CustodyError(\"seat_handle_required\", { command });\n    }",
+      "replace": "    if (incoming.seat_handle === undefined) {\n      incoming.seat_handle = [...this.bindings.keys()][0];\n    }",
+      "why": "缺句柄时拿第一个绑定顶上。单席部署下永远猜对，多席适配器上就是替别人行动。"
+    },
+    {
+      "id": "F6-04-不要凭据的命令把句柄透给核心",
+      "file": "src/host/seat-custody.cjs",
+      "find": "      // 不要凭据的命令原样通过。但句柄也不该往核心发——核心不认识它。\n      delete incoming.seat_handle;\n      return incoming;",
+      "replace": "      return incoming;",
+      "why": "句柄跟着只读命令进核心。核心不认识它，于是它会原样出现在事件或错误回显里——句柄不是秘密，但托管层的内部标识不该渗进权威状态。"
+    },
+    {
+      "id": "F6-05-净化不摘秘密字段",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    if (SECRET_FIELDS.includes(key)) {\n      if (typeof item === \"string\") onSecret(item);\n      continue;\n    }",
+      "replace": "    if (SECRET_FIELDS.includes(key)) {\n      if (typeof item === \"string\") onSecret(item);\n    }",
+      "why": "秘密字段照旧登记进 knownSecrets，但不再被摘掉：create/join 的返回里凭据原样留给模型。这是 F6 要求 3 的正身。"
+    },
+    {
+      "id": "F6-06-净化置空而非摘除",
+      "file": "src/host/seat-custody.cjs",
+      "find": "      if (typeof item === \"string\") onSecret(item);\n      continue;",
+      "replace": "      if (typeof item === \"string\") onSecret(item);\n      out[key] = null;\n      continue;",
+      "why": "留一个 recovery_credential: null。值没了但字段名还在模型可见文本里，等于告诉下游「这里本该有凭据」。assertNoLeak 扫字段名正是为此。"
+    },
+    {
+      "id": "F6-07-值扫描失效",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    for (const secret of this.knownSecrets) {\n      if (haystack.includes(secret)) {\n        throw new CredentialLeak(where, null);\n      }\n    }",
+      "replace": "",
+      "why": "不再扫凭据原文。核心若用一个未知字段名（例如 seat_token）把凭据带回来，字段名扫描认不出，只有值扫描能抓到。"
+    },
+    {
+      "id": "F6-08-字段名扫描失效",
+      "file": "src/host/seat-custody.cjs",
+      "find": "      if (haystack.includes(`\"${field}\"`)) {\n        throw new CredentialLeak(where, field);\n      }",
+      "replace": "",
+      "why": "不再扫字段名。此刻值可能还没进 knownSecrets（新发的凭据），只有字段名扫描能抓到。与 F6-07 互为对照，两条都得死。"
+    },
+    {
+      "id": "F6-09-命中后打码放过",
+      "file": "src/host/seat-custody.cjs",
+      "find": "      if (haystack.includes(secret)) {\n        throw new CredentialLeak(where, null);\n      }",
+      "replace": "      if (haystack.includes(secret)) {\n        return haystack.split(secret).join(\"[redacted]\");\n      }",
+      "why": "命中改成打码返回。打码后的文本仍然证明这条路径会搬运秘密，换个字段名就又漏出去了；要修的是搬运不是显示。"
+    },
+    {
+      "id": "F6-10-绑定顺序颠倒：净化在前，绑不上句柄",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    const found = findSeatAndCredential(result);\n    const sanitized = this.sanitizeResult(result);",
+      "replace": "    const sanitized = this.sanitizeResult(result);\n    const found = findSeatAndCredential(sanitized);",
+      "why": "先净化再找凭据，于是永远找不到，句柄永远绑不上。模型拿不到句柄就只能回退到自己持有凭据——F6 想消灭的正是这条退路。"
+    },
+    {
+      "id": "F6-11-凭据不登记进扫描集",
+      "file": "src/host/seat-custody.cjs",
+      "find": "    this.bindings.set(handle, { seat_id: seatId, credential });\n    this.knownSecrets.add(credential);",
+      "replace": "    this.bindings.set(handle, { seat_id: seatId, credential });",
+      "why": "托管的凭据不进 knownSecrets，值扫描于是对它视而不见。托管层自己划定要扫的范围，漏存一份就漏扫一份。"
+    },
+    {
+      "id": "F6-12-forget 顺带清空扫描集",
+      "file": "src/host/seat-custody.cjs",
+      "find": "  forget(handleValue) {\n    return this.bindings.delete(String(handleValue));",
+      "replace": "  forget(handleValue) {\n    const bound = this.bindings.get(String(handleValue));\n    if (bound !== undefined) this.knownSecrets.delete(bound.credential);\n    return this.bindings.delete(String(handleValue));",
+      "why": "离桌后把凭据从扫描集里删掉。凭据确实失效了，但它曾经进过这个进程，出现在模型可见文本里仍然是泄漏事实。"
+    },
+    {
+      "id": "F6-13-未知句柄的错误回显枚举口",
+      "file": "src/host/seat-custody.cjs",
+      "find": "      throw new CustodyError(\"seat_handle_unknown\");",
+      "replace": "      throw new CustodyError(\"seat_handle_unknown\", { known: [...this.bindings.keys()] });",
+      "why": "错误 details 里回显所有已知句柄。句柄不是凭据，但把它变成可枚举的清单，等于让模型能挨个试出别席的句柄。"
+    },
+    {
+      "id": "F6-14-宿主清单漏掉行动命令",
+      "file": "src/authority/host-surface.cjs",
+      "find": "  \"hand.act\",\n  \"hand.reveal\",\n  \"room.confirm_public_scope\",",
+      "replace": "  \"hand.reveal\",\n  \"room.confirm_public_scope\",",
+      "why": "hand.act 退出 CREDENTIAL_COMMANDS：协调器不再为它注入凭据，模型要行动就只能自己回传凭据原文。这条清单少一项就等于开一个泄漏口。"
+    }
+  ]
+}

@@ -53,6 +53,14 @@ const SEAT_AUTHORIZED = Object.freeze([
   "view.hand",
 ]);
 
+// hand.act 与 hand.reveal 不在上面那个集合里：它们要 requireSeatCredential 的返回值
+// （seat 对象）去推 playerId，所以把关写在各自 handler 的第一行。
+//
+// 「哪些命令需要席位凭据」这个问题宿主适配器也要问（F6 的托管层要决定往哪注入），但那份
+// 清单在 host-surface.cjs 里，不从这里导出：适配器 require 本文件就会把整个命令面连带
+// 牌桌状态一起装进宿主进程，而那正是 mcp-table-surface 那条源码断言要挡的事。
+// 两份清单由 test/seat-authorization.test.cjs 的行为探测同时钉住。
+
 function requiredString(value, field, max = 256) {
   if (typeof value !== "string" || value.length === 0 || value.length > max) {
     throw new ProbeError("invalid_field", 400, { field });

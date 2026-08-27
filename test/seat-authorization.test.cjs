@@ -27,6 +27,7 @@ const {
   CommandSurface,
   SEAT_AUTHORIZED,
 } = require("../src/authority/command-surface.cjs");
+const { CREDENTIAL_COMMANDS } = require("../src/authority/host-surface.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { confirmAllSeatsViaSurface } = require("../test-support/public-scope.cjs");
@@ -332,6 +333,29 @@ test("独立清单必须覆盖命令面的每一条命令", () => {
   assert.equal(new Set(classified).size, classified.length, "同一条命令不得落入两类");
 });
 
+// host-surface 的 CREDENTIAL_COMMANDS 是宿主协调器注入凭据的依据（F6）。它是手写字面量，
+// 不从 SEAT_AUTHORIZED 派生——理由写在 host-surface.cjs 里：适配器 require 命令面会把整个
+// 牌桌实现装进宿主进程。代价是它可能与权威不同步，所以这里从两侧夹住它。
+test("宿主的 CREDENTIAL_COMMANDS 必须等于手写清单", () => {
+  // 一侧：本文件的行为探测钉住的两份清单。探测是实测发伪造凭据必须被拒，不读任何名单。
+  const expected = [...SEAT_STATE_WRITES, ...CREDENTIAL_AS_INPUT].sort();
+  assert.deepEqual([...CREDENTIAL_COMMANDS], expected);
+});
+
+test("宿主的 CREDENTIAL_COMMANDS 必须覆盖权威实际把关的命令", () => {
+  // 另一侧：权威运行时真正在用的集合。上一条只能证明「和我手写的一致」，如果核心新增一条
+  // 要凭据的命令而两份清单都没跟上，那一条就仍然会逼模型自己回传凭据——正是 F6 要防的。
+  // 这一条直接读 SEAT_AUTHORIZED，所以核心一改就红。
+  //
+  // 那三条自验命令要写在这里：它们不在 SEAT_AUTHORIZED 里（把关在各自 handler 第一行），
+  // 所以只靠这一条对不上。它们本身由上面的探测证明确实要凭据。
+  //
+  // 测试进程 require 命令面没有问题：它本来就要构造牌桌，不是宿主进程。
+  const selfVerifying = ["hand.act", "hand.reveal", "seat.recover"];
+  const expected = [...new Set([...SEAT_AUTHORIZED, ...selfVerifying])].sort();
+  assert.deepEqual([...CREDENTIAL_COMMANDS], expected);
+});
+
 // 每条写命令的一组「除凭据外都合法」的参数。给足参数是刻意的：万一把关被摘掉，命令会
 // 真的执行下去，于是探测拿到的不是 invalid_field 而是成功或别的错——两者都判失败。
 // 若只传 seat_id，摘掉把关后可能刚好撞上缺字段报错，看起来还像被拒了。
@@ -358,7 +382,7 @@ function forgedParams(command, seatId) {
 }
 
 // seat.recover 单独一段：它必须和其他命令一样拒伪造/缺失/他席凭据，否则「凭据是入参」就
-// 会被读成「凭据可以随便填」。它归入哪一类靠的是这一段实测，不是分类注释。
+// 会被读成「凭据可以随便填」。它进 CREDENTIAL_COMMANDS 靠的是这一段，不是分类注释。
 test("seat.recover：伪造、缺失、他席凭据都必须被拒", () => {
   const ctx = table({ playerCount: 2 });
   disconnected(ctx, 1);

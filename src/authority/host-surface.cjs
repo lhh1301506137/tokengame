@@ -69,6 +69,50 @@ const DIAGNOSTIC_COMMANDS = Object.freeze([
   "view.ai_events",
 ]);
 
+// 需要席位凭据的命令。宿主本机协调器按这份清单决定往哪些命令注入托管的凭据（F6）。
+//
+// 为什么在这里而不从 command-surface.cjs 派生：适配器 require 命令面就会把整个牌桌实现
+// 装进宿主进程，而「宿主不在本进程构造牌桌」是 test/mcp-table-surface.test.cjs 用源码断言
+// 守着的边界。传递依赖不会触发那条字符串检查，所以它是一条能悄悄失效的防线——这份清单要么
+// 放在纯字符串模块里，要么就把那条防线换成运行时检查，前者更便宜。
+//
+// 手写清单的风险由 test/seat-authorization.test.cjs 兜住，那里做两件事：拿真实的
+// SEAT_AUTHORIZED 加两条自验命令对账（测试进程 require 命令面无所谓，它不是宿主），
+// 再对每条命令发伪造凭据实测必须被拒。所以这份字面量不自证，它被行为钉住。
+//
+// 少一条的后果是模型被逼自己回传凭据（F6 要防的正是这个）；多一条的后果是那条命令永远
+// 缺不了句柄。两种都会被上面那个测试当场抓到。
+const CREDENTIAL_COMMANDS = Object.freeze([
+  "ai.hide_local",
+  "ai.resolve",
+  "ai.set_mode",
+  "ai.start",
+  "ai.take_intents",
+  "chat.say",
+  // hand.act 与 hand.reveal 不在权威的 SEAT_AUTHORIZED 里，但一样要凭据：它们要
+  // requireSeatCredential 的返回值去推 playerId，所以把关写在各自 handler 第一行。
+  "hand.act",
+  "hand.reveal",
+  "room.confirm_public_scope",
+  "seat.connect",
+  "seat.disconnect",
+  "seat.leave",
+  "seat.ready",
+  // seat.recover 的凭据不是「被验证的身份」而是「入参本身」，但对协调器没区别：它一样带
+  // recovery_credential，一样必须由协调器注入。
+  //
+  // 曾经想把它当例外，让模型直接传凭据原文，理由是「句柄丢了要靠它重新绑定」。那个理由是
+  // 错的：凭据只存在于协调器内存，协调器一重启，句柄和凭据一起没了。此时模型手上还留着一份
+  // 凭据，只可能是它先前把凭据存进了上下文——正是 F6 要禁的那件事。所以那个「例外」保护的不是
+  // 恢复能力，而是泄漏路径。
+  //
+  // 代价说清楚：协调器在保留窗内重启，该席无法恢复，120 秒后正常释放。掉线恢复要覆盖的是
+  // 连接断开，协调器进程还活着，那条路径不受影响。
+  "seat.recover",
+  "seat.sit_out_after_hand",
+  "view.hand",
+]);
+
 function classify(command) {
   if (HOST_COMMANDS.includes(command)) return "host";
   if (AUTHORITY_DRIVEN_COMMANDS.includes(command)) return "authority_driven";
@@ -78,6 +122,7 @@ function classify(command) {
 
 module.exports = {
   AUTHORITY_DRIVEN_COMMANDS,
+  CREDENTIAL_COMMANDS,
   DIAGNOSTIC_COMMANDS,
   HOST_COMMANDS,
   classify,

@@ -3,6 +3,20 @@
 const readline = require("node:readline");
 const { bridgeRequest } = require("../hooks/hook-lib.cjs");
 const { HOST_COMMANDS } = require("../../../src/authority/host-surface.cjs");
+const {
+  CredentialLeak,
+  SeatCustody,
+} = require("../../../src/host/seat-custody.cjs");
+
+// F6：席位凭据托管在这个进程里，不进模型上下文。
+//
+// 这个 MCP 服务器就是章程说的「本机协调器」：它是唯一同时接触模型和核心的地方。凭据在
+// room.create / room.join 的返回里产生，被这里截下换成句柄；之后模型只发句柄，凭据由
+// 这里注入。模型从头到尾没见过那串秘密，所以也没有「记得别说出来」这回事。
+//
+// 进程级单例而不是每次调用新建：句柄的作用域就是这个进程的生命周期。每次新建等于每条
+// 命令都换一套句柄，模型上一条拿到的句柄下一条就失效了。
+const custody = new SeatCustody();
 
 // 牌桌命令走 HTTP 打到已经在跑的权威核心（npm run core），不在本进程构造牌桌。
 // 这一条是架构的分水岭：进程内 require CommandSurface 会让每个宿主各自持有一张牌桌，
@@ -40,7 +54,9 @@ const tools = [
   {
     name: "tokengame_table",
     description:
-      "向 TokenGame 权威核心发一条牌桌命令。需要席位的命令要一并给 seat_id 与 recovery_credential。",
+      "向 TokenGame 权威核心发一条牌桌命令。需要席位的命令在 params 里给 seat_handle"
+      + "（room.create / room.join 的返回会给你一个）。不要传 seat_id 或凭据："
+      + "席位秘密由本机协调器托管，不经过这里。",
     inputSchema: {
       type: "object",
       required: ["command"],
@@ -105,6 +121,31 @@ const tools = [
   },
 ];
 
+function errorResult(body) {
+  return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }], isError: true };
+}
+
+// 出门前最后一道扫描。命中就整份扣下，不打码后放过：打码只是让这一次看不见，搬运秘密的
+// 那条路径还在，换个字段名下次照样漏。扣下会让功能明显坏掉，坏掉才会被修。
+function safeResult(body, isError, seatHandle) {
+  const payload = seatHandle === null || seatHandle === undefined
+    ? body
+    : { ...body, seat_handle: seatHandle };
+  let text;
+  try {
+    text = custody.assertNoLeak(JSON.stringify(payload, null, 2), "tool_result");
+  } catch (error) {
+    if (!(error instanceof CredentialLeak)) throw error;
+    return errorResult({
+      code: "response_withheld_secret_detected",
+      where: error.details.where,
+      field: error.details.field,
+      hint: "核心返回里含席位秘密，本机协调器已扣下。这是实现缺陷，不是用户操作问题。",
+    });
+  }
+  return { content: [{ type: "text", text }], isError };
+}
+
 async function callTool(name, args = {}) {
   if (name === "tokengame_table") {
     const command = args.command;
@@ -123,20 +164,32 @@ async function callTool(name, args = {}) {
         isError: true,
       };
     }
+    // F6：句柄换凭据发生在这里，模型那一侧只有句柄。注入失败（模型自带 seat_id 或
+    // 凭据、句柄不认）要当成普通工具错误回报，不能抛出去——抛出去 MCP 那层会把栈
+    // 打进日志，而参数里可能正带着模型不该有的东西。
+    let params;
     try {
-      const result = await coreRequest(command, args.params || {});
-      return {
-        content: [{ type: "text", text: JSON.stringify(result.body, null, 2) }],
-        isError: !result.ok,
-      };
+      params = custody.inject(command, args.params || {});
     } catch (error) {
-      return {
-        content: [{
-          type: "text",
-          text: `TokenGame core unavailable: ${error.message}（核心未启动时先运行 npm run core）`,
-        }],
-        isError: true,
-      };
+      return errorResult({ code: error.code ?? "custody_rejected", command });
+    }
+
+    try {
+      const result = await coreRequest(command, params);
+      // 凭据只在 create / join 的返回里产生，所以托管的入口只有这里。
+      const bound = custody.bindFromResult(result.body);
+      const visible = bound.seat_handle === null
+        ? { body: custody.sanitizeResult(result.body) }
+        : { body: bound.result, seat_handle: bound.seat_handle };
+      return safeResult(visible.body, !result.ok, visible.seat_handle);
+    } catch (error) {
+      if (error instanceof CredentialLeak) throw error;
+      // 核心的错误消息可能回显了请求参数，而参数里刚被注入过凭据。所以错误文本也要过扫描。
+      return safeResult(
+        { code: "core_unavailable", message: error.message, hint: "核心未启动时先运行 npm run core" },
+        true,
+        null,
+      );
     }
   }
 

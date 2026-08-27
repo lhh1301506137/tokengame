@@ -109,20 +109,25 @@ test("MCP：原有桥接探针工具仍在", () => {
 test("MCP：只用宿主面命令就能进入牌局，且开局由核心自己走表", async (t) => {
   await coreAt(t);
 
-  const host = (await table("room.create", { player_id: "p-a", table_rules_version: RULES })).body.result;
-  const guest = (await table("room.join", {
+  // F6：create / join 的返回给的是句柄，不是凭据。邀请码仍然可见——建房的人必须看得见
+  // 才能转给朋友，理由见 seat-custody.cjs 的 SECRET_FIELDS 注释。
+  const created = await table("room.create", { player_id: "p-a", table_rules_version: RULES });
+  const host = created.body.result;
+  const joined = await table("room.join", {
     player_id: "p-b",
     invite_code: host.invite_code,
     room_id: host.room.room_id,
-  })).body.result;
+  });
+  const guest = joined.body.result;
 
   const seats = [
-    { seat_id: host.seat.seat_id, credential: host.recovery_credential, player: "p-a" },
-    { seat_id: guest.seat.seat_id, credential: guest.recovery_credential, player: "p-b" },
+    { handle: created.body.seat_handle, seat_id: host.seat.seat_id, player: "p-a" },
+    { handle: joined.body.seat_handle, seat_id: guest.seat.seat_id, player: "p-b" },
   ];
   for (const seat of seats) {
-    const auth = { seat_id: seat.seat_id, recovery_credential: seat.credential };
-    // F3：确认按席位记账，过 MCP 也要逐席带凭据与显式表态。
+    assert.equal(typeof seat.handle, "string", "create / join 必须回一个句柄");
+    const auth = { seat_handle: seat.handle };
+    // F3：确认按席位记账；F6：这一层给的是句柄，凭据由本机协调器注入。
     const confirmed = await table("room.confirm_public_scope", { ...auth, acknowledged: true });
     assert.equal(confirmed.isError, false, confirmed.raw);
     const connected = await table("seat.connect", { ...auth, connection_id: `mcp-${seat.player}` });
@@ -156,10 +161,7 @@ test("MCP：只用宿主面命令就能进入牌局，且开局由核心自己�
   // 不是 seat_id——只有查看者自己那一席的 hole_cards 被填上。上一轮就是在这里认错了字段。
   const seen = [];
   for (const seat of seats) {
-    const mine = (await table("view.hand", {
-      seat_id: seat.seat_id,
-      recovery_credential: seat.credential,
-    })).body.result.hand;
+    const mine = (await table("view.hand", { seat_handle: seat.handle })).body.result.hand;
 
     const own = mine.seats.find((entry) => entry.id === seat.player);
     assert.ok(own !== undefined, `${seat.player} 没在自己的手牌视图里找到本席`);
@@ -177,13 +179,164 @@ test("MCP：只用宿主面命令就能进入牌局，且开局由核心自己�
   }
   assert.notEqual(seen[0], seen[1], "两席不该拿到同一副底牌");
 
-  // 拿别人的 seat_id 配自己的凭据，过了 MCP 这一层也必须被核心拒。
+  // F6 之后，「拿别人的 seat_id 配自己的凭据」在这一层已经表达不出来了：模型手里没有
+  // 凭据，也不允许自己指定 seat_id。所以断言从「核心会拒」升级成「这一层根本不接受」。
+  // 核心那一侧的跨席拒绝仍然由 test/seat-authorization.test.cjs 直接钉住。
   const stolen = await table("view.hand", {
+    seat_handle: seats[0].handle,
     seat_id: seats[1].seat_id,
-    recovery_credential: seats[0].credential,
   });
-  assert.equal(stolen.isError, true, `跨席读牌居然成功了: ${stolen.raw}`);
-  assert.equal(stolen.body.code, "recovery_credential_rejected", stolen.raw);
+  assert.equal(stolen.isError, true, `模型指定 seat_id 居然被接受了: ${stolen.raw}`);
+  assert.equal(stolen.body.code, "seat_id_not_model_supplied", stolen.raw);
+
+  // 句柄只解回自己那一席：换句柄读到的是另一副底牌，而不是同一副。
+  const byHandle = await table("view.hand", { seat_handle: seats[1].handle });
+  assert.equal(byHandle.isError, false, byHandle.raw);
+  const other = byHandle.body.result.hand.seats.find((entry) => entry.id === seats[1].player);
+  assert.equal(other.hole_cards.length, 2);
+  assert.notEqual(other.hole_cards.join("|"), seen[0], "换句柄必须换到另一席的视角");
+});
+
+// F6 要求 4：「工具返回与模型可见 transcript 不含 credential」。
+//
+// 为什么要单独一条端到端的：前面那些断言查的是单次返回。但泄漏是累积的——模型看见的是整个
+// 会话，凭据只要在任何一条命令的任何一次返回里出现过一次，它就永久留在上下文里，之后会跟着
+// 每一次续写被复述。所以断言的对象必须是整段 transcript，不是某一次的 body。
+//
+// 凭据原文从核心自己的状态里取，不从托管层拿。托管层正是被测对象，向它要「秘密是什么」等于
+// 让它自己划定要扫的范围：它漏存一份，扫描就跟着漏一份。
+function credentialsInCore(service) {
+  const seats = [...service.surface.orchestrator.rooms.seats.values()];
+  return seats.map((seat) => seat.recovery_credential).filter((value) => typeof value === "string");
+}
+
+test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t) => {
+  const { service } = await coreAt(t);
+
+  // 模型看得见的每一个字节。存整个工具返回而不只是 content[0].text：isError 之外的任何
+  // 字段将来也会进上下文，只扫一个字段等于给以后新增字段留了通道。
+  const transcript = [];
+  async function say(command, params = {}) {
+    const out = await mcp.callTool("tokengame_table", { command, params });
+    transcript.push(JSON.stringify(out));
+    return { isError: out.isError === true, body: JSON.parse(out.content[0].text) };
+  }
+
+  const created = await say("room.create", { player_id: "p-a", table_rules_version: RULES });
+  assert.equal(created.isError, false);
+  const joined = await say("room.join", {
+    player_id: "p-b",
+    invite_code: created.body.result.invite_code,
+    room_id: created.body.result.room.room_id,
+  });
+  assert.equal(joined.isError, false);
+
+  const seats = [
+    { handle: created.body.seat_handle, player: "p-a", conn: "mcp-a" },
+    { handle: joined.body.seat_handle, player: "p-b", conn: "mcp-b" },
+  ];
+  for (const seat of seats) {
+    const auth = { seat_handle: seat.handle };
+    assert.equal((await say("room.confirm_public_scope", { ...auth, acknowledged: true })).isError, false);
+    assert.equal((await say("seat.connect", { ...auth, connection_id: seat.conn })).isError, false);
+  }
+
+  // 掉线 -> 恢复 -> 重连。seat.recover 也走句柄，所以这段同时证明「凭据的唯一入参命令」
+  // 在模型侧也不需要凭据原文。
+  const b = { seat_handle: seats[1].handle };
+  assert.equal((await say("seat.disconnect", { ...b, connection_id: seats[1].conn })).isError, false);
+  const recovered = await say("seat.recover", { ...b, connection_id: seats[1].conn });
+  assert.equal(recovered.isError, false, JSON.stringify(recovered.body));
+  assert.equal((await say("seat.connect", { ...b, connection_id: seats[1].conn })).isError, false);
+
+  for (const seat of seats) {
+    assert.equal((await say("seat.ready", { seat_handle: seat.handle, ready: true })).isError, false);
+  }
+
+  let hand = null;
+  for (let poll = 0; poll < 60 && hand === null; poll += 1) {
+    const view = await say("view.projection");
+    hand = view.body.result.public_hand ?? null;
+    if (hand === null) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(hand !== null, "核心必须自己开局");
+
+  // 带凭据的读、写、发言各走一遍。
+  for (const seat of seats) {
+    assert.equal((await say("view.hand", { seat_handle: seat.handle })).isError, false);
+    assert.equal((await say("chat.say", {
+      seat_handle: seat.handle,
+      text: `${seat.player} 到了`,
+      idempotency_key: `chat-${seat.player}`,
+    })).isError, false);
+  }
+  for (const seat of hand.seats) {
+    assert.equal((await say("view.seat", { seat_id: seat.id })).isError, true, "view.seat 收 seat_id 而不是 player id");
+  }
+  assert.equal((await say("view.timeline", {})).isError, false);
+
+  const actor = seats.find((seat) => seat.player === hand.actor_player_id);
+  assert.ok(actor !== undefined, `行动者必须是这两席之一: ${hand.actor_player_id}`);
+  const act = {
+    seat_handle: actor.handle,
+    hand_id: hand.hand_id,
+    action: "fold",
+  };
+
+  // 先故意失败一次。这是本条测试真正的锋刃：凭据已经被协调器注入进 params，如果核心的错误
+  // 回显把请求参数带回来（或 MCP 把异常栈打进结果），凭据就正好从这条错误路径进入模型上下文。
+  // 一条只走成功路径的测试看不见这个洞。
+  const stale = await say("hand.act", {
+    ...act,
+    expected_revision: hand.revision + 999,
+    idempotency_key: "stale-key",
+  });
+  assert.equal(stale.isError, true, "过期 revision 必须被拒");
+
+  const acted = await say("hand.act", {
+    ...act,
+    expected_revision: hand.revision,
+    idempotency_key: "act-1",
+  });
+  assert.equal(acted.isError, false, JSON.stringify(acted.body));
+
+  // ---- 断言 ----
+  const text = transcript.join("\n");
+  const secrets = credentialsInCore(service);
+
+  // 先证明「要扫的东西确实存在」。少了这一步，凭据若是空串或 undefined，下面的 includes
+  // 会永真，整条测试变成一个看起来很绿的空壳。
+  assert.equal(secrets.length, 2, `核心里应有两席凭据: ${secrets.length}`);
+  for (const secret of secrets) {
+    assert.ok(secret.length >= 8, `凭据太短，扫描没有意义: ${secret.length}`);
+  }
+
+  // 再证明「transcript 确实抓到了内容」。空 transcript 同样能通过负向断言。
+  assert.ok(transcript.length >= 20, `transcript 太短，可能没抓到: ${transcript.length}`);
+  for (const seat of seats) {
+    assert.ok(text.includes(seat.handle), "句柄必须出现在模型可见文本里：那正是模型要用的东西");
+  }
+
+  // 正题。
+  for (const secret of secrets) {
+    assert.ok(
+      !text.includes(secret),
+      "席位凭据出现在模型可见的 transcript 里：F6 的整条边界失效",
+    );
+  }
+  // 字段名同样不该出现：出现就说明有路径在搬运它，哪怕这次值恰好是空的。
+  for (const field of ["recovery_credential", '"credential"']) {
+    assert.ok(!text.includes(field), `transcript 里出现了 ${field}`);
+  }
+});
+
+test("F6：工具说明不得要求模型自己回传凭据", () => {
+  // 说明文本本身就是一条泄漏路径：只要它教模型「把 recovery_credential 传回来」，模型就会
+  // 先把凭据复述进上下文，然后托管层再怎么净化都晚了。
+  const tool = mcp.tools.find((entry) => entry.name === "tokengame_table");
+  const text = `${tool.description ?? ""}\n${JSON.stringify(tool.inputSchema)}`;
+  assert.ok(!text.includes("recovery_credential"), "工具说明仍在要求凭据");
+  assert.ok(text.includes("seat_handle"), "工具说明必须告诉模型用句柄");
 });
 
 // 架构分水岭写成断言。MCP 进程内 require 命令面或编排层，就等于每个宿主各自持一张牌桌，
