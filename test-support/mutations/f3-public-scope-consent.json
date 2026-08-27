@@ -1,5 +1,6 @@
 {
   "name": "F3 默认公开确认按席位记账",
+  "test": "test/public-scope-consent.test.cjs",
   "notes": "每条变异都对应一句「本该被拒的事」。存活即说明测试没有真的钉住那条同意边界。",
   "mutations": [
     {
@@ -89,8 +90,8 @@
     {
       "id": "F3-13-确认落在共享对象上",
       "file": "src/authority/seat-ai-store.cjs",
-      "find": "    seat.public_scope_confirmation = {",
-      "replace": "    this.sharedConfirmation = this.sharedConfirmation ?? {};\n    for (const other of this.seats.values()) other.public_scope_confirmation = this.sharedConfirmation;\n    Object.assign(this.sharedConfirmation, {",
+      "find": "    seat.public_scope_confirmation = {\n      seat_id: seat.seat_id,\n      room_binding_id: roomBindingId,\n      table_rules_version: tableRulesVersion,\n      limits_version: this.limits.version,\n      confirmed_at: this.now(),\n    };",
+      "replace": "    this.sharedConfirmation = this.sharedConfirmation ?? {};\n    for (const other of this.seats.values()) other.public_scope_confirmation = this.sharedConfirmation;\n    Object.assign(this.sharedConfirmation, {\n      seat_id: seat.seat_id,\n      room_binding_id: roomBindingId,\n      table_rules_version: tableRulesVersion,\n      limits_version: this.limits.version,\n      confirmed_at: this.now(),\n    });",
       "why": "所有席位共用一份确认：写法变了，语义还是整桌单例。"
     },
     {
