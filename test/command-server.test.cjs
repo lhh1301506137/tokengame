@@ -34,6 +34,10 @@ async function serve(t, { token = DEFAULT_AUTHORITY_TOKEN } = {}) {
     idFactory: () => `id-${++id}`,
     tokenFactory: () => `tok-${++id}`,
     deckFactory: deck,
+    // 本文件自己推进 now()，所以必须关掉到期驱动：驱动按真实 setInterval 走表，
+    // 会在测试推进时钟前先把手牌开出去，让 hand.start_if_due 的断言变得不确定。
+    // 驱动本身在 test/due-work.test.cjs 里单独测。
+    dueWork: false,
   });
   const origin = await service.start({ host: "127.0.0.1", port: 0 });
   t.after(() => service.stop());

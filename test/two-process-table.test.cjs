@@ -61,7 +61,10 @@ function runPlayer(origin, seat) {
 }
 
 test("宿主中立：两个独立进程在同一份权威状态上打完一手牌", async (t) => {
-  const service = createCommandServer({ deckFactory: deck });
+  // 关掉到期驱动：本测试要断言「显式 hand.start_if_due 会开局」，驱动开着会先把手牌
+  // 开出去，让这条断言拿到 hand_in_progress。驱动自己开局的能力在 due-work.test.cjs
+  // 里用真实 HTTP 服务单独证。
+  const service = createCommandServer({ deckFactory: deck, dueWork: false });
   const origin = await service.start({ host: "127.0.0.1", port: 0 });
   t.after(() => service.stop());
 
@@ -130,7 +133,8 @@ test("宿主中立：两个独立进程在同一份权威状态上打完一手�
 });
 
 test("宿主中立：远端进程拿错凭据时进程失败，且权威状态不变", async (t) => {
-  const service = createCommandServer({ deckFactory: deck });
+  // 同上：本测试断言权威状态「不变」，驱动会推进状态，两者会互相干扰。
+  const service = createCommandServer({ deckFactory: deck, dueWork: false });
   const origin = await service.start({ host: "127.0.0.1", port: 0 });
   t.after(() => service.stop());
 

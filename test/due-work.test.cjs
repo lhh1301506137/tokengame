@@ -8,6 +8,7 @@ const test = require("node:test");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { createDueWorkDriver, DEFAULT_INTERVAL_MS } = require("../src/authority/due-work.cjs");
+const { createCommandServer } = require("../src/authority/command-server.cjs");
 const { TableOrchestrator } = require("../src/authority/table-orchestrator.cjs");
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
@@ -286,6 +287,92 @@ test("定时器：驱动开着不停表时，进程仍然能自己退出（unref
   }
   assert.equal(outcome.code, 0, `子进程退出码应为 0\nstdout=${out}\nstderr=${err}`);
   assert.match(out, /STARTED ticks=\d+/, `驱动应当确实走过表\nstdout=${out}\nstderr=${err}`);
+});
+
+// 整条链路的实证：真实 HTTP 服务 + 真实时钟，倒计时走完后**没有任何人发请求**，
+// 牌局照样开出来。前面的测试都在手动调 tick()，证不了「服务真的把表接上了」。
+test("集成：真实服务里倒计时走完后，无人发请求也会开局", async (t) => {
+  const service = createCommandServer({ deckFactory: deck });
+  const origin = await service.start({ host: "127.0.0.1", port: 0 });
+  t.after(() => service.stop());
+  assert.equal(service.dueWork.running, true, "start() 之后驱动就该在走表（默认开启）");
+
+  const s = service.surface;
+  const created = s.dispatch("room.create", { player_id: "p1", table_rules_version: RULES });
+  s.dispatch("room.confirm_public_scope");
+  const joined = s.dispatch("room.join", {
+    player_id: "p2",
+    invite_code: created.invite_code,
+  });
+
+  // 命令面把凭据叫 recovery_credential，且只在创建/加入的返回里出现这一次。
+  const both = [
+    { seat_id: created.seat.seat_id, credential: created.recovery_credential },
+    { seat_id: joined.seat.seat_id, credential: joined.recovery_credential },
+  ];
+  for (const seat of both) {
+    s.dispatch("seat.connect", {
+      seat_id: seat.seat_id,
+      recovery_credential: seat.credential,
+      connection_id: conn(seat),
+    });
+    s.dispatch("ai.set_mode", {
+      seat_id: seat.seat_id,
+      recovery_credential: seat.credential,
+      mode: "OFF",
+    });
+    s.dispatch("seat.ready", {
+      seat_id: seat.seat_id,
+      recovery_credential: seat.credential,
+      ready: true,
+    });
+  }
+
+  assert.equal(s.dispatch("view.projection").hand, null, "此刻还不该有牌局");
+
+  // 只等时间过去。这中间一个请求都不发——这正是本测试的全部意义。
+  const deadline = Date.now() + TABLE_LIFECYCLE_V1.readyCountdownMs + 2_000;
+  let started = false;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    if (service.surface.orchestrator.hand !== null) {
+      started = true;
+      break;
+    }
+  }
+
+  assert.ok(started, "倒计时走完后驱动应当自己开局，实际一直没有牌局");
+  const hand = s.dispatch("view.projection").public_hand;
+  assert.equal(hand.status, "active");
+  assert.equal(hand.seats.length, 2);
+});
+
+// service.stop() 必须真的停表。unref 会掩盖这个漏洞——进程照样退得掉，所以「进程能退出」
+// 证不了这一条。真实代价在长驻宿主进程里：每个停掉的服务都留下一个还在改牌桌状态的定时器。
+test("集成：service.stop() 之后驱动不再走表", async () => {
+  const service = createCommandServer({
+    deckFactory: deck,
+    dueWorkIntervalMs: 10,
+  });
+  await service.start({ host: "127.0.0.1", port: 0 });
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.ok(service.dueWork.ticks > 0, "停之前应当确实在走表，否则这条断言是空的");
+
+  await service.stop();
+  assert.equal(service.dueWork.running, false, "stop() 之后驱动不该还在走表");
+
+  const frozen = service.dueWork.ticks;
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(service.dueWork.ticks, frozen, "stop() 之后不得再有 tick");
+});
+
+test("集成：显式传 dueWork: false 时服务不走表", async (t) => {
+  const service = createCommandServer({ deckFactory: deck, dueWork: false });
+  await service.start({ host: "127.0.0.1", port: 0 });
+  t.after(() => service.stop());
+  assert.equal(service.dueWork.running, false);
+  assert.equal(service.dueWork.ticks, 0);
 });
 
 test("默认间隔对规则 1 的 3 秒倒计时与规则 2 的 120 秒保留窗都足够细", () => {

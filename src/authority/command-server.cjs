@@ -23,6 +23,7 @@ const http = require("node:http");
 const { closeServer, listen, readJson, sendJson } = require("../shared/http.cjs");
 const { ProbeError } = require("./event-store.cjs");
 const { CommandSurface } = require("./command-surface.cjs");
+const { createDueWorkDriver } = require("./due-work.cjs");
 
 // 与 server.cjs 同名同默认值。改名要两处一起改，否则适配器会对着两个头发请求。
 const AUTHORITY_TOKEN_HEADER = "x-tokengame-authority-token";
@@ -58,6 +59,18 @@ function createCommandServer(options = {}) {
     ? options.surface
     : new CommandSurface(options);
 
+  // 到期驱动默认开着。默认关等于「守护进程只有在有人记得传这个开关时才推进规则」，
+  // 而规则不该依赖玩家在场——这正是 due-work.cjs 存在的理由。
+  //
+  // 注入时钟的调用方必须显式传 dueWork: false：驱动按真实 setInterval 走表，而 now()
+  // 被测试冻住，两个时间源对不上，驱动会在测试自己推进时钟前先把手牌开出去。
+  const dueWorkEnabled = options.dueWork !== false;
+  const dueWork = createDueWorkDriver({
+    orchestrator: surface.orchestrator,
+    ...(options.dueWorkIntervalMs === undefined ? {} : { intervalMs: options.dueWorkIntervalMs }),
+    onError: typeof options.onDueWorkError === "function" ? options.onDueWorkError : undefined,
+  });
+
   const server = http.createServer((request, response) => {
     handle(request, response, surface, internalToken).catch((error) => {
       fail(response, error);
@@ -67,6 +80,7 @@ function createCommandServer(options = {}) {
   return {
     surface,
     server,
+    dueWork,
     async start({ host = "127.0.0.1", port = 0 } = {}) {
       if (!isLoopback(host)) {
         // 这不是保守，是 STATUS.md 里那条门禁的机器化。要放开得先关掉那个 unknown。
@@ -77,9 +91,13 @@ function createCommandServer(options = {}) {
         });
       }
       const address = await listen(server, { host, port });
+      // 端口监听成功之后才开表：先开表则监听失败时会留下一个还在走的定时器。
+      if (dueWorkEnabled) dueWork.start();
       return `http://${host === "::1" ? "[::1]" : host}:${address.port}`;
     },
     stop() {
+      // 先停表再关端口。反过来会让最后一次 tick 落在已关闭的服务上。
+      dueWork.stop();
       return closeServer(server);
     },
   };
