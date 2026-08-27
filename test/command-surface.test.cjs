@@ -365,23 +365,27 @@ test("端到端：LOCAL_CONTROL 通道不公开、不进 AI 上下文", () => {
 // L0 根合同把「隐藏信息边界」列为产品核心，并要求不由任一玩家宿主掌握牌堆、对手底牌
 // 或结算权。view.hand 是全系统唯一吐出底牌的出口，下面几条钉住它的边界。
 
-test("隐藏信息：本席看得见自己的两张底牌，看不见对手的", () => {
-  const ctx = surface({ playerCount: 2 });
+// 逐席都问一遍，不能只问首席。若 viewerId 被写死成某一席，只问首席的测试会通过——
+// 这是变异测试实际暴露出来的漏洞，不是假想。
+test("隐藏信息：每一席都只看得见自己的两张底牌", () => {
+  const ctx = surface({ playerCount: 3 });
   begin(ctx);
-  const me = ctx.seats[0];
-  const view = ctx.s.dispatch("view.hand", {
-    seat_id: me.seat_id,
-    recovery_credential: me.credential,
-  }).hand;
 
-  const myPlayerId = ctx.s.orchestrator.requirePlayerId(me.seat_id);
-  const mine = view.seats.find((seat) => seat.id === myPlayerId);
-  const others = view.seats.filter((seat) => seat.id !== myPlayerId);
+  for (const me of ctx.seats) {
+    const view = ctx.s.dispatch("view.hand", {
+      seat_id: me.seat_id,
+      recovery_credential: me.credential,
+    }).hand;
 
-  assert.equal(mine.hole_cards.length, 2, "自己的底牌应当可见");
-  assert.ok(others.length > 0, "必须真的有对手，否则这条测试是空的");
-  for (const seat of others) {
-    assert.equal(seat.hole_cards, null, `对手 ${seat.id} 的底牌必须为 null`);
+    const myPlayerId = ctx.s.orchestrator.requirePlayerId(me.seat_id);
+    const mine = view.seats.find((seat) => seat.id === myPlayerId);
+    const others = view.seats.filter((seat) => seat.id !== myPlayerId);
+
+    assert.equal(mine.hole_cards.length, 2, `${me.seat_id} 应当看见自己的底牌`);
+    assert.ok(others.length > 0, "必须真的有对手，否则这条测试是空的");
+    for (const seat of others) {
+      assert.equal(seat.hole_cards, null, `${me.seat_id} 不得看见 ${seat.id} 的底牌`);
+    }
   }
 });
 
