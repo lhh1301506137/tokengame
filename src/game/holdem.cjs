@@ -423,6 +423,21 @@ class HoldemHand {
   }
 
   act({ playerId, type, amount = undefined, automatic = false, reason = null } = {}) {
+    // 行动时限过了之后，这一席自己的行动不再被接受：规则 2 说到期由权威代为 check 或
+    // fold，那么到期之后本人的行动就已经不属于他了。判定必须在这里做，不能只靠
+    // settleExpiredAction 被调用——那一步由到期驱动按 tick 触发，间隔 dueWorkIntervalMs
+    // 是宿主选项。少了这一句，迟到 10 毫秒的行动抢在 tick 前到达就照常生效，等于让宿主
+    // 配置决定「30 秒」实际是多少秒。
+    //
+    // automatic 必须排除：settleExpiredAction 正是在到期之后调 act 来完成自动行动的，
+    // 不排除的话自动行动会拒掉自己，规则 2 从此不再发生。
+    if (
+      automatic !== true &&
+      this.actionDeadlineAt !== null &&
+      this.now() >= this.actionDeadlineAt
+    ) {
+      throw new HoldemRuleError("action_deadline_expired", 409);
+    }
     const actionType = typeof type === "string" ? type : "";
     const { seat, amount: targetAmount } = this.requireLegalAction(playerId, actionType, amount);
     const currentBetBefore = this.currentBet;

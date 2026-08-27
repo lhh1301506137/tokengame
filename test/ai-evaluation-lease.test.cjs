@@ -355,10 +355,21 @@ test("宿主面：回收命令归权威驱动，不给适配器——死掉的�
   assert.ok(!HOST_COMMANDS.includes("ai.reclaim_expired"));
 });
 
-test("租约时长与真人行动时限同阶，且未混入 LIVELY_V1 预算", () => {
-  // 30 秒不是新发明的数字：项目对「外部行动者可以拖多久」已经有过一个答案
-  // （actionTimeoutMs 在四处默认 30_000）。沿用它，而不是再造一个。
-  assert.equal(EVALUATION_LEASE_MS, 30_000);
+test("租约时长沿用掉线保留窗，且未混入 LIVELY_V1 预算", () => {
+  // 120 秒不是新发明的数字：项目对「缺席的外部行动者要等多久才算回不来」已经有过
+  // 一个答案——recoveryRetentionMs 默认 120_000。真人掉线等 120 秒释放席位，适配器
+  // 失联等 120 秒收回回合，同一个形状的问题给同一个答案。
+  //
+  // 特意不照 actionTimeoutMs 的 30_000：那条规定的是真人可以想多久，与模型调用耗时
+  // 无关，而按 30 秒收会误伤慢但活着的适配器——规则 5 有一条已验收证据正是「模型慢了
+  // 30 秒才回来，照常公开」。租约只该杀死掉的，不该杀慢的。
+  assert.equal(EVALUATION_LEASE_MS, 120_000);
+  const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
+  assert.equal(
+    EVALUATION_LEASE_MS,
+    TABLE_LIFECYCLE_V1.recoveryRetentionMs,
+    "租约与掉线保留窗必须同值，否则「同一个问题同一个答案」这条理由就不成立",
+  );
 
   // 租约是活性期限，不是发言预算，所以不能塞进 LIVELY_V1。version 字符串
   // 会作为 limits_version 报给宿主，也进过 Codex 已验收的证据；往里加键会让

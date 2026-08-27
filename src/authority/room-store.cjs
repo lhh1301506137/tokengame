@@ -263,6 +263,10 @@ class RoomStore {
     const seat = this.requireSeat(input.seatId);
     const credential = requiredString(input.recoveryCredential, "recoveryCredential", 512);
 
+    // 先按当前时钟结算保留窗，再判能不能恢复。放在凭据比对之前：过期的凭据本就无效，
+    // 让它先过一道校验再被拒，只会把「凭据对不对」和「窗口还在不在」两件事混在一起。
+    this.releaseSeatIfExpired(seat);
+
     if (seat.state === "RELEASED" || seat.credential_revoked) {
       throw new ProbeError("seat_released", 409, { seat_id: seat.seat_id });
     }
@@ -675,18 +679,22 @@ class RoomStore {
 
   // 规则 2：自最后一个有效玩家连接消失起保留原席与恢复凭据 120 秒，随后释放。
   releaseExpiredSeats() {
-    const at = this.now();
     const released = [];
     for (const seat of [...this.seats.values()]) {
-      if (seat.state === "RELEASED" || seat.retention_expires_at === null) {
-        continue;
-      }
-      if (at >= seat.retention_expires_at) {
-        this.releaseSeat(seat, "recovery_window_expired");
-        released.push(seat.seat_id);
-      }
+      if (this.releaseSeatIfExpired(seat)) released.push(seat.seat_id);
     }
     return released;
+  }
+
+  // 单席版本。「保留窗过了吗」必须在每个会用到保留状态的入口问一次，不能只在到期驱动
+  // 那一步问：只在驱动里问，判定就取决于 tick 落在请求的哪一边——过期 10 毫秒的
+  // recoverSeat 抢在 tick 前到达就恢复成功，凭据活过了它自己的窗口。而 tick 间隔是宿主
+  // 选项（dueWorkIntervalMs），那等于让宿主配置决定「120 秒」实际是多少秒。
+  releaseSeatIfExpired(seat) {
+    if (seat.state === "RELEASED" || seat.retention_expires_at === null) return false;
+    if (this.now() < seat.retention_expires_at) return false;
+    this.releaseSeat(seat, "recovery_window_expired");
+    return true;
   }
 
   retentionRemainingMs(seat) {

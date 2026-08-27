@@ -24,14 +24,20 @@ const LIVELY_V1 = Object.freeze({
 // 评估回合租约。适配器是独立进程，可以死在 ai.start 与 ai.resolve 之间；不给回合
 // 设期限，那一席就永久停在「已有回合在飞」，从此不再被唤醒。
 //
-// 30 秒不是新造的数字：项目对「外部行动者可以拖多久」已经有过一个答案——真人行动
-// 时限 actionTimeoutMs 在四处默认 30_000。沿用它而不是再发明一个阈值。
+// 120 秒沿用 recoveryRetentionMs。这两处问的是同一个形状的问题：一个缺席的外部行动者
+// 要等多久才能判定它回不来了、从而释放它占住的东西。真人掉线等 120 秒释放席位，适配器
+// 失联等 120 秒收回回合。
+//
+// 先写的是 30_000（照 actionTimeoutMs），那是个类比错误：行动时限规定的是**真人可以
+// 想多久**，跟模型调用要花多久没有关系，而 30 秒对一次真实推理是紧的。按 30 秒收，会
+// 把慢但活着的输出当成死适配器丢掉——规则 5 恰好有一条已验收证据是「模型慢了 30 秒才
+// 回来，照常公开」，两者会直接撞车。租约要长到不误伤活着的适配器，同时仍然有界。
 //
 // 故意不放进 LIVELY_V1：那里是规则 3 的四层发言预算，而 version 字符串会作为
 // limits_version 报给宿主、也进过已验收的证据。往里加键会让两份不同的限制对象都
 // 自称 LIVELY_V1，而改版本号是语义决定，不由这一层做。租约是活性期限，不是预算，
 // 它一格额度也没放宽。
-const EVALUATION_LEASE_MS = 30_000;
+const EVALUATION_LEASE_MS = 120_000;
 
 // 规则 2：白名单来源事件。AI_PUBLIC_SPEECH 故意不在其中——AI 发言可以进入以后
 // 合法评估的上下文，但不能单独唤醒任何席位 AI。
@@ -367,6 +373,11 @@ class SeatAiStore {
         continue;
       }
 
+      // 先按当前时钟回收过期回合，再看闸门。不然一个被遗弃的回合会把这次唤醒吃掉
+      // （merged_into_pending），而它能不能被吃掉取决于驱动跑没跑——同一个事件在
+      // tick 两边有两种结果。
+      this.reclaimSeatIfExpired(seat);
+
       const cooldown = this.cooldownRemainingMs(seat, at);
       if (seat.active_turn !== null || cooldown > 0) {
         // 规则 4：合并为一个待评估的最新上下文，不为每条事件排队调用。
@@ -413,29 +424,38 @@ class SeatAiStore {
   //      规则 3 的最小启动间隔照旧生效。
   //   3. 不清 pending_context。卡住期间合并进去的最新上下文仍然有效，下一个来源
   //      事件会带着它开新回合——这正是规则 4「合并为最新上下文」要的效果。
-  reclaimExpiredEvaluations() {
+  //
+  // 单席版本单独抽出来，是因为「租约过期了吗」必须在每个会读到 active_turn 的地方
+  // 问一次，不能只在驱动那一步问。只在驱动里问的话，判定就取决于 tick 落在请求的
+  // 哪一边：租约过期 10 毫秒的迟到输出，抢在 tick 前到达就发布，晚到就丢弃——同样的
+  // 输入两种公开时间线。而 tick 间隔是宿主选项（dueWorkIntervalMs），等于让宿主配置
+  // 决定规则结果。所以内核在被问到时自己判定，驱动只负责没人问时也照样发生。
+  reclaimSeatIfExpired(seat) {
+    const turn = seat.active_turn;
+    if (turn === null) return null;
     const at = this.now();
+    if (turn.lease_deadline_at === null || at < turn.lease_deadline_at) return null;
+    this.detachTurn(seat, "reclaimed");
+    // 无条件 IDLE，不用判 mode：OFF 的席位不可能有在途回合。mode 全局只有
+    // setSeatAiMode 一个写入点，而它切 OFF 时就把回合摘下来了。这条不变量由
+    // 「OFF 的席位永远没有在途回合」那条测试钉住——依赖一个假设就得把它测出来，
+    // 否则这里写成判 mode 只是看着稳妥，实际是一段没人能验证的死分支。
+    seat.status = "IDLE";
+    return this.record("SEAT_AI_EVALUATION_RECLAIMED", {
+      seat_id: seat.seat_id,
+      turn_id: turn.turn_id,
+      started_at: turn.started_at,
+      lease_deadline_at: turn.lease_deadline_at,
+      reclaimed_at: at,
+      status: seat.status,
+    });
+  }
+
+  reclaimExpiredEvaluations() {
     const events = [];
     for (const seat of this.seats.values()) {
-      const turn = seat.active_turn;
-      if (turn === null) continue;
-      if (turn.lease_deadline_at === null || at < turn.lease_deadline_at) continue;
-      this.detachTurn(seat, "reclaimed");
-      // 无条件 IDLE，不用判 mode：OFF 的席位不可能有在途回合。mode 全局只有
-      // setSeatAiMode 一个写入点，而它切 OFF 时就把回合摘下来了。这条不变量由
-      // 「OFF 的席位永远没有在途回合」那条测试钉住——依赖一个假设就得把它测出来，
-      // 否则这里写成判 mode 只是看着稳妥，实际是一段没人能验证的死分支。
-      seat.status = "IDLE";
-      events.push(
-        this.record("SEAT_AI_EVALUATION_RECLAIMED", {
-          seat_id: seat.seat_id,
-          turn_id: turn.turn_id,
-          started_at: turn.started_at,
-          lease_deadline_at: turn.lease_deadline_at,
-          reclaimed_at: at,
-          status: seat.status,
-        }),
-      );
+      const event = this.reclaimSeatIfExpired(seat);
+      if (event !== null) events.push(event);
     }
     return events;
   }
@@ -445,6 +465,8 @@ class SeatAiStore {
     if (seat.mode === "OFF") {
       throw new ProbeError("seat_ai_off", 409, { seat_id: seat.seat_id });
     }
+    // 同上：租约过期的回合不该再挡住新回合，而这不能等驱动来清。
+    this.reclaimSeatIfExpired(seat);
     if (seat.active_turn !== null) {
       // 规则 4：每席同时最多运行一个公开话术模型回合。
       throw new ProbeError("seat_turn_already_active", 409, {
@@ -502,6 +524,9 @@ class SeatAiStore {
   resolveEvaluation(input = {}) {
     const seat = this.requireSeat(input.seatId);
     const turnId = requiredString(input.turnId, "turnId", 128);
+    // 先按当前时钟回收，再查回合。这一步决定了迟到输出走发布还是走 turn_reclaimed，
+    // 而它必须只取决于「租约过期了没有」，不取决于驱动的 tick 落在这个请求的哪一边。
+    this.reclaimSeatIfExpired(seat);
     // 先看在途回合，再看已摘下的回合。摘下的回合仍须能被 resolve——不然规则 6
     // 那条「迟到结果必须被丢弃」的证据就变成一个 turn_not_active 异常，适配器
     // 分不清「我说的话被拒了」和「我调错了」。

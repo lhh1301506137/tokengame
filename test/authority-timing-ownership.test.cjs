@@ -46,11 +46,26 @@ const DRIVER_STEPS = Object.freeze([
   "startHandIfDue",
 ]);
 
-// 登记表。每条要么 kind:"driver"（到期必须有人做事，owner 指明是哪一步），要么
-// kind:"on_demand"（到期本身没有后果，值只在有人问的时候才读，reason 说明为什么）。
+// 登记表。每条归三类之一：
+//
+//   driver    到期必须有人做事，owner 指明是四步中的哪一步。驱动提供**活性**：
+//             没人来问的时候，事情照样发生。
+//   enforced  在被问到的那一刻现场判定同一条期限，让答案不取决于 tick 落在请求的
+//             哪一边。这一类提供**正确性**，必须写出同一条期限的 owner——只有正确性
+//             没有活性，等于没人来问就永远不发生。
+//   on_demand 到期本身没有后果，值只在有人问的时候才读，reason 说明为什么不需要做事。
+//
+// 为什么要有 enforced 这一类：期限只在 tick 里检查的话，宽限期就等于 tick 间隔，而
+// tick 间隔 dueWorkIntervalMs 是宿主建服务时传的选项。宿主传 60000 就把规则的宽限期
+// 一起放宽到一分钟——宿主中立的权威核心存在的意义正是「宿主配置不能改变规则结果」。
 //
 // on_demand 不是豁免通道，是一句需要成立的断言：「这个期限过去时，桌面状态不需要
 // 任何改变」。写错了就是下一个静默缺陷，所以每条都得写清理由让人能反驳。
+//
+// 注意 driver 与 enforced 有时是同一行代码：seat-ai 与 room-store 把判定收进了单席版
+// helper（reclaimSeatIfExpired / releaseSeatIfExpired），驱动那一步和各入口调的是同一个
+// 谓词，所以只登记一条 driver。holdem 不同：自动行动（到期代为 check/fold）与拒绝迟到
+// 行动是两个不同的谓词，所以是两条。
 const CLOCK_COMPARISONS = Object.freeze([
   {
     file: "authority/room-store.cjs",
@@ -68,17 +83,20 @@ const CLOCK_COMPARISONS = Object.freeze([
   },
   {
     file: "authority/room-store.cjs",
-    code: "if (at >= seat.retention_expires_at) {",
+    code: "if (this.now() < seat.retention_expires_at) return false;",
     kind: "driver",
     owner: "releaseExpiredSeats",
-    // 保留期满必须释放原席与恢复凭据，否则座位被永久占住。
+    // 保留期满必须释放原席与恢复凭据，否则座位被永久占住。判定住在单席版
+    // releaseSeatIfExpired 里，recoverSeat 也调它；驱动那一步只提供活性。
   },
   {
     file: "authority/seat-ai-store.cjs",
-    code: "if (turn.lease_deadline_at === null || at < turn.lease_deadline_at) continue;",
+    code: "if (turn.lease_deadline_at === null || at < turn.lease_deadline_at) return null;",
     kind: "driver",
     owner: "reclaimExpiredEvaluations",
     // 租约到期必须收回回合，否则崩掉的适配器把那一席永久锁在「已有回合在飞」。
+    // 判定住在单席版 reclaimSeatIfExpired 里，每个会读 active_turn 的入口都调它；
+    // 驱动那一步只是「没人问的时候也照样问一遍」。
   },
   {
     file: "game/holdem.cjs",
@@ -86,6 +104,15 @@ const CLOCK_COMPARISONS = Object.freeze([
     kind: "driver",
     owner: "settleExpiredAction",
     // 行动超时必须代为过牌或弃牌，否则一个走开的玩家能无限期挂住整桌。
+  },
+  {
+    file: "game/holdem.cjs",
+    code: "this.now() >= this.actionDeadlineAt",
+    kind: "enforced",
+    owner: "settleExpiredAction",
+    // 时限过后本人的行动不再被接受。与上一条是同一条期限的两面：上面回答「到期时
+    // 权威做什么」，这里回答「到期后本人还能不能行动」。只有上面那条时，迟到 10 毫秒
+    // 的行动抢在 tick 前到达就照常生效。
   },
   {
     file: "authority/room-store.cjs",
@@ -224,13 +251,47 @@ test("到期：driver 归属的 owner 都是 tick() 真的会调的方法", () =
   const tickBody = source.slice(source.indexOf("function tick()"), source.indexOf("return {"));
   assert.ok(tickBody.length > 100, "没能截出 tick() 函数体，本条断言会变成空跑");
 
-  const owners = CLOCK_COMPARISONS.filter((entry) => entry.kind === "driver").map(
+  const owners = CLOCK_COMPARISONS.filter((entry) => entry.kind !== "on_demand").map(
     (entry) => entry.owner,
   );
   assert.ok(owners.length > 0, "登记表里一条 driver 都没有，本条断言会变成空跑");
   for (const owner of new Set(owners)) {
     assert.ok(DRIVER_STEPS.includes(owner), `${owner} 不是到期驱动的四步之一`);
     assert.ok(tickBody.includes(`${owner}(`), `登记表把比较归给了 ${owner}，但 tick() 里没调它`);
+  }
+});
+
+// enforced 必须有一条同 owner 的 driver 撑着。这条防的是「只有正确性没有活性」：
+// 现场判定让迟到请求被正确拒绝了，但如果没人按时去做该做的事，桌子还是停在那儿——
+// 迟到的行动被拒，而自动 check/fold 永远不发生，那一手就永久挂住。
+test("到期：每条 enforced 都有同一条期限的 driver 提供活性", () => {
+  const driverOwners = new Set(
+    CLOCK_COMPARISONS.filter((entry) => entry.kind === "driver").map((entry) => entry.owner),
+  );
+  const enforced = CLOCK_COMPARISONS.filter((entry) => entry.kind === "enforced");
+  assert.ok(enforced.length > 0, "一条 enforced 都没有，本条断言会变成空跑");
+  for (const entry of enforced) {
+    assert.ok(
+      driverOwners.has(entry.owner),
+      `${keyOf(entry)} 现场判定了期限，但没有任何 driver 条目按时去做 ${entry.owner}：` +
+        "这样迟到请求会被正确拒绝，而该发生的事永远不发生",
+    );
+
+    // 光是「owner 是个存在的驱动步骤」还不够——随便填一个真实步骤名也能通过，而那等于
+    // 声称由另一条期限的负责人来提供本条的活性。所以还要求两边说的是**同一个期限**：
+    // 比较里那个 *At / *_at 标识符必须对得上。
+    const deadlineOf = (code) => new Set(code.match(/[A-Za-z_$][\w$]*(?:At|_at)\b/g) ?? []);
+    const mine = deadlineOf(entry.code);
+    assert.ok(mine.size > 0, `${keyOf(entry)} 里找不出期限标识符，无法核对 owner 是否对应`);
+    const theirs = new Set(
+      CLOCK_COMPARISONS.filter((other) => other.kind === "driver" && other.owner === entry.owner)
+        .flatMap((other) => [...deadlineOf(other.code)]),
+    );
+    assert.ok(
+      [...mine].some((name) => theirs.has(name)),
+      `${keyOf(entry)} 归给了 ${entry.owner}，但那一步守的是另一条期限` +
+        `（本条 ${[...mine].join("/")}，那一步 ${[...theirs].join("/") || "无"}）`,
+    );
   }
 });
 
@@ -252,10 +313,10 @@ test("到期：四步都在，且每步都有归属它的到期状态", () => {
 test("到期：登记表每条都写全了归类依据", () => {
   for (const entry of CLOCK_COMPARISONS) {
     assert.ok(CORE_FILES.includes(entry.file), `${entry.file} 不在权威核心文件集里`);
-    assert.ok(["driver", "on_demand"].includes(entry.kind), `未知 kind: ${entry.kind}`);
-    if (entry.kind === "driver") {
+    assert.ok(["driver", "enforced", "on_demand"].includes(entry.kind), `未知 kind: ${entry.kind}`);
+    if (entry.kind !== "on_demand") {
       assert.equal(typeof entry.owner, "string");
-      assert.equal(entry.reason, undefined, "driver 条目不该有 reason，理由就是 owner");
+      assert.equal(entry.reason, undefined, "driver/enforced 条目不该有 reason，理由就是 owner");
     } else {
       assert.ok(
         typeof entry.reason === "string" && entry.reason.length >= 10,
