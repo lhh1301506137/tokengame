@@ -1,5 +1,16 @@
 "use strict";
 
+// SUPERSEDED_BY_SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+//
+// 本模块实现的是「显式问答桥」语义。新合同反转了其中两条：
+//   1. 每行动窗口最多一次 AI 请求  ->  事件驱动，每席 AI 每手最多公开 8 条。
+//   2. 窗口关闭即拒绝迟到回答      ->  同手迟到回答仍公开，跨街须带醒目标注。
+// 新语义在 src/authority/seat-ai-store.cjs 中独立实现，本文件不改变行为，仅保留
+// 现状供 Codex 适配器的既有 Hook 测试继续通过；两者的收口留待 Codex 归队后处理。
+//
+// 本文件的断言仍然覆盖旧语义，是有意为之：删掉它们会让 Codex 适配器失去回归保护。
+// 判断当前产品语义时以 seat-ai-store.cjs 与决策日志中的 D 版合同为准。
+
 const crypto = require("node:crypto");
 
 class ProbeError extends Error {
@@ -124,6 +135,8 @@ class EventStore {
     }
 
     const actionWindow = this.requireOpenWindow();
+    // SUPERSEDED：「每窗口一次 AI 请求」已被 D 版合同的每手 8 条事件驱动预算取代。
+    // 见 seat-ai-store.cjs 的 aiMaxPublicPerHand 与 aiMinEvaluationIntervalMs。
     if (actionWindow.ai_request) {
       throw new ProbeError("ai_request_quota_used", 409, {
         request_id: actionWindow.ai_request.request_id,
@@ -186,6 +199,8 @@ class EventStore {
     if (!actionWindow || actionWindow.id !== request.window_id) {
       throw new ProbeError("request_window_missing", 409);
     }
+    // SUPERSEDED：「窗口关闭即拒绝迟到回答」已被 D 版合同取代——同手迟到输出仍应
+    // 公开，跨街须标注「延迟 · 基于前一街」，仅跨手才丢弃。见 resolveEvaluation。
     this.requireOpenWindow();
     if (request.status !== "awaiting_answer" || actionWindow.answer) {
       throw new ProbeError("ai_answer_already_submitted", 409, {
