@@ -65,7 +65,7 @@
 
 ## 开放问题
 
-- 没有需要继续拆分的新产品问题；但公开座位 AI 的最后一个受保护规则包仍待用户精确确认，在此之前不进入受影响实现。
+- 没有需要继续拆分或等待用户确认的新产品语义问题；受影响实现、主动唤醒和双宿主证据仍须先刷新 Project Intelligence，再按当前合同重验。
 
 ## 需求（演进中）
 
@@ -635,9 +635,9 @@
 
 ## 语义变更与分阶段确认状态（2026-08-27）
 
-本 PRD 中与已验证合同冲突或超出其范围的“已确认”“已锁定”表述，只代表需求发现会话中的候选共识，不具有 `user_confirmed` 合同权威。宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2 以及可玩牌桌的 Ready、掉线、退出与亮牌规则已经由 `PROJECT-DECISION-LOG.md#DEC-20260827-017` 至 `PROJECT-DECISION-LOG.md#DEC-20260827-022` 分阶段确认并校验；公开座位 AI 精确规则仍须通过最后一个后继合同取得权威，受影响实现继续暂停。
+本 PRD 中与已验证合同冲突或超出其范围的“已确认”“已锁定”表述，只代表需求发现会话中的候选共识，不具有 `user_confirmed` 合同权威。宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2、可玩牌桌的 Ready/掉线/退出/亮牌规则，以及公开座位 AI 的七条交流规则，已经由 `PROJECT-DECISION-LOG.md#DEC-20260827-017` 至 `PROJECT-DECISION-LOG.md#DEC-20260827-023` 分阶段确认并校验。受影响实现、主动唤醒与双宿主证据仍须按新主链重验，不能从语义确认推导为已交付。
 
-确认顺序固定为：L0 宿主中立化（已完成）→ L1 共享宿主入口（已完成）→ 三个分别命名的 L2（均已完成）→ 可玩牌桌体验规则包（已完成）→ 公开座位 AI 规则包（当前）。标准德扑机制、验收规则和实现规则不拆成用户选择题；两个产品规则包也不合并成一次总确认。
+确认顺序已完成：L0 宿主中立化 → L1 共享宿主入口 → 三个分别命名的 L2 → 可玩牌桌体验规则包 → 公开座位 AI 规则包。标准德扑机制、验收规则和实现规则不拆成用户选择题；下一阶段由 Project Intelligence、实现闭环和真实宿主证据分别恢复其专业事实，不再新增语义确认题。
 
 U7 已按最终复核拆分归约，不能再作为一个含混结论处理：
 
@@ -654,7 +654,7 @@ semantic_reconciliation:
     - verified_contract_vs_active_prd_conflict
     - dual_host_product_direction
   baseline_status_before: conflict
-  status: charters_and_playable_table_rules_aligned_public_ai_rules_pending
+  status: aligned
   original_or_latest_user_intent_checked:
     - PROJECT-DECISION-LOG.md#DEC-20260827-017
     - PROJECT-DECISION-LOG.md#DEC-20260827-018
@@ -662,6 +662,7 @@ semantic_reconciliation:
     - PROJECT-DECISION-LOG.md#DEC-20260827-020
     - PROJECT-DECISION-LOG.md#DEC-20260827-021
     - PROJECT-DECISION-LOG.md#DEC-20260827-022
+    - PROJECT-DECISION-LOG.md#DEC-20260827-023
     - current_user_instruction:2026-08-27
   historical_ai_inference_checked:
     - CLAUDE-SEMANTIC-REVIEW-20260826.md
@@ -676,23 +677,24 @@ semantic_reconciliation:
     - PROJECT-DECISION-LOG.md#DEC-20260827-020
     - PROJECT-DECISION-LOG.md#DEC-20260827-021
     - PROJECT-DECISION-LOG.md#DEC-20260827-022
+    - PROJECT-DECISION-LOG.md#DEC-20260827-023
   current_implementation_or_product_surface_checked:
     - existing_records_only_no_tests_rerun
   material_deltas:
     - classification: docs_and_implementation_drift
-      summary: L0、共享 L1、三个当前 MVP L2 与可玩牌桌规则已全部确认并唯一绑定；当前只剩公开座位 AI 规则后继，运行证据仍需按新主链重验。
+      summary: L0、共享 L1、三个当前 MVP L2 与两个受保护规则包已全部确认并唯一绑定；运行实现、主动唤醒和双宿主证据仍需按新主链重验。
       affected_levels:
         - L0
         - L1
         - L2
-  scope_escalation_recommended: yes
-  user_decision_needed: yes
+  scope_escalation_recommended: no
+  user_decision_needed: no
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   baseline_status_after: confirmed
-  next_action: user_confirm_rules_stage_b_public_ai_exchange
+  next_action: refresh_project_intelligence_before_implementation
 
 route_rebase:
-  status: pending_user_confirmation
+  status: revalidating
   transformation: supersede
   trigger:
     reason: 已验证的 Codex 专属 L0/L1 与双宿主、临时私人房和事件驱动公开 AI 候选发生受保护语义冲突。
@@ -702,10 +704,10 @@ route_rebase:
       - docs/SEMANTIC-CONFIRMATION-L1-20260827.md
       - docs/SEMANTIC-CONFIRMATION-L2-SESSION-LAUNCH-20260827.md
       - docs/SEMANTIC-CONFIRMATION-L2-PLAYABLE-TABLE-20260827.md
-  semantic_impact: public_ai_protected_product_rules_confirmation_required
+  semantic_impact: l0_l2_confirmation_required
   authority:
-    user: pending_user_confirmation
-    primary_ai: propose_rules_stage_b_and_wait
+    user: confirmed_resulting_semantics
+    primary_ai: inventory_and_repair_authorized_impact
     decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
   previous_active_path:
     - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
@@ -714,11 +716,11 @@ route_rebase:
   candidate_active_path:
     - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
     - TG-L1-PUBLIC-AI-PLAY@SC-TG-L1-PUBLIC-AI-20260825-A
-    - TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-pending-rules
+    - TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
   resulting_active_path:
     - TG-L0-PRODUCT@SC-TG-L0-ROOT-20260827-B
     - TG-L1-PUBLIC-AI-PLAY@SC-TG-L1-PUBLIC-AI-20260825-A
-    - TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C
+    - TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
   affected_scope:
     plan_nodes:
       - TG-L0-PRODUCT
@@ -754,12 +756,12 @@ route_rebase:
       - docs/SEMANTIC-CONFIRMATION-RULES-PLAYABLE-TABLE-20260827.md
       - docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md
     status_and_navigation:
-      - active_path_held_at_protected_confirmation
+      - active_path_held_at_implementation_and_evidence_revalidation
     completion_evidence:
       - existing_codex_probe_evidence_scope_limited
   reliable_resume_boundary:
     earliest_trustworthy_node_or_checkpoint: TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-D-current_verified
-    first_invalid_or_unverified_node: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-pending_rules_confirmation
+    first_invalid_or_unverified_node: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-implementation_and_evidence_revalidation
     basis:
       - PROJECT-DECISION-LOG.md#DEC-20260827-017
       - PROJECT-DECISION-LOG.md#DEC-20260827-018
@@ -811,6 +813,12 @@ route_rebase:
       reason: 宿主中立公开座位 AI 后继已经由用户确认并完成唯一合同校验；旧被动问答章程及两条时序规则只保留为可审计历史，不自动继承。
       required_action: retain_as_historical_evidence_only_then_reclassify_public_ai_rules
       evidence_or_owner: PROJECT-DECISION-LOG.md#DEC-20260825-009
+    - subject: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C
+      kind: document
+      disposition: superseded
+      reason: 包含七条公开交流规则的累计后继已经由用户确认并完成唯一合同校验；无规则章程合同只保留为累计权威的历史基础。
+      required_action: retain_as_historical_predecessor
+      evidence_or_owner: PROJECT-DECISION-LOG.md#DEC-20260827-021
     - subject: existing_codex_host_probe_results
       kind: completion_evidence
       disposition: reusable
@@ -818,14 +826,16 @@ route_rebase:
       required_action: retain_with_scope_limit_then_revalidate_affected_claims
       evidence_or_owner: docs/HOST-PROBE-CHECKLIST.md
   unresolved_blockers:
-    - user_confirmation_rules_stage_b_public_ai_exchange
+    - affected_project_intelligence_implementation_and_host_evidence_revalidation
   durable_carrier: active_trellis_or_prd
-  history_ref: PROJECT-DECISION-LOG.md#DEC-20260827-022
+  history_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
 ```
 
 <a id="playable-table-rules-truth-persistence-result"></a>
 
-### 可玩牌桌规则写入结果
+### 可玩牌桌规则写入结果（上一阶段历史记录）
+
+以下记录保留牌桌规则确认当时的静态持久化证据，不再控制当前 `active`、`next` 或 Route Rebase；当前结果见 `#public-ai-rules-truth-persistence-result`。
 
 ```yaml
 execution_closure:
@@ -999,7 +1009,7 @@ execution_closure:
       result: partial
       evidence_refs:
         - PROJECT-PLAN-TREE.md#semantic_baseline
-  semantic_delta: public_ai_rules_confirmation_required
+  semantic_delta: l0_l2_confirmation_required
   state: blocked
   claim_limits:
     - 牌桌规则写入不证明这些规则已经实现或经过产品测试。
@@ -1090,7 +1100,245 @@ understanding_revision_receipt:
     - PROJECT-PLAN-TREE.md#TG-L2-PUBLIC-AI-EXCHANGE
 ```
 
-以下公开座位 AI 章程记录保留上一阶段当时的静态持久化证据，不再控制当前 `active`、`next` 或 Route Rebase；当前结果见 `#playable-table-rules-truth-persistence-result`。
+<a id="public-ai-rules-truth-persistence-result"></a>
+
+### 公开座位 AI 规则写入结果
+
+```yaml
+execution_closure:
+  contract: dual-ai.execution-closure.v1
+  result_id: EC-TG-L2-PUBLIC-AI-EXCHANGE-RULES-20260827-D
+  detail_level: material_node_closure
+  scope:
+    scope_id: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+    exact_outcome: 将用户确认的七条公开座位 AI 交流规则与未改动章程原样写入唯一后继合同，替代无规则章程合同，并把受影响路线转入实现与宿主证据重验
+    owner_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
+  trigger: semantic_write_changes_navigation_state
+  basis:
+    semantic_contract_refs:
+      - node_id: TG-L0-PRODUCT
+        contract_id: SC-TG-L0-ROOT-20260827-B
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
+        expected_digest: sha256:72f84db2d6965f8a3f3e0a6deb1657a37c477d65d65cddc6bbaf88598e74b7d6
+        binding_status: verified
+      - node_id: TG-L1-PUBLIC-AI-PLAY
+        contract_id: SC-TG-L1-PUBLIC-AI-20260825-A
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260825-004
+        expected_digest: sha256:37f755856560105a5a33a2cc493200cae4ae96960f29dbbe9c7612e90fc903ae
+        binding_status: verified
+      - node_id: TG-L2-SESSION-LAUNCH
+        contract_id: SC-TG-L2-SESSION-LAUNCH-20260827-B
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019
+        expected_digest: sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f
+        binding_status: verified
+      - node_id: TG-L2-PLAYABLE-TABLE
+        contract_id: SC-TG-L2-PLAYABLE-TABLE-20260827-D
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-022
+        expected_digest: sha256:d73e30748ac4d7a3fc814e6f44d6aa96676dc3677e0ef04f8f1298e9f84ca453
+        binding_status: verified
+      - node_id: TG-L2-PUBLIC-AI-EXCHANGE
+        contract_id: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+        decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
+        expected_digest: sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54
+        binding_status: verified
+    understanding_view_ref: PROJECT-PLAN-TREE.md#TG-L2-PUBLIC-AI-EXCHANGE
+    route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
+    implementation_identity:
+      kind: not_required
+      scope: semantic_truth_persistence_only
+      identity: not_required
+      status: not_required
+      not_required_reason: 本结果只判断用户确认、唯一合同绑定、前任合同替代和导航写入，不声明公开座位 AI、主动唤醒、双宿主或牌桌运行能力已经实现。
+    verification_identities:
+      - evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/rules-public-ai-exchange-verification-20260827.json
+        identity: sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54
+        status: current
+      - evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/governance-language-validation-20260827-stage8.json
+        identity: dual-ai.governance-language-pre-handback.v1
+        status: current
+    freshness: current
+  acceptance:
+    derivation_timing: legacy_or_existing_state_reconstructed
+    obligations:
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-USER-ANSWER
+        claim_or_predicate: 用户回复只确认此前完整展示的七条公开座位 AI 规则与未改动章程。
+        required: yes
+        real_condition: 不得扩展为实现、产品测试、宿主能力、私密聊天、AI 托管、公平场、信用或模块市场授权。
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-BINDING
+        claim_or_predicate: 预构建规则 payload 在 DEC-20260827-023 中恰好出现一次且摘要匹配。
+        required: yes
+        real_condition: 使用语义合同工具直接校验决策日志当前字节。
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-SUPERSEDE
+        claim_or_predicate: DEC-20260827-021 保留为已替代历史，当前公开座位 AI 指针转向规则后继。
+        required: yes
+        real_condition: 决策日志、Plan Tree、STATUS 与活动 PRD 的当前指针一致。
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-IMPLEMENTATION-GATE
+        claim_or_predicate: 语义确认不把旧 Codex 桥、主动唤醒或双宿主证据升级为当前实现完成。
+        required: yes
+        real_condition: Route Rebase 保持 revalidating，Project Intelligence 为 refresh_required，依赖实现与验收为 revalidation_required。
+    selected_surfaces:
+      - inspection
+    observations:
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-USER-ANSWER
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: PROJECT-DECISION-LOG.md#DEC-20260827-023
+        result: pass
+        caveat: 只证明规则决定已经持久化，不证明运行能力。
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-BINDING
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/rules-public-ai-exchange-verification-20260827.json
+        result: pass
+        caveat: payload_count 为一且摘要与预构建候选一致。
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-SUPERSEDE
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: PROJECT-PLAN-TREE.md#semantic_baseline
+        result: pass
+        caveat: 无规则章程合同仍作为累计权威基础保留，但不再是当前公开座位 AI 合同。
+      - obligation_id: PUBLIC-AI-RULES-PERSIST-IMPLEMENTATION-GATE
+        evidence_type: inspection
+        correspondence: direct
+        evidence_pointer: STATUS.md#project_intelligence
+        result: pass
+        caveat: 受影响实现与证据没有随语义合同自动取得当前完成状态。
+    skipped:
+      - check: npm_test_and_playwright
+        reason: 本次只写入语义合同；产品测试不能证明用户确认，也不得把历史 23/23 记录冒充本轮实测。
+      - check: codex_and_claude_host_probes
+        reason: 两侧事件驱动主动唤醒仍是后续证据门禁，本结果不声明其通过。
+    result: pass
+  capability_claim:
+    overall_result: supported
+    claims:
+      - capability_id: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+        claim: 公开座位 AI 七条受保护规则的用户确认、唯一合同绑定、前任合同替代和当前语义指针已经持久化。
+        exact_scope: 仅限公开座位 AI 章程与规则真相、决策链和导航写入，不包括公开 AI、主动唤醒、双宿主或完整 MVP 已经实现。
+        result: supported
+        dimensions:
+          semantic:
+            required: yes
+            status: sufficient_for_claim
+            evidence_type: inspection
+            evidence_pointer: PROJECT-DECISION-LOG.md#DEC-20260827-023
+            user_readable_meaning: 用户选择的七条公开座位 AI 规则与当前累计合同完全一致。
+            caveat: 不向实现、验收或宿主能力继承。
+          implementation:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断公开座位 AI 运行代码。
+            caveat: 受影响产品实现仍暂停。
+            not_applicable_reason: 精确声明仅为语义持久化。
+          data:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断牌局、聊天或凭据运行数据能力。
+            caveat: 没有运行产品数据路径。
+            not_applicable_reason: 精确声明不涉及运行数据。
+          integration:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断公开座位 AI 与任一宿主集成。
+            caveat: 事件驱动主动唤醒与双宿主尚未重验。
+            not_applicable_reason: 精确声明不涉及运行集成。
+          verification:
+            required: yes
+            status: sufficient_for_claim
+            evidence_type: inspection
+            evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/rules-public-ai-exchange-verification-20260827.json
+            user_readable_meaning: 决策日志中的唯一累计 payload 与预期摘要匹配。
+            caveat: 这是静态合同校验，不是产品测试。
+          operational:
+            required: no
+            status: not_applicable
+            evidence_type: not_run
+            evidence_pointer: not_required
+            user_readable_meaning: 本结果不判断部署或生产可用性。
+            caveat: 未发布、未部署。
+            not_applicable_reason: 精确声明不涉及运行就绪。
+        safe_wording: 可以声称公开座位 AI 规则已确认并完成语义持久化；不能声称公开 AI、主动唤醒、双宿主或完整 MVP 已经实现。
+        gaps:
+          - 受影响 Project Intelligence 仍须刷新。
+          - 私人房牌桌、跨宿主连接和事件驱动主动 AI 仍需建设与验证。
+  route_boundaries:
+    local:
+      result: supported
+      evidence_refs:
+        - PROJECT-DECISION-LOG.md#DEC-20260827-023
+        - .trellis/tasks/08-26-public-ai-table-talk/research/rules-public-ai-exchange-verification-20260827.json
+    adjacent:
+      result: partial
+      evidence_refs:
+        - STATUS.md#project_intelligence
+    cumulative:
+      result: partial
+      evidence_refs:
+        - PROJECT-PLAN-TREE.md#semantic_baseline
+  semantic_delta: none
+  state: blocked
+  claim_limits:
+    - 公开座位 AI 规则写入不证明这些规则已经实现或经过产品测试。
+    - 旧 Codex 证据、主动唤醒与双宿主能力不继承本次用户确认。
+  remaining_non_blocking: []
+  advance_allowed: no
+  next_owner: STATUS.md#project_intelligence
+
+truth_navigation_impact:
+  - surface: PROJECT-DECISION-LOG.md#DEC-20260827-021
+    classification: supersede
+    reason: 包含七条规则的累计后继取代无规则章程合同；原 payload 与摘要保持历史可审计。
+    affected_pointer_or_meaning: TG-L2-PUBLIC-AI-EXCHANGE previous current contract
+  - surface: PROJECT-DECISION-LOG.md#DEC-20260827-023
+    classification: update
+    reason: 写入用户精确答案、原样 payload、唯一摘要校验与 supersede 关系。
+    affected_pointer_or_meaning: TG-L2-PUBLIC-AI-EXCHANGE current cumulative contract
+  - surface: PROJECT-PLAN-TREE.md
+    classification: update
+    reason: 当前公开座位 AI 合同转为已确认规则后继，候选指针清除，活动路线转入实现与证据重验。
+    affected_pointer_or_meaning: active_path, reliable_boundary, semantic_baseline, next_owner
+  - surface: STATUS.md
+    classification: update
+    reason: 当前目标、合同引用、下一 owner 和执行结果改为语义闭合后的重验阶段。
+    affected_pointer_or_meaning: current, active, next, semantic_alignment, project_intelligence
+  - surface: docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md
+    classification: update
+    reason: 将此前完整展示的候选标为用户已确认并引用唯一绑定结果。
+    affected_pointer_or_meaning: rules_stage_b_public_ai_exchange_user_confirmed
+
+post_write_pointer_closure:
+  status: closed
+  repaired_or_historicalized:
+    - DEC-20260827-021 明确标记 superseded，原 payload、章程权威和摘要保持历史可审计。
+    - 当前公开座位 AI 合同、语义基线、活动节点和下一 owner 已在决策日志、Plan Tree、STATUS 与活动 PRD 闭合。
+    - 旧 Codex 聚焦完成证据已重新标为待重验，不再控制当前路线。
+  blockers: []
+
+understanding_revision_receipt:
+  current_before_ref: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C
+  candidate_successor_ref: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+  current_after_ref: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+  affected_node_refs:
+    - TG-L1-PUBLIC-AI-PLAY
+    - TG-L2-PUBLIC-AI-EXCHANGE
+    - TG-L3-CODEX-BRIDGE-SPIKE
+  invalidated_completion_or_evidence_refs:
+    - STATUS.md#project_intelligence@refresh_required
+    - PROJECT-PLAN-TREE.md#TG-L3-CODEX-BRIDGE-SPIKE@revalidation_required
+    - REVIEW-LOG.md#2026-08-26座位旁-ai-公开气泡复核@revalidation_required
+  reliable_resume_boundary_ref: PROJECT-PLAN-TREE.md#当前恢复点
+  plan_tree_understanding_view_refs:
+    - PROJECT-PLAN-TREE.md#TG-L2-PUBLIC-AI-EXCHANGE
+    - PROJECT-PLAN-TREE.md#TG-L3-CODEX-BRIDGE-SPIKE
+```
+
+以下公开座位 AI 章程记录保留上一阶段当时的静态持久化证据，不再控制当前 `active`、`next` 或 Route Rebase；当前结果见 `#public-ai-rules-truth-persistence-result`。
 
 <a id="l2-public-ai-exchange-truth-persistence-result"></a>
 

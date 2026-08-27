@@ -71,7 +71,7 @@ plan_tree:
         - TG-L1-HOST-ENTRY
         - TG-L1-LIVE-TABLE
       status: active
-      summary: 已确认的公开人机博弈能力域；其一席一 AI、座位旁上下文气泡与事件驱动主动发言 L2 章程已经确认并唯一绑定，当前只等待最后一个精确公开规则后继。
+      summary: 已确认的公开人机博弈能力域；其一席一 AI、座位旁上下文气泡、事件驱动主动发言及七条公开交流规则已经确认并唯一绑定，当前实现与宿主证据仍待按新合同重验。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-004
       understanding_view:
@@ -109,30 +109,29 @@ plan_tree:
         current_revision_ref: SC-TG-L2-PLAYABLE-TABLE-20260827-D
         candidate_successor_ref: none
         presentation: aligned
-        result_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#playable-table-rules-truth-persistence-result
     - id: TG-L2-PUBLIC-AI-EXCHANGE
       parent: TG-L1-PUBLIC-AI-PLAY
       dependencies:
         - TG-L2-SESSION-LAUNCH
         - TG-L2-PLAYABLE-TABLE
-      status: active
-      summary: 宿主中立的一席一 AI、座位气泡与事件驱动主动发言章程已确认并唯一绑定；当前等待默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏七条规则的后继确认。
+      status: blocked
+      summary: 宿主中立的一席一 AI、座位气泡、事件驱动主动发言章程及默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏七条规则已经确认并唯一绑定；旧实现、主动唤醒与双宿主证据仍待重验。
       owner_links:
         - PROJECT-DECISION-LOG.md#DEC-20260825-009
         - PROJECT-DECISION-LOG.md#DEC-20260827-021
         - PROJECT-DECISION-LOG.md#DEC-20260827-023
       understanding_view:
-        current_ref: PROJECT-DECISION-LOG.md#DEC-20260827-021
-        current_revision_ref: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C
-        candidate_successor_ref: docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md#public-ai-rules
-        presentation: presented
-        result_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#l2-public-ai-exchange-truth-persistence-result
+        current_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
+        current_revision_ref: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+        candidate_successor_ref: none
+        presentation: aligned
+        result_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#public-ai-rules-truth-persistence-result
     - id: TG-L3-CODEX-BRIDGE-SPIKE
       parent: TG-L2-SESSION-LAUNCH
       dependencies:
         - TG-L2-PUBLIC-AI-EXCHANGE
-      status: completed
-      summary: 本地回环协议、Hook、MCP、伪权威事件服务和独立 Web 视图已通过 11 项自动化、浏览器及真实 Codex 0.145.0 插件宿主验收；节点以 pass_with_notes 关闭。
+      status: blocked
+      summary: 旧 Codex 聚焦范围下的本地回环协议、Hook、MCP、伪权威事件服务和独立 Web 视图证据保持可复用；在当前公开 AI 规则合同与双宿主路线下尚未重验，不能继续视为当前完成节点。
       owner_links:
         - STATUS.md#project_intelligence
         - PROJECT-DECISION-LOG.md#DEC-20260825-011
@@ -147,7 +146,7 @@ plan_tree:
         artifact_receipt_ref: PROJECT-UNDERSTANDING/CODEX-BRIDGE-RECEIPT.json
         related_understanding_ids:
           - UE-TG-CODEX-BRIDGE
-        presentation: presented
+        presentation: review_required
         plan_ref: PROJECT-PLAN-TREE.md#当前恢复点
         result_ref: PROJECT-PLAN-TREE.md#本地探针执行结论
         gap_ref: docs/HOST-PROBE-CHECKLIST.md#修复后边界
@@ -180,10 +179,10 @@ plan_tree:
   current_execution_unit_ref: none
   reliable_boundary:
     earliest_trustworthy_node_or_checkpoint: TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-D
-    first_invalid_or_unverified_node: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-pending-rules
+    first_invalid_or_unverified_node: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-implementation-and-evidence-revalidation
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: user_confirm_rules_stage_b_public_ai_exchange
+  next_owner: project_intelligence_refresh_affected_model
 
 semantic_baseline:
   required: yes
@@ -251,21 +250,20 @@ semantic_baseline:
       binding_status: verified
       verified_at: 2026-08-27
     - node_id: TG-L2-PUBLIC-AI-EXCHANGE
-      contract_id: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C
-      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-021
-      digest: sha256:90015efee0fe4f7d20947adff61c37c281a5d56f8ebaf3fe3c01f170b7c89e3f
+      contract_id: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+      decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
+      digest: sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54
       binding_status: verified
       verified_at: 2026-08-27
-  blocking_paths:
-    - TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C -> pending SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D protected rule successor
+  blocking_paths: []
   unaffected_confirmed_paths: []
   last_checked: 2026-08-27
-  next_action: user_confirm_rules_stage_b_public_ai_exchange
+  next_action: refresh_project_intelligence_before_implementation
 ```
 
 ## 当前恢复点
 
-宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、三个当前 MVP L2 及可玩牌桌四条体验规则已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌、被动问答章程及其旧规则保留为已替代历史。当前只剩 `TG-L2-PUBLIC-AI-EXCHANGE` 的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏规则包待确认。既有 Codex 桥接、牌桌和气泡证据继续按旧范围保留，不证明新私人房牌桌、双宿主、座位恢复或事件驱动主动唤醒已经交付。
+宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、三个当前 MVP L2，以及可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌、被动问答章程及其旧规则保留为已替代历史。语义门禁已经闭合，但既有 Codex 桥接、牌桌和气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主、座位恢复或事件驱动主动唤醒已经交付。下一恢复点是先刷新受影响 Project Intelligence，再重验实现与宿主证据。
 
 ## 本地探针执行结论
 

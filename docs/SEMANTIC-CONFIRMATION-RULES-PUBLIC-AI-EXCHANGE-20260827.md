@@ -1,14 +1,14 @@
 # TokenGame 规则阶段 B：公开座位 AI 交流规则
 
-状态：`rules_stage_b_public_ai_exchange_pending_user_confirmation`
+状态：`rules_stage_b_public_ai_exchange_user_confirmed`
 
-候选后继合同：`TG-L2-PUBLIC-AI-EXCHANGE / SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D`
+当前累计合同：`TG-L2-PUBLIC-AI-EXCHANGE / SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D / DEC-20260827-023`
 
-候选摘要：`sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54`
+当前累计合同摘要：`sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54`
 
-已确认章程：`SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C / DEC-20260827-021`
+基础章程来源（已由当前累计合同继承）：`SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C / DEC-20260827-021`
 
-这是当前语义流程最后一个产品规则包。本轮保持已确认的公开座位 AI 章程不变，只确认默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏七组规则。事件封装、幂等键、取消实现、具体 UI 控件和测试矩阵仍由 Primary 负责。
+用户已回复 `1`，精确确认本页完整展示的七条规则以及保持不变的公开座位 AI 章程。事件封装、幂等键、取消实现、具体 UI 控件和测试矩阵仍由 Primary 负责；实现、产品测试、宿主能力、私密聊天、AI 托管、公平场、信用和模块市场不由本次确认自动完成。
 
 ## 已确认章程基础（保持不变）
 
@@ -51,7 +51,7 @@
 
 <a id="public-ai-rules"></a>
 
-## 本轮新增的完整受保护规则集
+## 已确认的完整受保护规则集
 
 1. 每次新房绑定或桌规版本变化都必须先明确确认“本游戏任务内的普通自由文本默认公开”。确认且绑定成功后，玩家在该专用游戏任务中提交的、通过确定性字符与配额校验且不属于显式本地控制的自由文本，必须先作为 TABLE_PUBLIC 事件向全桌发布，再进入 AI 上下文；不等待模型，也不进行“普通聊天或询问 AI”的意图分类。普通宿主任务、未绑定内容、入桌前内容与 LOCAL_CONTROL 不因此公开。
 2. 每席只有一个 SEAT_AI 公开事件循环。所属玩家或其他真人的公开发言、该席行动窗口、下注/加注/全押、街道推进与本手结算等白名单事件可以触发一次评估；AI 自主选择 silent 或 public_speech，玩家提问不保证获得回答。AI 公开话术可以进入以后合法评估的上下文，但不能单独唤醒任何席位 AI；每个来源事件对每席最多触发一次评估，防止 AI 互相无限对话。
@@ -78,19 +78,22 @@
 
 ## 替代关系与后续
 
-如果确认，本候选将作为 `DEC-20260827-021` 的规则后继，并吸收此前需求发现阶段关于单一 SEAT_AI、默认公开、LIVELY_V1、迟到、OFF/降级和本地隐藏的有效部分；与新章程冲突的旧被动问答和每行动窗口一次请求规则继续保留为已替代历史。确认后，当前 MVP 的 L0-L2 章程与受保护产品规则才算全部闭合，但实现、宿主能力、产品测试和完成状态仍须单独建设与验证。
+当前累计合同已在 `DEC-20260827-023` 中完成唯一绑定，并作为 `DEC-20260827-021` 的规则后继；它吸收此前需求发现阶段关于单一 SEAT_AI、默认公开、LIVELY_V1、迟到、OFF/降级和本地隐藏的有效部分，与新章程冲突的旧被动问答和每行动窗口一次请求规则继续保留为已替代历史。当前 MVP 的 L0-L2 章程与受保护产品规则已经全部闭合，但实现、宿主能力、产品测试和完成状态仍须单独建设与验证。
 
-## 本轮选择
+## 确认结果
 
-1. **确认以上公开座位 AI 规则包（推荐）**：保持已确认章程不变，并把七条规则作为完整受保护规则集写入 `SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D`。
-2. **修改规则包**：指出希望调整的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级或本地隐藏规则；不确认当前候选。
-3. **先解释**：继续讨论哪些属于产品规则、哪些由实现和试玩调优决定；不确认当前候选。
+- 用户选择：`1`
+- 决策：`DEC-20260827-023`
+- 绑定：`SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D / sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54`
+- 校验收据：`.trellis/tasks/08-26-public-ai-table-talk/research/rules-public-ai-exchange-verification-20260827.json`
+- 下一步：本控制流程回交后，按新的继续授权刷新受影响 Project Intelligence、实现与宿主证据；不把语义确认冒充产品完成。
 
 <!--
-candidate_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-candidate_contract_digest: sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54
-candidate_authority: pending_user_confirmation
-candidate_proposed_supersedes: DEC-20260827-021
-candidate_cumulative_basis: DEC-20260827-021 + pending DEC-20260827-023
-confirmation_rule: reply 1 confirms only the unchanged charter basis plus the seven exact protected product rules shown above
+source_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
+current_contract_digest: sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54
+current_authority: user_confirmed
+current_decision_ref: DEC-20260827-023
+current_supersedes: DEC-20260827-021
+current_cumulative_basis: DEC-20260827-021 + DEC-20260827-023
+confirmation_scope: unchanged charter basis plus the seven exact protected product rules shown above
 -->

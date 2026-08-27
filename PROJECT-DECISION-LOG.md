@@ -1156,8 +1156,9 @@ metadata:
   date: 2026-08-27
   source: user_direct
   scope: feature
-  status: user_confirmed
+  status: superseded
   supersedes: DEC-20260825-009
+  superseded_by: DEC-20260827-023
   affected_docs:
     - docs/SEMANTIC-CONFIRMATION-L2-PUBLIC-AI-EXCHANGE-20260827.md
     - PROJECT-PLAN-TREE.md
@@ -1311,29 +1312,90 @@ semantic_contract:
 }
 ```
 
-## DEC-20260827-023：候选——公开座位 AI 交流规则包
+## DEC-20260827-023：确认公开座位 AI 交流规则包
 
 metadata:
   date: 2026-08-27
-  source: other
+  source: user_direct
   scope: feature
-  status: pending_user_confirmation
-  supersedes: none
-  proposed_supersedes: DEC-20260827-021（仅在完整规则包被精确确认并完成合同校验后）
+  status: user_confirmed
+  supersedes: DEC-20260827-021
   affected_docs:
     - docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md
     - PROJECT-PLAN-TREE.md
     - STATUS.md
     - .trellis/tasks/08-26-public-ai-table-talk/prd.md
+    - .trellis/tasks/08-26-public-ai-table-talk/research/rules-public-ai-exchange-verification-20260827.json
   resulting_changes:
     - doc: docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md
-      change: 在已确认公开座位 AI 章程保持不变的基础上，一次性展示默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏七组完整受保护规则。
+      change: 将此前完整展示且未改动的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏七条规则标记为用户已确认。
     - doc: PROJECT-PLAN-TREE.md
-      change: 可玩牌桌规则完成确认后，把下一用户决策停在最后一个公开座位 AI 规则后继合同。
+      change: 把 TG-L2-PUBLIC-AI-EXCHANGE 当前指针提升为包含七条已确认规则的后继合同，清除候选指针，并把受影响路线转入实现与证据重验。
+    - doc: .trellis/tasks/08-26-public-ai-table-talk/prd.md
+      change: 将 Route Rebase 从等待用户确认转为 revalidating；语义已闭合，但旧实现、主动唤醒和双宿主证据不得自动继承。
 
 question: 是否把此前已经讨论的默认公开范围、单一主动座位 AI、热闹型反刷屏预算、单并发归并、迟到边界、AI OFF/降级和本地隐藏合并为当前 MVP 的完整公开座位 AI 受保护规则集？
 why_it_matters: 这些规则决定哪些内容会公开、AI 会不会主动说话、慢模型是否干扰行动、聊天能否失控以及玩家能否自我保护；它们直接塑造 TokenGame 的核心语言博弈，不能由宿主适配器各自解释。
 recommended_answer: 一次确认七组公开座位 AI 规则，并把事件封装、幂等键、取消实现、UI 控件与测试矩阵留给 Primary；数值平衡允许在不取消四层限制且不实质改变体验的前提下依据试玩证据版本化调优。
-user_answer: pending
-decision: 当前只登记 SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D 候选，不提升该规则后继。SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C 与 DEC-20260827-021 仍是当前已验证公开座位 AI 章程；旧被动问答时序规则和 PRD 中的规则发现记录都不因候选生成而自动恢复权威。
-follow_up: 候选 payload 位于 .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json，摘要为 sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54。只有用户在完整看到确认包后明确回复 1，才可把未改动章程与七条完整规则原样持久化、校验并建立 supersede 链；回复 2 或 3 不产生确认。
+user_answer: 用户回复“1”，精确确认此前完整展示、摘要为 sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54 的公开座位 AI 规则包；不确认实现、产品测试、宿主能力、私密聊天、AI 托管、公平场、信用或模块市场。
+decision: 采用 SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D 作为 TG-L2-PUBLIC-AI-EXCHANGE 当前累计合同，权限为 user_confirmed，并替代 DEC-20260827-021。公开座位 AI 章程保持原样；本次只新增默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏七条受保护规则。事件协议、取消机制、界面、测试、主动唤醒和跨宿主运行完成状态不继承本次确认。
+follow_up: 当前 MVP 的 L0-L2 章程与受保护产品规则已经全部完成内容寻址绑定。受影响 Project Intelligence、产品实现、宿主能力和验收结论继续保持 refresh_required / revalidation_required；本控制流程回交后，只有新的继续授权才进入该实现与证据刷新路线。
+
+semantic_contract:
+  contract_id: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D
+  node_id: TG-L2-PUBLIC-AI-EXCHANGE
+  payload_schema: dual-ai.semantic-contract.v1
+  digest: sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54
+  binding_status: verified
+  verified_at: 2026-08-27
+  verified_with: dual-ai-semantic-alignment/scripts/semantic-contract.mjs
+
+```json dual-ai.semantic-contract.v1
+{
+  "schema": "dual-ai.semantic-contract.v1",
+  "contract_id": "SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D",
+  "node_id": "TG-L2-PUBLIC-AI-EXCHANGE",
+  "semantic_level": "L2",
+  "parent_node_id": "TG-L1-PUBLIC-AI-PLAY",
+  "scope": "current_mvp",
+  "meaning": {
+    "goal": "让牌桌中的每名真人与自己唯一的当前游戏会话 AI 形成可辨认的座位搭档，把规定游戏范围内的玩家发言、AI 回答和由可审计牌局事件触发的 AI 主动表达，以带身份、牌局上下文和时序的公开聊天气泡呈现给全桌，使语言误导、判断与社交反应成为与标准德州扑克并行的核心博弈。",
+    "responsibility": "把宿主中立的当前会话 AI 与可信牌桌连接成公开人机博弈闭环：只向每席 AI 提供该玩家依法可见且与本局相关的上下文，按座位、说话者、来源和时机发布规定范围内的人机表达，允许 AI 在相关事件后选择保持沉默或公开发言，同时把官方牌局事实、真人结构化动作、私有信息和宿主无关内容严格隔离。各宿主可采用不同可靠交互形态，但不得改变默认公开范围、隐藏信息边界、主动发言含义或话术无扑克动作效力。",
+    "included": [
+      "在每个真人座位旁显示其唯一当前游戏会话 AI，以可区分但成组的玩家与 AI 聊天气泡保留桌内对话上下文",
+      "允许当前行动者和非当前行动者在牌局允许的时点发送游戏范围内的公开文字；同席 AI 可以回答、保持沉默，或依据与该席相关且可审计的牌局与公开聊天事件主动公开发言",
+      "把当前 MVP 中经 TokenGame 明确绑定的桌内人机交流默认视为 TABLE_PUBLIC，并让参与者在发送前理解该边界；普通宿主任务、历史对话和未进入游戏范围的内容不自动公开",
+      "只向 AI 提供该席可见的底牌与私有状态、全桌公共牌局事实和获准公开聊天，不提供对手底牌、服务端秘密或无关宿主上下文",
+      "允许公开表达包含真实分析、选择性措辞、诈唬、嘲讽、施压、角色化人设和对他人话术的反应，同时让其他玩家能够据此判断、误判或选择不看相关内容",
+      "为每条公开表达绑定座位、说话者类型、来源事件、牌局或阶段引用和可复盘顺序，并以可理解状态呈现 AI 思考、迟到、失败、关闭或降级；任何表达都不能直接提交或改变官方牌局动作"
+    ],
+    "excluded": [
+      "不镜像整个 Codex、Claude 或其他宿主会话，不公开系统提示词、隐藏推理、项目文件、凭据、长期调教资料、历史无关对话或其他私人内容",
+      "不把玩家或 AI 的自然语言当作官方手牌、公共牌、底池、行动或结算，也不允许一句“all in”绕过真人牌桌控件与权威校验执行动作",
+      "不承诺检测、禁止或加密证明玩家在 TokenGame 之外使用的 AI、计算器、通信工具、真实模型来源或推理强度",
+      "当前 MVP 不提供 OWNER_PRIVATE 私密对话、跨局记忆学习、AI 自主官方动作、竞技模块市场、公平能力桌、信用系统、语音、多模态或观战广播",
+      "本章程不锁定每手或每行动窗口次数、单条与总字数、冷却与超时秒数、迟到发布细则、屏蔽控件、专用命令语法、Hook、MCP、线程或界面实现；这些在三个 L2 均确认后进入规则分类或专业实现，但事件驱动主动发言不能被静默降级为仅被动问答"
+    ],
+    "user_visible_result": "全桌看到清楚归属于各座位的真人与 AI 上下文气泡，能够区分谁在何时基于什么公开或席位可见信息说话，并把可能真实、可能误导的话术纳入判断；同时始终知道官方牌局事实和动作只来自可信牌桌，游戏范围外内容与对手隐藏信息不会因宿主差异进入公开流。",
+    "relationships": [
+      "从 TG-L2-SESSION-LAUNCH 获得已授权的当前游戏会话 AI、玩家与座位归属、AI 身份展示以及不可越过的宿主隐私边界",
+      "从 TG-L2-PLAYABLE-TABLE 只获得该席依法可见的私有投影、全桌公共状态、行动窗口、事件顺序和结算，不获得对手底牌或服务端秘密",
+      "向所有牌桌参与者发布可审计的 TABLE_PUBLIC 人机表达事件，但不提交官方牌局动作；真人经牌桌控件提交的动作只在权威裁决后作为后续上下文"
+    ],
+    "ideal_final_form": "形成跨宿主一致的一席一 AI 公开语言博弈循环：Codex、Claude 及以后宿主都能以各自原生可靠形态表达同一公开、私密、主动发言与动作边界；公开记录可审计、回放和解释，玩家可用人设与长期策略形成可辨认风格，而无需交出整个工作会话。",
+    "current_mvp_boundary": "在一张最多四席的临时私人德州牌桌中，为每名真人绑定一个当前游戏会话 AI，提供文本座位气泡、在回合内外发送游戏范围公开文字、AI 回答或基于白名单桌内事件主动公开发言、AI 保持沉默以及关闭、迟到、失败和降级状态；官方牌局动作仍全部由真人通过结构化牌桌交互提交。至少一个受支持宿主必须以实机证据证明事件驱动主动发言闭环后，才可声称这一产品形态已交付；任何宿主若只能被动回答，必须作为降级候选重新确认，不能被称为等价实现。",
+    "expected_scenario": "轮到玩家 A 时，A 实际持有杂色 2、5，公牌为 A、J、K；A 的公开气泡说“哈，这牌不错，贾维斯，我的胜率是多少？”贾维斯显示思考后公开回答“67%，你有 AA 三条，下家弃牌率高，可以施压”，A 随后在牌桌控件中手动加注。轮到 B 时，B 没有说话，但同席 Kitty 依据刚发生的公开事件主动发言“他们可能在诈唬，主人，跟他”；A、B、C、D 都能看到两组带座位和时序的气泡。C 也可在非自己回合公开嘲讽 A。无论这些话真假，真实底牌只对有权席位可见，合法动作和结算始终以权威牌桌为准。",
+    "plausible_but_wrong": "系统把整个宿主输入输出流镜像到牌桌，泄露代码、提示词和私人内容；或者只展示脱离座位、来源和牌局时机的一句 AI 文本。另一种错误是实现只有用户显式提问才回答的被动聊天，却仍宣称完成了会观察桌内事件并自行选择发言的座位 AI；再一种错误是让 AI 气泡中的“跟注”或“全押”直接成为官方动作。"
+  },
+  "protected_product_rules": [
+    "每次新房绑定或桌规版本变化都必须先明确确认“本游戏任务内的普通自由文本默认公开”。确认且绑定成功后，玩家在该专用游戏任务中提交的、通过确定性字符与配额校验且不属于显式本地控制的自由文本，必须先作为 TABLE_PUBLIC 事件向全桌发布，再进入 AI 上下文；不等待模型，也不进行“普通聊天或询问 AI”的意图分类。普通宿主任务、未绑定内容、入桌前内容与 LOCAL_CONTROL 不因此公开。",
+    "每席只有一个 SEAT_AI 公开事件循环。所属玩家或其他真人的公开发言、该席行动窗口、下注/加注/全押、街道推进与本手结算等白名单事件可以触发一次评估；AI 自主选择 silent 或 public_speech，玩家提问不保证获得回答。AI 公开话术可以进入以后合法评估的上下文，但不能单独唤醒任何席位 AI；每个来源事件对每席最多触发一次评估，防止 AI 互相无限对话。",
+    "首个 MVP 使用版本化 LIVELY_V1：玩家与 AI 单条均最多 140 个 Unicode 字素；每席玩家每手最多 12 条且滚动 5 秒最多 3 条；每席 AI 每手最多公开 8 条，评估启动间隔至少 5 秒；气泡约显示 10 秒，权威时间线继续保留消息。玩家与 AI 分开计数，silent 不消耗 AI 发布额度，回合内外玩家适用同一反刷屏预算。后续数值由 Primary 根据真人试玩和反刷屏证据版本化调整并在入桌前展示，但不得取消单条、短窗、每手和 AI 启动间隔四层限制，也不得给予非当前行动者更宽预算；实质改变热闹度或公平性的调整仍须重新确认。",
+    "每席同时最多运行一个公开话术模型回合；思考或冷却期间到达的新相关事件合并为一个待评估的最新上下文，不为每条事件排队调用，也不阻止真人继续发言。当前回合结束且仍有未评估上下文时，只启动一个基于最新权威状态的后续评估；在途期间再到达的事件继续合并为下一批，并始终受冷却和每手额度约束。失败、重放和连续消息都不能形成无界并发或气泡轰炸。",
+    "AI 生成永不暂停或延长真人行动倒计时。同一手牌内的迟到 public_speech 仍可公开；若已经跨到下一条下注街，必须醒目标注“延迟 · 基于前一街”。一旦进入下一手，旧手输出必须丢弃，不占新手额度、不恢复旧行动窗口，也不产生任何牌局动作效力。",
+    "玩家可以随时把自己的座位 AI 切换为 OFF；OFF 后停止新的公开评估并尽力取消在途回合，任何迟到结果都不得发布，但玩家公开聊天、手动扑克动作和牌局继续。网络慢、宿主断线、限流或模型失败只显示可理解的 THINKING、DEGRADED、OFFLINE 或 OFF 状态，不暂停牌局，也不静默切换到外部模型、另一个宿主任务或影子 AI。重新开启后只从下一个合法事件或一次明确的立即评估控制开始，不逐条补跑关闭期间的旧事件。",
+    "每名玩家都可以只在本地隐藏指定真人、指定 AI 或整席的人机聊天；隐藏只改变该查看者的渲染，不删除权威 TABLE_PUBLIC 事件，不改变其他玩家所见，也不篡改审计或回放。解释牌局所必需的席位与 AI 粗状态仍按桌规显示。"
+  ]
+}
+
+```

@@ -7,9 +7,9 @@
 - 初始化分类：`fresh_init`
 - 框架就绪度：`continue_ready`
 - 当前阶段：`prototype`
-- 当前目标：可玩牌桌章程及四条体验规则已经确认并完成唯一绑定；当前只剩最后一个“公开座位 AI 交流规则包”待独立确认。
-- 当前路径：`SC-TG-L0-ROOT-20260827-B`、`SC-TG-L1-HOST-ENTRY-20260827-A`、`SC-TG-L2-SESSION-LAUNCH-20260827-B`、`SC-TG-L2-PLAYABLE-TABLE-20260827-D` 与 `SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-C` 是现行已验证语义主链；公开座位 AI 规则与受影响实现仍待确认或重验。
-- 裸指令 `继续`：不会确认当前“公开座位 AI 交流规则包”，也不会授权发布、部署、付费服务或扩大产品范围。
+- 当前目标：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；下一阶段是刷新受影响 Project Intelligence，并重验实现、主动唤醒和双宿主证据。
+- 当前路径：`SC-TG-L0-ROOT-20260827-B`、`SC-TG-L1-HOST-ENTRY-20260827-A`、`SC-TG-L2-SESSION-LAUNCH-20260827-B`、`SC-TG-L2-PLAYABLE-TABLE-20260827-D` 与 `SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D` 是现行已验证语义主链；语义完成不等于相关产品能力已经实现。
+- 裸指令 `继续`：在本次显式语义流程回交后，只授权恢复同一已确认路线的专业刷新与开发；不会扩大产品范围，也不会授权发布、部署或付费服务。
 
 ```yaml
 user_facing_language_resolution:
@@ -54,8 +54,8 @@ trellis:
   active_task: .trellis/tasks/08-26-public-ai-table-talk
   active_task_status: planning
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: user_confirm_rules_stage_b_public_ai_exchange
-  reason: playable_table_rules_are_verified_but_public_ai_protected_rules_remain_unconfirmed
+  recommendation: refresh_project_intelligence_before_implementation
+  reason: protected_semantics_are_verified_but_affected_implementation_and_host_evidence_require_revalidation
 
 continuous_risk_authorization:
   status: active
@@ -94,7 +94,7 @@ local_closeout_authorization:
 
 semantic_alignment:
   mode: semantic_change
-  alignment_stage: product_rules
+  alignment_stage: truth_persistence
   edit_authorization: align_truth_after_confirmation
   semantic_baseline_status: confirmed
   confirmed_nodes:
@@ -111,10 +111,10 @@ semantic_alignment:
   current_entry_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-018
   current_session_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019
   current_table_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-022
-  current_public_ai_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-021
-  candidate_confirmation_ref: docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md#public-ai-rules
+  current_public_ai_contract_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023
+  candidate_confirmation_ref: none
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
-  next_action: user_confirm_rules_stage_b_public_ai_exchange
+  next_action: return_control_then_refresh_project_intelligence_on_continue
 
 project_intelligence:
   contract: dual-ai.project-intelligence.v1
@@ -132,6 +132,7 @@ project_intelligence:
       - PROJECT-DECISION-LOG.md#DEC-20260827-020
       - PROJECT-DECISION-LOG.md#DEC-20260827-021
       - PROJECT-DECISION-LOG.md#DEC-20260827-022
+      - PROJECT-DECISION-LOG.md#DEC-20260827-023
     route_design_refs:
       - PROJECT-DECISION-LOG.md#DEC-20260825-011
       - PROJECT-PLAN-TREE.md#当前恢复点
@@ -279,10 +280,10 @@ project_intelligence:
       - operation_policy
       - required_authority_findings
   freshness: refresh_required
-  protected_semantic_delta: public_ai_rules_confirmation_required
-  semantic_reconciliation: charters_and_playable_table_rules_aligned_public_ai_rules_pending
-  collaboration_state: hold_affected_for_final_rule_confirmation
-  execution_closure_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#playable-table-rules-truth-persistence-result
+  protected_semantic_delta: none
+  semantic_reconciliation: all_current_mvp_charters_and_protected_rules_aligned
+  collaboration_state: stop_affected_and_align
+  execution_closure_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#public-ai-rules-truth-persistence-result
   dependent_implementation_acceptance: revalidation_required
   route_permission:
     requested_route_ref: TG-L2-PUBLIC-AI-EXCHANGE@DEC-20260827-023
@@ -297,7 +298,7 @@ project_intelligence:
       - PROJECT-DECISION-LOG.md#DEC-20260827-023
       - CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
       - PROJECT-PLAN-TREE.md#semantic_baseline
-  next_owner: direct_dual_ai_semantic_alignment_rules_stage_b_public_ai_exchange
+  next_owner: project_intelligence_refresh_affected_model
 
 capability_inventory:
   contract: dual-ai.capability-inventory.v1
@@ -320,4 +321,4 @@ capability_inventory:
 
 ## 连续性边界
 
-宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2 以及可玩牌桌的 Ready/掉线/退出/亮牌规则已分别由用户确认并通过内容寻址校验，旧 Codex 专属 L0/L1/会话、公开测试桌、被动问答章程及其规则转为已替代历史。当前 L0-L2 语义基线为 `confirmed`；实现仍停在最后一个规则门禁，因为公开座位 AI 的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏规则尚未取得后继合同权威。既有 Codex 桥接、多人牌桌与座位旁气泡测试只按原记录保留，本轮没有安装依赖、重跑 `npm test` 或 Playwright，也不把历史 23/23 冒充本轮实测。现有证据仍不覆盖新私人房牌桌、双宿主能力、跨宿主私人房、座位恢复、Codex 或 Claude 的事件驱动主动唤醒、完整 MVP、生产认证/持久化/远程并发、隐私完备性、用户接受或发布状态。
+宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2、可玩牌桌的 Ready/掉线/退出/亮牌规则，以及公开座位 AI 的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏规则，均已分别由用户确认并通过内容寻址校验；旧 Codex 专属 L0/L1/会话、公开测试桌、被动问答章程及其规则转为已替代历史。当前 L0-L2 语义基线为 `confirmed`，不再存在待确认的当前 MVP 产品规则门禁；实现仍停在 Project Intelligence 刷新与受影响证据重验门禁。既有 Codex 桥接、多人牌桌与座位旁气泡测试只按原记录保留，本轮没有安装依赖、重跑 `npm test` 或 Playwright，也不把历史 23/23 冒充本轮实测。现有证据仍不覆盖新私人房牌桌、双宿主能力、跨宿主私人房、座位恢复、Codex 或 Claude 的事件驱动主动唤醒、完整 MVP、生产认证/持久化/远程并发、隐私完备性、用户接受或发布状态。
