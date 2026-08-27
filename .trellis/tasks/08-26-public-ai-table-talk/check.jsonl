@@ -1,1 +1,13 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/prd.md","reason":"逐项核对 MVP-0 权威验收清单与明确不在范围项，未验证项必须保持未勾选"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"检查确定性时钟、真实测试证据、清理与现有回归不被绕过"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查是否有结果性判定泄漏到客户端或第二份事实"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"检查身份、金额、hand_id/expected_revision/idempotency_key 与错误边界"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"检查 DOM 注入安全、可访问性与 Canvas 投影"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"检查新核心与旧探针栈的边界没有被互相污染或重复实现"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"检查宿主适配器的失败关闭、零桥流量与凭据不入模型上下文"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","reason":"复核任何主动唤醒声明是否超出该文件记录的已证明能力"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md","reason":"复核门禁证据分层，禁止用自动化层顶替真人层签字"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/disconnect-recovery-policy.md","reason":"复核掉线、超时动作、恢复窗口与释放事件的唯一性"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/task-exit-rebind-policy.md","reason":"复核暂离/离桌、隐私栅栏与旧 generation 迟到结果被丢弃"}
+{"file":"docs/CODEX-IMPLEMENTATION-REVIEW-20260828.md","reason":"Codex 复核提出的 F1-F6 与其硬性要求，是本轮检查的上游依据"}
+{"file":"docs/CLAUDE-REVIEW-RESPONSE-20260828.md","reason":"逐条回应与承接的证据边界；检查时据此确认哪些是已闭合、哪些仍未验证"}

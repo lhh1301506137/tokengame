@@ -1,1 +1,20 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/prd.md","reason":"本任务唯一已确认范围：MVP-0 权威范围、核心行为细化、权威验收与明确不在范围项"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/poker-chat-and-proactive-ai.md","reason":"公开聊天与事件驱动主动发言的取舍来源，含被否决的意图分类回合方案"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/natural-language-public-intent.md","reason":"玩家自由文本一律先公开、不做独立意图分类调用的依据"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/private-room-authority-topology.md","reason":"一房一中立权威实例、创建者无网络房主特权的拓扑结论"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/disconnect-recovery-policy.md","reason":"DISCONNECT_STRICT_V1 的 0ms 行动延长与 120 秒座位恢复窗口取值来源"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/task-exit-rebind-policy.md","reason":"VOLUNTARY_EXIT_V1 的暂离/离桌两条控制、隐私栅栏与 binding_generation 语义"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/install-create-invite-flow.md","reason":"INSTALL_CREATE_JOIN_V1 的安装、公告确认、邀请兑换与幂等 create/join 动线"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/codex-plugin-ui-seat-binding.md","reason":"席位绑定与 UI bridge 能力边界，含 handoff URL 回退的约束"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/codex-visible-task-proactive-turn-boundary.md","reason":"SAME_VISIBLE_TASK_SPIKE_V1 的尖峰门禁项与禁止双跑上下文的边界"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","reason":"最新宿主主动回合能力刷新；实现前必须据此判断哪些主动唤醒仍未证明"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/codex-model-detection-boundaries.md","reason":"当前模型标识可观察但不可作为不可伪造来源证明的边界"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md","reason":"PLAYABILITY_GATE_V1 的自动化层与真人层证据要求"}
+{"file":".trellis/spec/frontend/index.md","reason":"当前技术边界与规范索引；先读它再进入具体分层规范"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"新宿主中立核心与旧探针栈的模块归属和命名边界"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"权威独占结果状态、浏览器只持投影的约束"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"CommonJS、snake_case 线协议字段与运行时校验约定"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"原生 DOM、Canvas、textContent 安全与可访问性模式"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"宿主适配器进程的 stdio 协议、零桥流量与失败关闭约定"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务跨越权威内核、命令面/传输面与浏览器投影三层"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"新旧两套牌桌栈共存期间，防止再复制一份规则判定"}
