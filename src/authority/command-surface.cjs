@@ -1,0 +1,258 @@
+"use strict";
+
+// 宿主中立命令面：两个宿主适配器共用的唯一调用词表。
+//
+//   Codex 宿主   MCP 工具 + HTTP 路由  ->  dispatch(command, params)
+//   Claude 宿主  MCP App UI            ->  dispatch(command, params)
+//
+// 存在的理由与编排层相同：如果两个适配器各自直接调编排层，它们会各自发明一套命令名、
+// 各自决定哪些参数必填、各自决定错误怎么回。三个月后就是两个 TokenGame。
+//
+// 三条自我约束：
+//   1. 不新增产品语义。每条命令都是编排层某个方法的薄封装，判定权在内核。
+//   2. 不发明第二套错误约定。失败一律抛 ProbeError，适配器自己映射到 HTTP / MCP。
+//   3. 不返回任何凭据。凭据只在 room.create / room.join / seat.recover 的返回里出现
+//      一次，此后任何投影、任何事件、任何错误详情都不得再出现。
+//
+// 注意 SC-TG-L2-SESSION-LAUNCH-20260827-B 明确把「MCP 接口形态与 URL 形式」排除在
+// 受保护产品语义之外。所以下面的命令名是工程选择，不是合同锁定项，Codex 归队后可改名；
+// 但改名要一次改完，不能让两个适配器各用一半。
+
+const { ProbeError } = require("./event-store.cjs");
+const { TableOrchestrator } = require("./table-orchestrator.cjs");
+
+// 需要凭据授权的命令：任何会改变某一席位状态或以该席位名义说话的操作。
+// 只读投影不在其中；创建与加入房间此时还没有凭据可验。
+const SEAT_AUTHORIZED = Object.freeze([
+  "seat.ready",
+  "seat.sit_out_after_hand",
+  "seat.leave",
+  "seat.disconnect",
+  "chat.say",
+  "ai.set_mode",
+  "ai.hide_local",
+]);
+
+function requiredString(value, field, max = 256) {
+  if (typeof value !== "string" || value.length === 0 || value.length > max) {
+    throw new ProbeError("invalid_field", 400, { field });
+  }
+  return value;
+}
+
+class CommandSurface {
+  constructor(options = {}) {
+    this.orchestrator = options.orchestrator instanceof TableOrchestrator
+      ? options.orchestrator
+      : new TableOrchestrator(options);
+    this.handlers = this.buildHandlers();
+  }
+
+  commandNames() {
+    return Object.keys(this.handlers).sort();
+  }
+
+  dispatch(command, params = {}) {
+    const name = requiredString(command, "command", 64);
+    const handler = this.handlers[name];
+    if (handler === undefined) {
+      throw new ProbeError("unknown_command", 404, {
+        command: name,
+        known_commands: this.commandNames(),
+      });
+    }
+    if (params === null || typeof params !== "object" || Array.isArray(params)) {
+      throw new ProbeError("invalid_field", 400, { field: "params" });
+    }
+    if (SEAT_AUTHORIZED.includes(name)) {
+      // 凭据授权。内核在进程内可信，命令面才是信任边界：不验证就等于任何调用者
+      // 都能让别人的席位离桌、以别人的名义公开发言。
+      this.orchestrator.rooms.requireSeatCredential(
+        params.seat_id,
+        params.recovery_credential,
+      );
+    }
+    return handler(params);
+  }
+
+  buildHandlers() {
+    const o = this.orchestrator;
+    return {
+      // ------------------------------------------------------------ 房间与席位
+      "room.create": (p) => {
+        const created = o.createRoom({
+          hostPlayerId: p.player_id,
+          tableRulesVersion: p.table_rules_version,
+          ...(p.max_seats === undefined ? {} : { maxSeats: p.max_seats }),
+        });
+        // 凭据在这里出现一次，之后任何面上都不再出现。
+        return {
+          room: created.room,
+          invite_code: created.invite.invite_code,
+          seat: created.seat,
+          recovery_credential: created.credential,
+        };
+      },
+
+      // 默认公开确认必须由玩家在宿主界面上明确点过，适配器不得代为承诺。
+      "room.confirm_public_scope": () => ({ confirmed: o.confirmPublicScope().payload }),
+
+      "room.join": (p) => {
+        const joined = o.joinRoom({
+          playerId: p.player_id,
+          inviteCode: p.invite_code,
+        });
+        return {
+          room: joined.room,
+          seat: joined.seat,
+          recovery_credential: joined.credential,
+        };
+      },
+
+      "seat.recover": (p) => {
+        const recovered = o.rooms.recoverSeat({
+          seatId: p.seat_id,
+          recoveryCredential: p.recovery_credential,
+          ...(p.connection_id === undefined ? {} : { connectionId: p.connection_id }),
+        });
+        return recovered;
+      },
+
+      "seat.connect": (p) => ({
+        connected: o.rooms.markConnected({
+          seatId: p.seat_id,
+          connectionId: p.connection_id,
+        }).payload,
+      }),
+
+      "seat.disconnect": (p) => ({
+        disconnected: o.rooms.markDisconnected({
+          seatId: p.seat_id,
+          connectionId: p.connection_id,
+        }).payload,
+      }),
+
+      "seat.ready": (p) => ({
+        ready: o.setReady({ seatId: p.seat_id, ready: p.ready !== false }).payload,
+      }),
+
+      "seat.sit_out_after_hand": (p) => ({
+        scheduled: o.rooms.requestSitOutAfterHand({ seatId: p.seat_id }).payload,
+      }),
+
+      "seat.leave": (p) => ({ fenced: o.rooms.leaveTable({ seatId: p.seat_id }).payload }),
+
+      // ---------------------------------------------------------------- 牌局
+      "hand.evaluate_start": () => o.evaluateStart(),
+
+      // 宿主在倒计时/手间展示到点后调用。开局门禁由 room-store 判定，这里不复判。
+      "hand.start_if_due": () => {
+        const outcome = o.startHandIfDue();
+        return outcome.started
+          ? {
+            started: true,
+            hand_id: outcome.hand_id,
+            hand_index: outcome.hand_index,
+            roster: outcome.roster,
+            intent_count: outcome.intents.length,
+          }
+          : { started: false, decision: outcome.decision };
+      },
+
+      "hand.act": (p) => {
+        const seat = o.rooms.requireSeatCredential(p.seat_id, p.recovery_credential);
+        const playerId = o.requirePlayerId(seat.seat_id);
+        const { result, intents } = o.act({
+          playerId,
+          type: p.action,
+          ...(p.amount === undefined ? {} : { amount: p.amount }),
+        });
+        return { result, intent_count: intents.length };
+      },
+
+      // 到期自动处置。谁都可以催，因为它只在真的到期时才动作。
+      "hand.settle_expired": () => {
+        const { result, intents } = o.settleExpiredAction();
+        return { result, intent_count: intents.length };
+      },
+
+      // 规则 4：只有 all_others_folded 的赢家可自愿亮牌，由引擎裁决。
+      "hand.reveal": (p) => {
+        const seat = o.rooms.requireSeatCredential(p.seat_id, p.recovery_credential);
+        const playerId = o.requirePlayerId(seat.seat_id);
+        return o.requireHand().revealCards(playerId);
+      },
+
+      "hand.apply_pending_fold": (p) => ({
+        applied: o.applyPendingFold(requiredString(p.seat_id, "seat_id", 64)),
+      }),
+
+      // ------------------------------------------------------------ 公开交流
+      "chat.say": (p) => {
+        const result = o.submitPlayerText({
+          seatId: p.seat_id,
+          text: p.text,
+          ...(p.channel === undefined ? {} : { channel: p.channel }),
+        });
+        return {
+          published: result.published === null ? null : result.published.payload,
+          local_control: result.local_control,
+          intent_count: result.evaluations.length,
+        };
+      },
+
+      // ---------------------------------------------------------------- AI
+      // 适配器取走意图 -> 自己调模型 -> ai.start + ai.resolve 回填。
+      // 命令面不调模型：它跑在权威侧，不该有出网能力。
+      "ai.take_intents": () => ({ intents: o.takeIntents() }),
+
+      "ai.start": (p) => ({
+        started: o.startEvaluation({
+          seatId: p.seat_id,
+          ...(p.context === undefined ? {} : { context: p.context }),
+        }).payload,
+      }),
+
+      "ai.resolve": (p) => ({
+        resolved: o.resolveEvaluation({
+          seatId: p.seat_id,
+          turnId: p.turn_id,
+          decision: p.decision,
+          ...(p.text === undefined ? {} : { text: p.text }),
+        }).payload,
+      }),
+
+      "ai.set_mode": (p) => ({
+        mode: o.setSeatAiMode({ seatId: p.seat_id, mode: p.mode }).payload,
+      }),
+
+      // 规则 7：本地隐藏只影响该查看者渲染，不写权威事件。
+      "ai.hide_local": (p) => o.ai.setLocalHidden({
+        viewerSeatId: p.seat_id,
+        target: p.target,
+        targetId: p.target_id,
+        ...(p.hidden === undefined ? {} : { hidden: p.hidden }),
+      }),
+
+      // ------------------------------------------------------------ 只读投影
+      "view.projection": () => o.projection(),
+
+      "view.timeline": (p) => ({
+        timeline: o.ai.publicTimeline(
+          p.viewer_seat_id === undefined ? {} : { viewerSeatId: p.viewer_seat_id },
+        ),
+      }),
+
+      "view.seat": (p) => ({
+        seat: o.rooms.seatState(requiredString(p.seat_id, "seat_id", 64)),
+        ai: o.ai.seatState(requiredString(p.seat_id, "seat_id", 64)),
+      }),
+
+      "view.room_events": () => ({ events: o.rooms.events.map((event) => ({ ...event })) }),
+
+      "view.ai_events": () => ({ events: o.ai.events.map((event) => ({ ...event })) }),
+    };
+  }
+}
+
+module.exports = { CommandSurface, SEAT_AUTHORIZED };

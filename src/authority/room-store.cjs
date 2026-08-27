@@ -241,6 +241,22 @@ class RoomStore {
     return seat;
   }
 
+  // 凭据授权。本内核在进程内是可信的：setReady / leaveTable 等只收 seatId，
+  // 由调用方保证归属。命令面才是信任边界，它用这个方法证明「调用者拥有该席」。
+  // 验证放在铸造方，秘密不出本模块——比把 recovery_credential 交出去比对安全。
+  requireSeatCredential(seatIdValue, credentialValue) {
+    const seat = this.requireSeat(seatIdValue);
+    const credential = requiredString(credentialValue, "recoveryCredential", 512);
+    if (seat.state === "RELEASED" || seat.credential_revoked) {
+      throw new ProbeError("seat_credential_revoked", 403, { seat_id: seat.seat_id });
+    }
+    if (!sameSecret(credential, seat.recovery_credential)) {
+      // 不区分「席位不存在」与「凭据不对」之外的细节，避免成为探测口。
+      throw new ProbeError("recovery_credential_rejected", 403, { seat_id: seat.seat_id });
+    }
+    return seat;
+  }
+
   // SESSION-LAUNCH + 规则 2：普通中断后回到原房间与原座位，而不是静默建立第二身份。
   recoverSeat(input = {}) {
     const room = this.requireRoom();

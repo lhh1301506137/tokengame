@@ -206,6 +206,37 @@ test("翻译表：只有三条引擎事件与三种动作进白名单，且目�
   }
 });
 
+test("隐私：底牌从不经翻译进入 AI 上下文，无争议结束时也不泄露", () => {
+  const ctx = harness({ playerCount: 2 });
+  begin(ctx, [0, 1]);
+
+  // 打完一整手（一方弃牌，走 all_others_folded 路径）。
+  ctx.o.act({ playerId: actor(ctx).playerId, type: "fold" });
+  assert.equal(ctx.o.hand.finishReason, "all_others_folded");
+
+  // 所有进过 AI 上下文的 payload：既包括交出去的意图，也包括内核记下的。
+  const contexts = ctx.o.pendingIntents.map((intent) => intent.context);
+  assert.ok(contexts.length > 0, "本手必然产生过上下文");
+  const serialized = JSON.stringify(contexts);
+  assert.ok(!serialized.includes("hole_cards"), "上下文不得出现 hole_cards 字段");
+  assert.ok(!serialized.includes("revealed_hands"), "无争议结束不得出现 revealed_hands");
+
+  // 规则 4：未自愿亮牌时，结算 payload 明确标注未亮牌。
+  const settled = contexts.filter((c) => c.source_event_type === "HAND_SETTLED");
+  for (const context of settled) {
+    assert.equal(context.payload.cards_revealed, false);
+  }
+});
+
+test("隐私：发牌事件不在白名单内，永不唤醒任何席位 AI", () => {
+  // 白名单是唯一入口。这条断言存在的意义是：谁把发牌事件加进白名单，这里立刻红。
+  assert.equal(ENGINE_TO_WHITELIST.HOLE_CARDS_DEALT, undefined);
+  assert.equal(ENGINE_TO_WHITELIST.BLIND_POSTED, undefined);
+  for (const target of Object.values(ENGINE_TO_WHITELIST)) {
+    assert.notEqual(target, "HOLE_CARDS_DEALT");
+  }
+});
+
 test("翻译：check / call / fold 不唤醒任何席位 AI", () => {
   const ctx = harness();
   begin(ctx);
