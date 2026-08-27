@@ -1,14 +1,14 @@
 # TokenGame 规则阶段 A：可玩牌桌体验规则
 
-状态：`rules_stage_a_playable_table_pending_user_confirmation`
+状态：`rules_stage_a_playable_table_user_confirmed`
 
-候选后继合同：`TG-L2-PLAYABLE-TABLE / SC-TG-L2-PLAYABLE-TABLE-20260827-D`
+当前后继合同：`TG-L2-PLAYABLE-TABLE / SC-TG-L2-PLAYABLE-TABLE-20260827-D / DEC-20260827-022`
 
-候选摘要：`sha256:d73e30748ac4d7a3fc814e6f44d6aa96676dc3677e0ef04f8f1298e9f84ca453`
+当前累计合同摘要：`sha256:d73e30748ac4d7a3fc814e6f44d6aa96676dc3677e0ef04f8f1298e9f84ca453`
 
-已确认章程：`SC-TG-L2-PLAYABLE-TABLE-20260827-C / DEC-20260827-020`
+基础章程来源（已由当前累计合同继承）：`SC-TG-L2-PLAYABLE-TABLE-20260827-C / DEC-20260827-020`
 
-本轮不再确认新的 L2，也不改写已经确认的牌桌章程；只把影响玩家体验、不能由实现层随意改变的四组牌桌规则一次性放入该章程的后继合同。标准无限注德州扑克的牌型、下注、边池与结算继续采用成熟规则，不逐条变成用户选择题。
+用户已回复 `1`，精确确认本页完整展示的四条规则以及保持不变的牌桌章程。本次确认不扩展到公开座位 AI 规则、标准德扑参数、实现、验收或宿主能力；标准无限注德州扑克的牌型、下注、边池与结算继续采用成熟规则，不逐条变成用户选择题。
 
 ## 已确认章程基础（保持不变）
 
@@ -62,19 +62,22 @@
 
 ## 替代关系与后续
 
-如果确认，本候选将作为 `DEC-20260827-020` 的规则后继；旧 `DEC-20260825-008` 的亮牌规则由第 4 条吸收，Ready、掉线和退出规则由当前需求发现证据正式提升。之后只剩一个独立的“公开座位 AI 交流规则包”，不会再逐条询问标准德扑动作。
+当前累计合同已在 `DEC-20260827-022` 中完成唯一绑定，并作为 `DEC-20260827-020` 的规则后继；旧 `DEC-20260825-008` 的亮牌规则由第 4 条吸收，Ready、掉线和退出规则取得当前权威。之后只剩一个独立的“公开座位 AI 交流规则包”，不会再逐条询问标准德扑动作。
 
-## 本轮选择
+## 确认结果
 
-1. **确认以上牌桌规则包（推荐）**：保持已确认章程不变，并把四条规则作为完整受保护规则集写入 `SC-TG-L2-PLAYABLE-TABLE-20260827-D`。
-2. **修改规则包**：指出希望调整的 Ready、掉线恢复、主动退出或亮牌规则；不确认当前候选。
-3. **先解释**：继续讨论这些规则为何属于产品规则、哪些参数可以在实现阶段调整；不确认当前候选。
+- 用户选择：`1`
+- 决策：`DEC-20260827-022`
+- 绑定：`SC-TG-L2-PLAYABLE-TABLE-20260827-D / sha256:d73e30748ac4d7a3fc814e6f44d6aa96676dc3677e0ef04f8f1298e9f84ca453`
+- 校验收据：`.trellis/tasks/08-26-public-ai-table-talk/research/rules-playable-table-verification-20260827.json`
+- 下一步：独立确认公开座位 AI 交流规则包。
 
 <!--
 candidate_contract_ref: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-playable-table-20260827.json
 candidate_contract_digest: sha256:d73e30748ac4d7a3fc814e6f44d6aa96676dc3677e0ef04f8f1298e9f84ca453
-candidate_authority: pending_user_confirmation
-candidate_proposed_supersedes: DEC-20260827-020
-candidate_cumulative_basis: DEC-20260827-020 + pending DEC-20260827-022
-confirmation_rule: reply 1 confirms only the unchanged charter basis plus the four exact protected product rules shown above
+candidate_authority: user_confirmed
+current_decision_ref: DEC-20260827-022
+current_supersedes: DEC-20260827-020
+current_cumulative_basis: DEC-20260827-020 + DEC-20260827-022
+confirmation_scope: unchanged charter basis plus the four exact protected product rules shown above
 -->
