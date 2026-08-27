@@ -23,7 +23,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { CommandSurface } = require("../src/authority/command-surface.cjs");
+const {
+  CommandSurface,
+  SEAT_AUTHORIZED,
+} = require("../src/authority/command-surface.cjs");
 const { ProbeError } = require("../src/authority/event-store.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { confirmAllSeatsViaSurface } = require("../test-support/public-scope.cjs");
@@ -196,6 +199,36 @@ test("seat.connect：席位释放后原凭据失效", () => {
   );
 });
 
+// 等长伪造。这一条是变异测试逼出来的：把 sameSecret 换成「长度相等即通过」，上面四段探测
+// 全都还是绿的。原因是巧合——本 harness 的 tokenFactory 产出 tok-6 与 tok-10，长度 5 与 6，
+// 于是连他席凭据都因为长度不同而被拒。四段探测因此只证明了「会拒」，没证明「比的是值」。
+//
+// 伪造串从真凭据改一个字符得来，长度必然相同。改末位杀「只比前若干位」，改首位杀「只比后
+// 若干位」，两条一起把比对钉成全值相等。
+test("seat.connect：等长但不同值的凭据必须被拒", () => {
+  const ctx = table();
+  const real = ctx.seats[0].credential;
+  const flip = (char) => (char === "0" ? "1" : "0");
+  const variants = [
+    ["末位不同", real.slice(0, -1) + flip(real.at(-1))],
+    ["首位不同", flip(real[0]) + real.slice(1)],
+  ];
+
+  for (const [label, forged] of variants) {
+    assert.equal(forged.length, real.length, `${label}：伪造串必须与真凭据等长`);
+    assert.notEqual(forged, real, `${label}：伪造串不能恰好等于真凭据`);
+    assert.throws(
+      () => ctx.s.dispatch("seat.connect", {
+        seat_id: ctx.seats[0].seat_id,
+        recovery_credential: forged,
+        connection_id: `c-${label}`,
+      }),
+      probe("recovery_credential_rejected"),
+      `${label}：等长伪造凭据居然通过了，比对没在比值`,
+    );
+  }
+});
+
 test("seat.connect：持本席凭据仍然照常可用", () => {
   // 加门不能把正常路径关掉：适配器重连是产品主路径。
   const ctx = table();
@@ -203,6 +236,39 @@ test("seat.connect：持本席凭据仍然照常可用", () => {
   assert.equal(first.connected.seat_id, ctx.seats[0].seat_id);
   assert.equal(first.connected.connection_count, 1);
   assert.equal(ctx.seatState(0).connected, true);
+});
+
+// 被授权的那一席，必须就是被改动的那一席。
+//
+// 这条也是变异逼出来的：把 handler 改成 `seatId: p.target_seat_id ?? p.seat_id`，把关照旧验
+// p.seat_id，动作却落到 target_seat_id 上。所有既有测试都还是绿的——因为没有一个测试会去传
+// 这个多出来的字段。于是「验一扇门、走另一扇门」这类缺陷对整套测试完全隐形。
+//
+// 所以这里刻意塞一个未知字段，断言它不改变动作落点。这不是在测某个具体字段名（那样只能挡住
+// 我恰好想到的那个名字），而是在钉住一条不变量：授权对象与动作对象是同一个。
+test("授权的席位就是被改动的席位：多传的字段不得改变动作落点", () => {
+  const ctx = table({ playerCount: 2 });
+  // 第 1 席进入掉线保留窗——它是「被冒名顶替」的目标，状态变化最容易观察。
+  const before = disconnected(ctx, 1);
+  assert.equal(before, 120_000);
+
+  // 第 0 席带着自己的合法凭据建连，同时试图把动作导向第 1 席。
+  const result = ctx.s.dispatch("seat.connect", {
+    ...ctx.auth(0),
+    target_seat_id: ctx.seats[1].seat_id,
+    seat_id_override: ctx.seats[1].seat_id,
+    connection_id: "c-redirect",
+  });
+
+  // 落点必须是第 0 席。
+  assert.equal(result.connected.seat_id, ctx.seats[0].seat_id, "动作落到了别的席位上");
+  assert.equal(ctx.seatState(0).connected, true);
+
+  // 第 1 席必须一点没动：仍在掉线状态，保留倒计时未被清掉。清掉它正是 F4 的原始危害。
+  const target = ctx.seatState(1);
+  assert.equal(target.state, "DISCONNECTED", "目标席位被顶替改动了状态");
+  assert.equal(target.connected, false, "目标席位被顶替建立了连接");
+  assert.equal(target.retention_remaining_ms, 120_000, "目标席位的保留倒计时被清掉了");
 });
 
 // ------------------------------------------------------------ 独立期望清单
@@ -245,8 +311,10 @@ const NO_SEAT_IDENTITY = Object.freeze({
   "view.ai_events": "同上",
 });
 
-// 天然以原始凭据为入参的命令。F6 要处理「凭据不得进入模型可见结果」，不在 F4 范围。
-const RAW_CREDENTIAL_BY_DESIGN = Object.freeze(["seat.recover"]);
+// 以凭据为入参、而不是「先验身份再执行」的命令。它一样必须拒伪造凭据，只是单独一段探测：
+// 它在席位已释放时抛 seat_released 而不是 seat_credential_revoked（recoverSeat 先结算保留窗
+// 再比对凭据，见 room-store 注释），套不进下面第四段的统一循环。
+const CREDENTIAL_AS_INPUT = Object.freeze(["seat.recover"]);
 
 test("独立清单必须覆盖命令面的每一条命令", () => {
   // 这条守的是「以后新增命令时必须做出判定」。漏判会在这里失败，而不是等到线上。
@@ -254,7 +322,7 @@ test("独立清单必须覆盖命令面的每一条命令", () => {
   const classified = [
     ...SEAT_STATE_WRITES,
     ...Object.keys(NO_SEAT_IDENTITY),
-    ...RAW_CREDENTIAL_BY_DESIGN,
+    ...CREDENTIAL_AS_INPUT,
   ].sort();
   assert.deepEqual(
     classified,
@@ -288,6 +356,43 @@ function forgedParams(command, seatId) {
     default: return base;
   }
 }
+
+// seat.recover 单独一段：它必须和其他命令一样拒伪造/缺失/他席凭据，否则「凭据是入参」就
+// 会被读成「凭据可以随便填」。它归入哪一类靠的是这一段实测，不是分类注释。
+test("seat.recover：伪造、缺失、他席凭据都必须被拒", () => {
+  const ctx = table({ playerCount: 2 });
+  disconnected(ctx, 1);
+  const target = ctx.seats[1].seat_id;
+
+  assert.throws(
+    () => ctx.s.dispatch("seat.recover", { seat_id: target, recovery_credential: FORGED }),
+    probe("recovery_credential_rejected"),
+    "伪造凭据居然恢复了席位",
+  );
+  assert.throws(
+    () => ctx.s.dispatch("seat.recover", { seat_id: target }),
+    (error) => error instanceof ProbeError
+      && error.code === "invalid_field"
+      && error.details?.field === "recoveryCredential",
+    "缺凭据居然恢复了席位",
+  );
+  assert.throws(
+    () => ctx.s.dispatch("seat.recover", {
+      seat_id: target,
+      recovery_credential: ctx.seats[0].credential,
+    }),
+    probe("recovery_credential_rejected"),
+    "持他席凭据居然恢复了这一席",
+  );
+
+  // 正面：本席凭据仍然照常恢复。加门不能把产品主路径关掉。
+  const recovered = ctx.s.dispatch("seat.recover", {
+    seat_id: target,
+    recovery_credential: ctx.seats[1].credential,
+  });
+  assert.equal(recovered.seat_id, target);
+  assert.equal(recovered.state, "SEATED");
+});
 
 test("清单上每条写命令都必须拒绝伪造凭据", () => {
   // 这段不读 SEAT_AUTHORIZED。它只看行为：拿一份格式合法但不属于任何席位的凭据去调，
