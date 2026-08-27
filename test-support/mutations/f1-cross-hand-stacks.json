@@ -1,0 +1,127 @@
+{
+  "finding": "F1",
+  "summary": "筹码跨手存活、按席位归属、掉线恢复不重置。每条变异都对应一处若失守则筹码凭空产生或消失的地方。",
+  "test": "test/cross-hand-stacks.test.cjs",
+  "mutations": [
+    {
+      "id": "F1-01-每手重发起始筹码",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "stack: this.rosterStack(started.payload.stacks, seatId),",
+      "replacement": "stack: 200,",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "缺陷本体：每手从固定值构造席位，赢来的筹码在下一手开始时消失。"
+    },
+    {
+      "id": "F1-02-名单缺席位时静默放过",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "throw new ProbeError(\"seat_stack_missing\", 500, { seat_id: seatId });",
+      "replacement": "return 200;",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "账本没给出某席筹码时回退到固定值，等于悄悄开第二个筹码来源。"
+    },
+    {
+      "id": "F1-03-结算不回写账本",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "      this.settleStacks();",
+      "replacement": "      void 0;",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "牌局结束不把引擎结果写回账本，账本永远停在起始值。"
+    },
+    {
+      "id": "F1-04-回写晚于席位处置",
+      "file": "src/authority/table-orchestrator.cjs",
+      "needle": "      this.settleStacks();\n      const settled = this.rooms.handSettled();",
+      "replacement": "      const settled = this.rooms.handSettled();\n      this.settleStacks();",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "handSettled 先跑会释放离桌席并清零其 stack，于是 forfeited_stack 记的是开手前的旧值，随后的回写又把结算值写回一个已 RELEASED 的席位。"
+    },
+    {
+      "id": "F1-05-幂等门失效",
+      "file": "src/authority/room-store.cjs",
+      "needle": "if (this.stacksSettledForHandIndex >= handIndex) {",
+      "replacement": "if (false) {",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "同一手被重复结算时二次覆盖账本。F2 让行动可重放后，这会直接变成筹码重复计入。"
+    },
+    {
+      "id": "F1-06-幂等门只挡等号",
+      "file": "src/authority/room-store.cjs",
+      "needle": "if (this.stacksSettledForHandIndex >= handIndex) {",
+      "replacement": "if (this.stacksSettledForHandIndex === handIndex) {",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "旧手号的迟到结算被放行，用过期数据覆盖当前账本。"
+    },
+    {
+      "id": "F1-07-stack-校验放过负数",
+      "file": "src/authority/room-store.cjs",
+      "needle": "if (typeof value !== \"number\" || !Number.isSafeInteger(value) || value < 0) {",
+      "replacement": "if (false) {",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "负数、小数、字符串数字进入账本，跨手求和从此不再守恒。"
+    },
+    {
+      "id": "F1-08-handIndex-接受字符串",
+      "file": "src/authority/room-store.cjs",
+      "needle": "if (typeof handIndex !== \"number\" || !Number.isSafeInteger(handIndex) || handIndex < 1) {",
+      "replacement": "if (false) {",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "幂等靠 handIndex 比大小，收下 \"2\" 会让类型错误推迟到「第二手筹码没回写」才暴露。"
+    },
+    {
+      "id": "F1-09-先写后校验",
+      "file": "src/authority/room-store.cjs",
+      "needle": "      stack: nonNegativeStack(entry?.stack, \"stack\"),",
+      "replacement": "      stack: entry?.stack,",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "校验被跳过后半途失败会留下部分写入的账本。"
+    },
+    {
+      "id": "F1-10-起始筹码不校验",
+      "file": "src/authority/room-store.cjs",
+      "needle": "this.startingStack = positiveStack(startingStack, \"startingStack\");",
+      "replacement": "this.startingStack = startingStack;",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "0 或负的起始筹码建桌成功，第一手就在引擎里抛 500。"
+    },
+    {
+      "id": "F1-11-破产席不处置",
+      "file": "src/authority/room-store.cjs",
+      "needle": "      if (seat.stack === 0) {",
+      "replacement": "      if (false) {",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "筹码归零的席位留在 ACTIVE，带着 0 筹码进入下一手。"
+    },
+    {
+      "id": "F1-12-名单不看筹码",
+      "file": "src/authority/room-store.cjs",
+      "needle": "(seat) => seat.eligible_from_hand_index <= nextHandIndex && seat.stack > 0,",
+      "replacement": "(seat) => seat.eligible_from_hand_index <= nextHandIndex,",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "破产后重新 Ready 可绕过 handSettled 的处置直接进名单。"
+    },
+    {
+      "id": "F1-13-门禁数可参与而非名单",
+      "file": "src/authority/room-store.cjs",
+      "needle": "const gateCount = this.firstHandStarted ? roster.length : readyCount;",
+      "replacement": "const gateCount = this.firstHandStarted ? participable.length : readyCount;",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "门禁与发牌看不同集合：放行一手却只凑得出一席 roster，引擎抛 invalid_seat_count。"
+    },
+    {
+      "id": "F1-14-ready计数按可参与",
+      "file": "src/authority/room-store.cjs",
+      "needle": "const readyCount = roster.filter((seat) => seat.state === \"READY\").length;",
+      "replacement": "const readyCount = participable.filter((seat) => seat.state === \"READY\").length;",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "首手门禁把发不出牌的 READY 席位算进去，同一个分叉在首手重现。"
+    },
+    {
+      "id": "F1-15-释放不清筹码",
+      "file": "src/authority/room-store.cjs",
+      "needle": "    const forfeited = seat.stack;\n    seat.stack = 0;",
+      "replacement": "    const forfeited = seat.stack;",
+      "test": "test/cross-hand-stacks.test.cjs",
+      "guards": "离桌席位的筹码仍挂在席位上，重新入座即复活一份已离桌的筹码。"
+    }
+  ]
+}

@@ -59,7 +59,6 @@ class TableOrchestrator {
     this.deckFactory = deckFactory;
     this.smallBlind = smallBlind;
     this.bigBlind = bigBlind;
-    this.startingStack = startingStack;
     this.actionTimeoutMs = actionTimeoutMs;
 
     this.rooms = new RoomStore({
@@ -67,6 +66,9 @@ class TableOrchestrator {
       idFactory,
       ...(tokenFactory ? { tokenFactory } : {}),
       limits: roomLimits,
+      // 起始筹码交给房间账本持有。本层不再保留副本：留一份就会有人从它读，
+      // 而每手从构造参数取一次起始筹码正是 F1 的缺陷本体。
+      startingStack,
     });
     this.ai = new SeatAiStore({ now, idFactory, limits: aiLimits });
 
@@ -202,9 +204,12 @@ class TableOrchestrator {
     this.hand = new HoldemHand({
       id: `hand-${started.payload.hand_index}-${this.idFactory()}`,
       tableId: this.rooms.requireRoom().room_id,
+      // 起始筹码逐席取自 HAND_STARTED 的账本快照，不用任何本层常量。名单顺序与
+      // stacks 顺序都由 room-store 给出，按 seat_id 对齐而不是按下标——两个数组
+      // 靠位置对齐是那种能正常跑很久、然后在某次过滤后错位的写法。
       seats: roster.map((seatId) => ({
         id: this.requirePlayerId(seatId),
-        stack: this.startingStack,
+        stack: this.rosterStack(started.payload.stacks, seatId),
       })),
       dealerIndex: (started.payload.hand_index - 1) % roster.length,
       smallBlind: this.smallBlind,
@@ -216,6 +221,16 @@ class TableOrchestrator {
 
     const intents = this.drainEngine();
     return { hand_id: this.hand.id, hand_index: started.payload.hand_index, roster, intents };
+  }
+
+  rosterStack(stacks, seatId) {
+    const entry = (stacks ?? []).find((candidate) => candidate.seat_id === seatId);
+    if (entry === undefined) {
+      // 账本没给这一席筹码却把它放进了名单，那是 room-store 自相矛盾。宁可在这里
+      // 停下，也不要偷偷补一个默认值——补上就等于又造了第二个筹码来源。
+      throw new ProbeError("seat_stack_missing", 500, { seat_id: seatId });
+    }
+    return entry.stack;
   }
 
   requireHand() {
@@ -345,6 +360,10 @@ class TableOrchestrator {
       return this.acceptable(evaluations);
     }
     if (event.type === "HAND_COMPLETED") {
+      // 先回写筹码，再让房间结算。顺序不能反：handSettled 会释放 leave_requested 的
+      // 席位，而释放会把 stack 清零并记进 SEAT_RELEASED。先释放就等于把离桌者这一手
+      // 的输赢丢掉，事件里记下的「带走多少」也会是错的。
+      this.settleStacks();
       const settled = this.rooms.handSettled();
       const evaluations = this.ai.notifyDomainEvent({
         type: "HAND_SETTLED",
@@ -372,6 +391,23 @@ class TableOrchestrator {
       payload,
     });
     return this.acceptable(evaluations);
+  }
+
+  // 把引擎算出的最终 stack 交回账本。本层只做 playerId -> seatId 的翻译，
+  // 幂等与校验都在 room-store.settleStacks 里——那是账本自己的事。
+  //
+  // 已经释放的席位不在 seatToPlayer 里，它们的筹码在释放时就记进 SEAT_RELEASED 了，
+  // 这里跳过是正确的：往一个 RELEASED 席位回写会抛错，把正常的「有人中途离桌」
+  // 变成一次结算失败。
+  settleStacks() {
+    const stacks = [];
+    for (const seat of this.hand.seats) {
+      const seatId = this.playerToSeat.get(seat.id);
+      if (seatId !== undefined) {
+        stacks.push({ seatId, stack: seat.stack });
+      }
+    }
+    return this.rooms.settleStacks({ handIndex: this.rooms.handIndex, stacks });
   }
 
   // 只把 accepted 的意图交给宿主。被合并 / 冷却 / 额度耗尽的那些已由内核记账，
