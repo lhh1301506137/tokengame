@@ -1,0 +1,16 @@
+# 全仓文本文件统一 LF 检出。
+#
+# 理由（已实测，非推测）：PUBLIC-AI-EXCHANGE-RECEIPT.json 的 projection_sha256
+# 与 generation_context.sha256 都是对**工作树字节**计算的。本机 core.autocrlf=true，
+# 在缺少本文件时，新克隆会把 LF 改写成 CRLF（git ls-files --eol 显示 w/crlf），
+# 于是 validate_understanding_artifacts.py 在新克隆里报
+# GENERATION_CONTEXT_HASH_MISMATCH 并 exit 1——即 PI 校验门只在原工作树可复现。
+#
+# 提交前 git ls-files --eol 显示 199/200 个文件已是 i/lf
+# （唯一例外 .trellis/.version 是 i/none，无行尾可转），
+# 因此本文件不改变任何已提交内容，只固定未来检出的字节。
+* text=auto eol=lf
+
+# 哈希受签的 PI 产物与生成上下文，显式声明，避免被后续规则意外覆盖。
+PROJECT-UNDERSTANDING/** text eol=lf
+.dual/** text eol=lf
