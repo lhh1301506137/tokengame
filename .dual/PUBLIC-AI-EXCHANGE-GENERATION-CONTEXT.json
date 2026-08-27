@@ -1,0 +1,153 @@
+{
+  "context_schema": "dual-ai.understanding-generation-context.v2",
+  "context_id": "UGC-TG-PUBLIC-AI-EXCHANGE-R1",
+  "understanding_entity": {
+    "entity_id": "UE-TG-PUBLIC-AI-EXCHANGE",
+    "semantic_key": "tokengame.public_ai_exchange",
+    "identity_status": "owner_anchored",
+    "owner_ref": "STATUS.md#project_intelligence"
+  },
+  "revision_id": "PI-TG-PUBLIC-AI-EXCHANGE-R1",
+  "oracle_owner": {
+    "owner": "project_intelligence",
+    "owner_ref": "project-intelligence.md",
+    "owner_sha256": "913b4580743c08f2b469be191fa5fdee749d1f4094aa661d50e8a19863bf0e3e",
+    "provenance": "owner_derived_before_generation"
+  },
+  "dependency_owner": {
+    "owner": "plan_tree",
+    "owner_ref": "plan-tree.md",
+    "owner_sha256": "5c5cbca1d001ed72fc1a9b15549a4faefbbd23e5d341bca5f84e08491bd22776",
+    "basis_refs": ["PROJECT-PLAN-TREE.md#当前恢复点"]
+  },
+  "oracle_producer_id": "project-intelligence-scope-resolver",
+  "artifact_producer_id": "tokengame-public-ai-understanding-generator",
+  "runtime_profile": "adaptive",
+  "runtime_profile_source": "adapter_default",
+  "operation_context": {
+    "mode": "bounded_project_write",
+    "project_write_policy": "bounded",
+    "artifact_output_policy": "create_only",
+    "product_work_requested": "yes",
+    "authorized_scope_refs": ["TG-L3-PUBLIC-AI-EXCHANGE-KERNEL"],
+    "authorization_ref": "current_user_instruction:2026-08-27-continue"
+  },
+  "read_scope_refs": [
+    "PROJECT-DECISION-LOG.md#DEC-20260827-023",
+    "PROJECT-PLAN-TREE.md#当前恢复点",
+    "STATUS.md#project_intelligence",
+    "docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md#public-ai-rules",
+    ".trellis/tasks/08-26-public-ai-table-talk/prd.md#public-ai-rules-truth-persistence-result",
+    "src/authority/event-store.cjs",
+    "src/authority/table-store.cjs",
+    "src/authority/server.cjs",
+    "plugins/tokengame/hooks/user_prompt_submit.cjs",
+    "web/app.js"
+  ],
+  "evidence_scope_refs": [
+    "local:npm-test:2026-08-27:23-of-23-pass",
+    "local:codex-cli-0.145.0-feature-inventory",
+    "local:.trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md",
+    "local:docs/HOST-PROBE-CHECKLIST.md",
+    "local:docs/CLAUDE-HOST-PROBE-CHECKLIST.md",
+    "official:https://learn.chatgpt.com/docs/hooks",
+    "official:https://learn.chatgpt.com/docs/app-server",
+    "official:https://support.claude.com/en/articles/13837440-use-plugins-in-claude",
+    "official:https://code.claude.com/docs/en/hooks",
+    "official:https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx"
+  ],
+  "impact_scope": {
+    "affected_node_refs": [
+      "TG-L2-PUBLIC-AI-EXCHANGE",
+      "TG-L3-PUBLIC-AI-EXCHANGE-KERNEL",
+      "TG-L3-CODEX-BRIDGE-SPIKE",
+      "TG-L4-HOST-ACTIVE-TURN-PROBE"
+    ],
+    "blocked_scope": [
+      "TG-L3-CODEX-BRIDGE-SPIKE",
+      "TG-L4-HOST-ACTIVE-TURN-PROBE"
+    ],
+    "unaffected_scope": [
+      "TG-L2-PLAYABLE-TABLE",
+      "TG-L3-MULTIPLAYER-VERTICAL-SLICE"
+    ],
+    "scope_isolation": {
+      "status": "proven",
+      "minimum_dependency_closure": [
+        "TG-L2-PUBLIC-AI-EXCHANGE",
+        "TG-L3-PUBLIC-AI-EXCHANGE-KERNEL",
+        "TG-L3-CODEX-BRIDGE-SPIKE",
+        "TG-L4-HOST-ACTIVE-TURN-PROBE"
+      ],
+      "basis_refs": [
+        "PROJECT-PLAN-TREE.md#当前恢复点",
+        "docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md#public-ai-rules",
+        ".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md#阻塞与非阻塞边界"
+      ]
+    }
+  },
+  "route_permission": {
+    "requested_route_ref": "TG-L3-PUBLIC-AI-EXCHANGE-KERNEL",
+    "decision": "allowed",
+    "basis_refs": [
+      "PROJECT-DECISION-LOG.md#DEC-20260827-023",
+      "PROJECT-PLAN-TREE.md#当前恢复点",
+      ".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md#阻塞与非阻塞边界"
+    ]
+  },
+  "required_unknowns": [
+    {
+      "unknown_id": "U-TG-CODEX-CURRENT-TASK-ACTIVE-WAKE",
+      "entity_id": "UE-TG-PUBLIC-AI-EXCHANGE",
+      "owner": "evidence_unknown",
+      "status": "open",
+      "impact_scope_refs": ["TG-L3-CODEX-BRIDGE-SPIKE", "TG-L4-HOST-ACTIVE-TURN-PROBE"],
+      "blocking_boundary": "route_implementation",
+      "blocked_scope_refs": ["TG-L3-CODEX-BRIDGE-SPIKE", "TG-L4-HOST-ACTIVE-TURN-PROBE"],
+      "evidence_status": "partial",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": null
+    },
+    {
+      "unknown_id": "U-TG-CLAUDE-COWORK-ACTIVE-WAKE",
+      "entity_id": "UE-TG-PUBLIC-AI-EXCHANGE",
+      "owner": "evidence_unknown",
+      "status": "open",
+      "impact_scope_refs": ["TG-L4-HOST-ACTIVE-TURN-PROBE"],
+      "blocking_boundary": "route_implementation",
+      "blocked_scope_refs": ["TG-L4-HOST-ACTIVE-TURN-PROBE"],
+      "evidence_status": "partial",
+      "user_consequence_ref": null,
+      "recommendation_ref": null,
+      "resolution_ref": null
+    }
+  ],
+  "navigation_context": {
+    "plan_tree_status": "blocked",
+    "active_path": ["TG-L0-PRODUCT", "TG-L1-PUBLIC-AI-PLAY", "TG-L2-PUBLIC-AI-EXCHANGE"],
+    "active_node_ref": "TG-L2-PUBLIC-AI-EXCHANGE",
+    "current_next_leaf_ref": null,
+    "reliable_boundary": {
+      "earliest_trustworthy_ref": "TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-D",
+      "first_invalid_or_unverified_ref": "TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-implementation-and-evidence-revalidation",
+      "first_invalid_or_unverified_state": "unverified"
+    },
+    "subject_route_relations": [
+      {
+        "subject_ref": "TG-L3-PUBLIC-AI-EXCHANGE-KERNEL",
+        "relation": "active_path_descendant",
+        "basis_refs": ["PROJECT-PLAN-TREE.md#当前恢复点"]
+      }
+    ],
+    "basis_refs": ["PROJECT-PLAN-TREE.md#当前恢复点"]
+  },
+  "project_route_reads": [
+    {
+      "ref": "PROJECT-PLAN-TREE.md",
+      "sha256": "b9c542411747e2c74866c38793af61e7ae6576b232d536c9b47dfc306606f297",
+      "role": "plan_tree_owner"
+    }
+  ],
+  "required_authority_findings": []
+}

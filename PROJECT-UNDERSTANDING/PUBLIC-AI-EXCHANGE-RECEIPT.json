@@ -1,0 +1,37 @@
+{
+  "receipt_schema": "dual-ai.understanding-artifact-receipt.v4",
+  "understanding_entity_id": "UE-TG-PUBLIC-AI-EXCHANGE",
+  "revision_id": "PI-TG-PUBLIC-AI-EXCHANGE-R1",
+  "language": "zh-CN",
+  "runtime_profile": "adaptive",
+  "runtime_profile_source": "adapter_default",
+  "artifact_producer_id": "tokengame-public-ai-understanding-generator",
+  "generation_context": {
+    "context_id": "UGC-TG-PUBLIC-AI-EXCHANGE-R1",
+    "sha256": "d06b1849879e9554fd46a0509afcd6938c4e5654fd8414f55aace5f5e6b7b4f6"
+  },
+  "projection_refs": {
+    "human_brief_ref": "PUBLIC-AI-EXCHANGE.md",
+    "ai_working_contract_ref": "PUBLIC-AI-EXCHANGE-AI.json",
+    "evidence_appendix_refs": ["PUBLIC-AI-EXCHANGE-EVIDENCE.md"]
+  },
+  "projection_sha256": {
+    "human_brief_ref": "c2597a55f9f97dd6cda792185142a1ae6d204557adf1bd66d7bf3e9bf94b67c5",
+    "ai_working_contract_ref": "1c387149fa069d3aeea41f7ad92f69392605687001dbb511856a9e137fb843c9",
+    "evidence_appendix_refs": {
+      "PUBLIC-AI-EXCHANGE-EVIDENCE.md": "080ddaedcf2a6abf8297f4ae1a1bcd277370ec372513a61fe8e834b19122d196"
+    }
+  },
+  "owner_reads": {
+    "project_intelligence": {
+      "ref": "project-intelligence.md",
+      "sha256": "913b4580743c08f2b469be191fa5fdee749d1f4094aa661d50e8a19863bf0e3e"
+    },
+    "plan_tree": {
+      "ref": "plan-tree.md",
+      "sha256": "5c5cbca1d001ed72fc1a9b15549a4faefbbd23e5d341bca5f84e08491bd22776"
+    }
+  },
+  "repair_attempts": 1,
+  "reported_status": "repaired"
+}

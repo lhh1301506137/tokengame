@@ -1,0 +1,50 @@
+{
+  "contract_schema": "dual-ai.ai-working-contract.v4",
+  "contract_id": "AIWC-TG-PUBLIC-AI-EXCHANGE-R1",
+  "artifact_producer_id": "tokengame-public-ai-understanding-generator",
+  "understanding_entity": {"entity_id":"UE-TG-PUBLIC-AI-EXCHANGE","semantic_key":"tokengame.public_ai_exchange","identity_status":"owner_anchored","owner_ref":"STATUS.md#project_intelligence"},
+  "revision_id": "PI-TG-PUBLIC-AI-EXCHANGE-R1",
+  "subject": "TokenGame 宿主中立的权威公开交流内核、座位 AI 评估边界与宿主主动唤醒门禁",
+  "projection_refs": {"human_brief_ref":"PUBLIC-AI-EXCHANGE.md","ai_working_contract_ref":"PUBLIC-AI-EXCHANGE-AI.json","evidence_appendix_refs":["PUBLIC-AI-EXCHANGE-EVIDENCE.md"]},
+  "provenance": "mixed_runtime_repository_and_official_evidence",
+  "authority": "primary_ai_professional",
+  "freshness": "current",
+  "time_range": "current_stage",
+  "working_refs": {
+    "current": {"owner":"project_intelligence","ref":"STATUS.md#project_intelligence"},
+    "candidate": null,
+    "plan": {"owner":"plan_tree","ref":"PROJECT-PLAN-TREE.md#当前恢复点"},
+    "result": null,
+    "gap": {"owner":"evidence_owner","ref":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md#阻塞与非阻塞边界"}
+  },
+  "operation_context": {"mode":"bounded_project_write","project_write_policy":"bounded","artifact_output_policy":"create_only","product_work_requested":"yes","authorized_scope_refs":["TG-L3-PUBLIC-AI-EXCHANGE-KERNEL"],"authorization_ref":"current_user_instruction:2026-08-27-continue"},
+  "read_scope_refs": ["PROJECT-DECISION-LOG.md#DEC-20260827-023","PROJECT-PLAN-TREE.md#当前恢复点","STATUS.md#project_intelligence","docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md#public-ai-rules",".trellis/tasks/08-26-public-ai-table-talk/prd.md#public-ai-rules-truth-persistence-result","src/authority/event-store.cjs","src/authority/table-store.cjs","src/authority/server.cjs","plugins/tokengame/hooks/user_prompt_submit.cjs","web/app.js"],
+  "evidence_scope_refs": ["local:npm-test:2026-08-27:23-of-23-pass","local:codex-cli-0.145.0-feature-inventory","local:.trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","local:docs/HOST-PROBE-CHECKLIST.md","local:docs/CLAUDE-HOST-PROBE-CHECKLIST.md","official:https://learn.chatgpt.com/docs/hooks","official:https://learn.chatgpt.com/docs/app-server","official:https://support.claude.com/en/articles/13837440-use-plugins-in-claude","official:https://code.claude.com/docs/en/hooks","official:https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx"],
+  "impact_scope": {
+    "affected_node_refs": ["TG-L2-PUBLIC-AI-EXCHANGE","TG-L3-PUBLIC-AI-EXCHANGE-KERNEL","TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-HOST-ACTIVE-TURN-PROBE"],
+    "blocked_scope": ["TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-HOST-ACTIVE-TURN-PROBE"],
+    "unaffected_scope": ["TG-L2-PLAYABLE-TABLE","TG-L3-MULTIPLAYER-VERTICAL-SLICE"],
+    "scope_isolation": {"status":"proven","minimum_dependency_closure":["TG-L2-PUBLIC-AI-EXCHANGE","TG-L3-PUBLIC-AI-EXCHANGE-KERNEL","TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-HOST-ACTIVE-TURN-PROBE"],"basis_refs":["PROJECT-PLAN-TREE.md#当前恢复点","docs/SEMANTIC-CONFIRMATION-RULES-PUBLIC-AI-EXCHANGE-20260827.md#public-ai-rules",".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md#阻塞与非阻塞边界"]}
+  },
+  "route_permission": {"requested_route_ref":"TG-L3-PUBLIC-AI-EXCHANGE-KERNEL","decision":"allowed","basis_refs":["PROJECT-DECISION-LOG.md#DEC-20260827-023","PROJECT-PLAN-TREE.md#当前恢复点",".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md#阻塞与非阻塞边界"]},
+  "unknowns": [
+    {"unknown_id":"U-TG-CODEX-CURRENT-TASK-ACTIVE-WAKE","entity_id":"UE-TG-PUBLIC-AI-EXCHANGE","owner":"evidence_unknown","status":"open","impact_scope_refs":["TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-HOST-ACTIVE-TURN-PROBE"],"blocking_boundary":"route_implementation","blocked_scope_refs":["TG-L3-CODEX-BRIDGE-SPIKE","TG-L4-HOST-ACTIVE-TURN-PROBE"],"evidence_status":"partial","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":null},
+    {"unknown_id":"U-TG-CLAUDE-COWORK-ACTIVE-WAKE","entity_id":"UE-TG-PUBLIC-AI-EXCHANGE","owner":"evidence_unknown","status":"open","impact_scope_refs":["TG-L4-HOST-ACTIVE-TURN-PROBE"],"blocking_boundary":"route_implementation","blocked_scope_refs":["TG-L4-HOST-ACTIVE-TURN-PROBE"],"evidence_status":"partial","user_consequence_ref":null,"recommendation_ref":null,"resolution_ref":null}
+  ],
+  "invalidation_conditions": ["SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D 被后继合同替代","牌局与交流事件无法形成统一可复盘顺序","假适配器不能覆盖单并发、归并、迟到、OFF 与跨手丢弃","任何宿主适配器把无点击主动唤醒未知冒充为通过","公开投影或 AI 上下文泄露对手底牌、凭据或无关宿主内容"],
+  "readiness": "kernel_route_allowed_host_adapter_delivery_held",
+  "runtime_profile": "adaptive",
+  "runtime_profile_source": "adapter_default",
+  "owner_precedence": {"navigation":"plan_tree","understanding":"project_intelligence","semantic_confirmation":"semantic_alignment"},
+  "authority_findings": [],
+  "navigation_context": {
+    "plan_tree_status":"blocked",
+    "active_path":["TG-L0-PRODUCT","TG-L1-PUBLIC-AI-PLAY","TG-L2-PUBLIC-AI-EXCHANGE"],
+    "active_node_ref":"TG-L2-PUBLIC-AI-EXCHANGE",
+    "current_next_leaf_ref":null,
+    "reliable_boundary":{"earliest_trustworthy_ref":"TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-D","first_invalid_or_unverified_ref":"TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-implementation-and-evidence-revalidation","first_invalid_or_unverified_state":"unverified"},
+    "subject_route_relations":[{"subject_ref":"TG-L3-PUBLIC-AI-EXCHANGE-KERNEL","relation":"active_path_descendant","basis_refs":["PROJECT-PLAN-TREE.md#当前恢复点"]}],
+    "basis_refs":["PROJECT-PLAN-TREE.md#当前恢复点"]
+  }
+}
+
