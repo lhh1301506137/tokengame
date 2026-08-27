@@ -393,10 +393,20 @@ class TableOrchestrator {
   }
 
   // 宿主取走待办意图后自行调用模型，再用 resolveEvaluation 回填。
-  takeIntents() {
-    const intents = this.pendingIntents;
-    this.pendingIntents = [];
-    return intents;
+  //
+  // 传 seatId 就只取走该席的，别席的留在队列里。双宿主部署下这是必需的：取走即消费，
+  // 一方全取会让另一方负责的席位永远等不到意图。不传仍然全取——单宿主与既有编排层
+  // 测试就是这么用的，而「哪个适配器负责哪些席」不是内核该知道的事。
+  takeIntents(input = {}) {
+    if (input.seatId === undefined) {
+      const intents = this.pendingIntents;
+      this.pendingIntents = [];
+      return intents;
+    }
+    const seatId = input.seatId;
+    const taken = this.pendingIntents.filter((intent) => intent.seat_id === seatId);
+    this.pendingIntents = this.pendingIntents.filter((intent) => intent.seat_id !== seatId);
+    return taken;
   }
 
   startEvaluation(input = {}) {

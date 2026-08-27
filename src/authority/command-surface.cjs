@@ -31,6 +31,14 @@ const SEAT_AUTHORIZED = Object.freeze([
   "chat.say",
   "ai.set_mode",
   "ai.hide_local",
+  // AI 回填三件套。双宿主部署里两个适配器都持有传输令牌才能通信，所以传输令牌区分不了
+  // 它们；把关只能落在席位凭据上。ai.resolve 带 public_speech 就是「以该席 AI 的名义
+  // 公开发言」——真人版的 chat.say 一直要凭据，AI 版不要就是冒名洞。
+  // ai.take_intents 取走即消费：不按席位把关，先轮询的一方会把另一方的意图吞掉，
+  // 让对面那些席的 AI 静默。
+  "ai.take_intents",
+  "ai.start",
+  "ai.resolve",
   // 唯一需要凭据的只读命令。它是全系统唯一会吐出底牌的出口，viewerId 就是解锁参数：
   // 不验证就等于谁都能拿别人的 seat_id 读走对手底牌，而「隐藏信息边界」是 L0 定义的
   // 产品核心。公开信息走 view.projection，不需要凭据。
@@ -208,7 +216,8 @@ class CommandSurface {
       // ---------------------------------------------------------------- AI
       // 适配器取走意图 -> 自己调模型 -> ai.start + ai.resolve 回填。
       // 命令面不调模型：它跑在权威侧，不该有出网能力。
-      "ai.take_intents": () => ({ intents: o.takeIntents() }),
+      // 只取走本席的意图。适配器只该看见自己负责那些席的待办。
+      "ai.take_intents": (p) => ({ intents: o.takeIntents({ seatId: p.seat_id }) }),
 
       "ai.start": (p) => ({
         started: o.startEvaluation({

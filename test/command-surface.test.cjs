@@ -259,19 +259,32 @@ test("AI：意图取走后由适配器回填，命令面自己不产生话术", 
   const ctx = surface({ playerCount: 3 });
   begin(ctx);
 
-  const { intents } = ctx.s.dispatch("ai.take_intents");
+  // 现在按席位取：每席各自凭据，只能取走自己那份。
+  const holder = ctx.seats[0];
+  const take = () => ctx.s.dispatch("ai.take_intents", {
+    seat_id: holder.seat_id,
+    recovery_credential: holder.credential,
+  }).intents;
+
+  const intents = take();
   assert.ok(intents.length > 0, "开局必然产生意图");
-  assert.deepEqual(ctx.s.dispatch("ai.take_intents").intents, [], "取走即清空");
+  assert.ok(
+    intents.every((i) => i.seat_id === holder.seat_id),
+    `按席位取只应拿到本席的意图: ${JSON.stringify(intents)}`,
+  );
+  assert.deepEqual(take(), [], "取走即清空");
 
   const intent = intents[0];
   const started = ctx.s.dispatch("ai.start", {
     seat_id: intent.seat_id,
+    recovery_credential: holder.credential,
     context: intent.context,
   });
   assert.equal(typeof started.started.turn_id, "string");
 
   const resolved = ctx.s.dispatch("ai.resolve", {
     seat_id: intent.seat_id,
+    recovery_credential: holder.credential,
     turn_id: started.started.turn_id,
     decision: "public_speech",
     text: "这手我看看",
@@ -334,7 +347,8 @@ test("端到端：开局门禁未满足时 hand.start_if_due 回报原因而不�
 test("端到端：公开发言经命令面进入时间线，并产生可回填的意图", () => {
   const ctx = surface({ playerCount: 3 });
   begin(ctx);
-  ctx.s.dispatch("ai.take_intents");
+  // 只是清干净开局意图，不是在测命令路径；命令面现在按席位取，全清走内核。
+  ctx.s.orchestrator.takeIntents();
 
   const said = ctx.s.dispatch("chat.say", {
     seat_id: ctx.seats[0].seat_id,
@@ -480,4 +494,127 @@ test("隐藏信息：当前行动者能从私密视图拿到合法动作", () =>
   const types = view.legal_actions.map((action) => action.type);
   assert.ok(types.includes("fold"), `行动者应能弃牌，实得 ${JSON.stringify(types)}`);
   assert.ok(types.length > 1, "行动者的选择不应只有一个");
+});
+
+// ---------------------------------------------------------------- AI 席位冒名
+
+// 双宿主部署里两个适配器都必须持有传输令牌才能说话，所以传输令牌区分不了它们。
+// 于是「以某席 AI 的名义公开发言」这件事，必须由该席凭据把关——否则 Codex 侧适配器
+// 可以让 Claude 侧那一席的 AI 说任意话。chat.say（真人以本席名义发言）一直是要凭据的，
+// ai.resolve（AI 以本席名义发言）不要，这个不一致就是洞本身。
+test("授权：ai.resolve 不得让别人以某席 AI 的名义公开发言", () => {
+  const ctx = surface({ playerCount: 3 });
+  begin(ctx);
+
+  const victim = ctx.seats[1];
+  const attacker = ctx.seats[0];
+
+  // 受害席的 AI 开着（默认），并且真的有一个在途回合可被回填。
+  const started = ctx.s.dispatch("ai.start", {
+    seat_id: victim.seat_id,
+    recovery_credential: victim.credential,
+    context: {
+      source_event_id: "evt-manual",
+      source_event_type: "PLAYER_PUBLIC_SPEECH",
+      payload: {},
+    },
+  });
+  const turnId = started.started.turn_id;
+
+  // 攻击者拿自己的凭据配受害者的 seat_id：必须被拒。
+  assert.throws(
+    () => ctx.s.dispatch("ai.resolve", {
+      seat_id: victim.seat_id,
+      recovery_credential: attacker.credential,
+      turn_id: turnId,
+      decision: "public_speech",
+      text: "我这手是垃圾牌，大家随意加注",
+    }),
+    probe("recovery_credential_rejected"),
+    "借席位冒名让别人的 AI 公开发言必须被拒",
+  );
+
+  // 完全不带凭据也必须被拒。
+  assert.throws(
+    () => ctx.s.dispatch("ai.resolve", {
+      seat_id: victim.seat_id,
+      turn_id: turnId,
+      decision: "public_speech",
+      text: "无凭据发言",
+    }),
+    probe("invalid_field"),
+    "ai.resolve 缺凭据必须被拒",
+  );
+
+  // 冒名尝试之后，公开时间线上不得留下任何该席的发言。
+  const timeline = ctx.s.dispatch("view.timeline").timeline;
+  const forged = timeline.filter((entry) => entry.seat_id === victim.seat_id);
+  assert.deepEqual(forged, [], `冒名发言进入了公开时间线: ${JSON.stringify(forged)}`);
+
+  // 本人用自己的凭据仍然可以正常回填。
+  const ok = ctx.s.dispatch("ai.resolve", {
+    seat_id: victim.seat_id,
+    recovery_credential: victim.credential,
+    turn_id: turnId,
+    decision: "silent",
+  });
+  assert.ok(ok.resolved !== undefined, "本人回填应当照常成功");
+});
+
+test("授权：ai.start 与 ai.take_intents 同样要凭据把关", () => {
+  const ctx = surface({ playerCount: 3 });
+  begin(ctx);
+  const victim = ctx.seats[1];
+  const attacker = ctx.seats[0];
+
+  assert.throws(
+    () => ctx.s.dispatch("ai.start", {
+      seat_id: victim.seat_id,
+      recovery_credential: attacker.credential,
+      context: { source_event_id: "e", source_event_type: "PLAYER_PUBLIC_SPEECH", payload: {} },
+    }),
+    probe("recovery_credential_rejected"),
+    "替别人的席位启动 AI 评估必须被拒",
+  );
+
+  // 意图是「该席的 AI 该被唤醒了」这一事实，取走即消费。别人取走等于让该席 AI 静默。
+  assert.throws(
+    () => ctx.s.dispatch("ai.take_intents", {
+      seat_id: victim.seat_id,
+      recovery_credential: attacker.credential,
+    }),
+    probe("recovery_credential_rejected"),
+    "取走别人席位的意图必须被拒",
+  );
+});
+
+// 这条钉的是真正的饿死性质：我取走之后，别席的意图必须还在。
+// 「我没拿到别人的」和「别人还拿得到自己的」是两回事，前者过了后者也可能挂——
+// 双宿主部署里坏的正是后者：先轮询的一方清空队列，对面那些席的 AI 从此静默。
+test("AI：按席位取意图不会饿死另一个适配器负责的席位", () => {
+  const ctx = surface({ playerCount: 3 });
+  begin(ctx);
+
+  const [a, b] = ctx.seats;
+  const take = (seat) => ctx.s.dispatch("ai.take_intents", {
+    seat_id: seat.seat_id,
+    recovery_credential: seat.credential,
+  }).intents;
+
+  const mine = take(a);
+  assert.ok(mine.length > 0, "开局必然给每席产生意图");
+
+  const theirs = take(b);
+  assert.ok(
+    theirs.length > 0,
+    "我取走之后另一席的意图必须还在，否则对面适配器永远等不到唤醒",
+  );
+  assert.ok(
+    theirs.every((i) => i.seat_id === b.seat_id),
+    `另一席只应拿到自己的: ${JSON.stringify(theirs)}`,
+  );
+
+  // 各自都已取空，互不影响。
+  assert.deepEqual(take(a), []);
+  assert.deepEqual(take(b), []);
 });
