@@ -1,5 +1,18 @@
 "use strict";
 
+// SUPERSEDED_BY_SC-TG-L2-PLAYABLE-TABLE-20260827-D
+//
+// 本模块实现的是「固定公开测试桌」语义。新合同把它反转为临时私人房：
+//   1. 四席预先入座、无 Ready 门  ->  2～4 人临时私人房，至少两席明确 Ready 才开局。
+//   2. 令牌预先铸好、无房间绑定    ->  座位归属 + 恢复凭据，120 秒保留窗后吊销。
+//   3. resetTable 要求 player "a"  ->  创建者不因创建而获得任何牌局权威。
+// 新语义在 src/authority/room-store.cjs 中独立实现，本文件不改变行为，仅保留现状
+// 供 server.cjs 的现有 HTTP 面与引擎测试继续通过；收口留待 Codex 归队后处理。
+//
+// 未被反转、仍然有效的部分：src/game/holdem.cjs 的牌局裁决本身。规则 4（亮牌）与
+// 规则 2 的「截止时可 check 则自动 check，否则自动 fold」都由该引擎满足，
+// 见 test/room-store.test.cjs 中对应的验证。
+
 const crypto = require("node:crypto");
 const { ProbeError } = require("./event-store.cjs");
 const { HoldemHand, shuffledDeck } = require("../game/holdem.cjs");
@@ -62,6 +75,8 @@ class TableStore {
       seat.id,
       playerTokens?.[seat.id] || tokenFactory(),
     ]));
+    // SUPERSEDED: 构造即开局。新语义要求 >=2 席明确 Ready 并走 3 秒倒计时，
+    // 见 room-store.cjs 的 setReady / evaluateStart。
     this.startHand();
   }
 
@@ -85,6 +100,7 @@ class TableStore {
 
   resetTable(input = {}) {
     const playerId = this.requirePlayer(input.player_id, input.player_token);
+    // SUPERSEDED: 席位 "a" 的特权。新语义下创建者不因创建获得任何牌局权威。
     if (playerId !== "a") throw new ProbeError("table_reset_not_allowed", 403);
     const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
     // A successful reset changes the current hand id. Keep the fingerprint tied
