@@ -7,6 +7,7 @@
     "table": "node src/run-probe.cjs",
     "probe": "node src/run-probe.cjs",
     "authority": "node src/authority/server.cjs",
+    "core": "node src/run-table-core.cjs",
     "bridge": "node src/bridge/server.cjs",
     "test": "node --test --test-concurrency=1 test/*.test.cjs"
   },
