@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokenGame · 临时私人牌桌</title>
+<link rel="stylesheet" href="/table.css">
+</head>
+<body>
+<!--
+  这个页面只认 /api/view 返回的 tokengame.table-view.v1 契约。它不持有牌局规则、
+  不判断谁该行动、不算合法动作——那些全在权威侧，页面照着画。
+
+  它也拿不到席位凭据：浏览器手里只有一个会话令牌，凭据留在本机协调器进程里。
+-->
+
+<a class="skip-link" href="#table-main">跳到牌桌主区</a>
+
+<header class="topbar">
+  <h1>TokenGame 临时私人牌桌</h1>
+  <p class="topbar-note" id="stack-note">单栈：本页连接宿主中立权威内核</p>
+  <output class="conn" id="conn-state" aria-live="polite">未连接</output>
+</header>
+
+<!-- 入口。建房与加入是同一屏的两条路，不做多步向导：MVP 的入口越短越好复核。 -->
+<main class="entry" id="entry-view">
+  <section class="card" aria-labelledby="create-title">
+    <h2 id="create-title">创建私人牌桌</h2>
+    <p class="hint">创建后你会拿到一个邀请码。没有公开大厅，也没有自动匹配，只有拿到码的人能进。</p>
+    <form id="create-form">
+      <label for="create-player">你的玩家标识</label>
+      <input id="create-player" name="player_id" required autocomplete="off"
+             placeholder="例如 alice" pattern="[A-Za-z0-9_\-]{1,64}"
+             title="字母、数字、下划线或连字符，最多 64 个">
+      <button type="submit" class="primary">创建牌桌</button>
+    </form>
+  </section>
+
+  <section class="card" aria-labelledby="join-title">
+    <h2 id="join-title">用邀请码加入</h2>
+    <p class="hint">邀请码由建房的人给你。加入后你会先看到公开范围说明，确认之后才落座。</p>
+    <form id="join-form">
+      <label for="join-player">你的玩家标识</label>
+      <input id="join-player" name="player_id" required autocomplete="off"
+             placeholder="例如 bob" pattern="[A-Za-z0-9_\-]{1,64}">
+      <label for="join-code">邀请码</label>
+      <input id="join-code" name="invite_code" required autocomplete="off"
+             spellcheck="false" placeholder="粘贴邀请码">
+      <button type="submit" class="primary">加入牌桌</button>
+    </form>
+  </section>
+
+  <p class="entry-error" id="entry-error" role="alert" hidden></p>
+</main>
+
+<!-- 牌桌主屏。默认隐藏，建房或加入成功后才显示。 -->
+<main class="table" id="table-main" hidden>
+
+  <!--
+    公开范围确认。规则 1 要求逐席、进桌前、可见地确认，所以这是一个挡住整屏的
+    对话框而不是角落里的一行小字。未确认时下面的操作全部不可用。
+  -->
+  <section class="scope-gate" id="scope-gate" role="dialog" aria-modal="true"
+           aria-labelledby="scope-title" hidden>
+    <div class="scope-box">
+      <h2 id="scope-title">这一桌上，什么是公开的</h2>
+      <ul class="scope-list">
+        <li>你的公开发言，同桌所有人可见。</li>
+        <li>你座位旁 AI 的公开发言，同桌所有人可见，并且会标注为 AI。</li>
+        <li>你的下注、加注、弃牌等动作，同桌所有人可见。</li>
+        <li>你的底牌只有你自己可见；只在摊牌或你自愿亮牌时才公开。</li>
+        <li>你和你的 AI 之间的私下往来不公开，也不会进入公开时间线。</li>
+        <li>你可以随时把某个玩家、某个 AI 或整个座位在你这一侧隐藏。隐藏只改变你自己看到的画面。</li>
+      </ul>
+      <p class="scope-note">
+        确认之后才落座。不确认可以直接离开，不会占用座位。
+      </p>
+      <div class="scope-actions">
+        <button type="button" class="primary" id="scope-accept">我已了解，确认落座</button>
+        <button type="button" class="ghost" id="scope-decline">先不加入</button>
+      </div>
+      <p class="scope-error" id="scope-error" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <!-- 房间条：邀请码、手数、开局判定原因。 -->
+  <section class="roombar" aria-label="房间状态">
+    <div class="roombar-item">
+      <span class="label">房间</span>
+      <span class="value" id="room-id">—</span>
+    </div>
+    <div class="roombar-item" id="invite-wrap">
+      <span class="label">邀请码</span>
+      <code class="value invite" id="invite-code">—</code>
+      <button type="button" class="ghost tiny" id="copy-invite">复制</button>
+    </div>
+    <div class="roombar-item">
+      <span class="label">第几手</span>
+      <span class="value" id="hand-index">0</span>
+    </div>
+    <div class="roombar-item grow">
+      <span class="label">开局</span>
+      <span class="value" id="start-reason">等待</span>
+    </div>
+    <div class="roombar-item">
+      <span class="label">本机模型</span>
+      <span class="value" id="adapter-state">未接入</span>
+    </div>
+  </section>
+
+  <!-- 牌桌：公共牌、底池、席位。 -->
+  <section class="board-area" aria-label="公共牌与底池">
+    <div class="pot">
+      <span class="label">底池</span>
+      <strong class="pot-value" id="pot-total">0</strong>
+    </div>
+    <ol class="board" id="board" aria-label="公共牌"></ol>
+    <div class="street">
+      <span class="label">阶段</span>
+      <span class="value" id="street">—</span>
+    </div>
+  </section>
+
+  <ol class="seats" id="seats" aria-label="座位"></ol>
+
+  <!-- 行动区。按钮由权威给的 legal_actions 生成，页面不自己推断合法性。 -->
+  <section class="actions" id="actions" aria-label="你的行动">
+    <div class="actions-row" id="action-buttons"></div>
+    <div class="raise-row" id="raise-row" hidden>
+      <label for="raise-amount">加注到</label>
+      <input type="number" id="raise-amount" min="0" step="1" inputmode="numeric">
+      <span class="raise-bounds" id="raise-bounds"></span>
+      <button type="button" class="primary" id="raise-submit">确认加注</button>
+    </div>
+    <p class="deadline" id="action-deadline" aria-live="polite"></p>
+  </section>
+
+  <!-- 座位控制：Ready、暂离、离桌、AI 开关、掉线重连。 -->
+  <section class="seat-controls" aria-label="座位控制">
+    <button type="button" class="primary" id="ready-toggle">我准备好了</button>
+    <button type="button" class="ghost" id="sitout-toggle">本手后暂离</button>
+    <button type="button" class="ghost" id="ai-toggle">关闭我的座位 AI</button>
+    <button type="button" class="ghost" id="reveal-btn" hidden>亮牌</button>
+    <button type="button" class="ghost danger" id="leave-btn">离桌</button>
+    <span class="spacer"></span>
+    <button type="button" class="ghost" id="simulate-disconnect">模拟掉线</button>
+    <button type="button" class="ghost" id="simulate-reconnect" hidden>重新连接</button>
+  </section>
+
+  <!-- 公开时间线。玩家与 AI 气泡样式必须能区分，AI 还要带 AI 标记。 -->
+  <section class="timeline-area" aria-labelledby="timeline-title">
+    <h2 id="timeline-title" class="section-title">公开时间线</h2>
+    <ol class="timeline" id="timeline" aria-live="polite" aria-relevant="additions"></ol>
+    <form class="say-form" id="say-form">
+      <label for="say-text" class="sr-only">公开发言</label>
+      <input id="say-text" autocomplete="off" placeholder="对同桌说点什么（公开可见）">
+      <span class="counter" id="say-counter">0/140</span>
+      <button type="submit" class="primary" id="say-submit">发言</button>
+    </form>
+    <p class="say-error" id="say-error" role="alert" hidden></p>
+  </section>
+
+  <p class="global-error" id="global-error" role="alert" hidden></p>
+</main>
+
+<script src="/table.js"></script>
+</body>
+</html>
