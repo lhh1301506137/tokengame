@@ -641,3 +641,188 @@ reopen_review:
     - old_probe_stack_playwright_rerun
   requires_user_acceptance: yes
 ```
+
+## 2026-08-28：宿主中立适配器合同，与打到第十手以上的自动化验收
+
+承接上一节的复开。这一节做两件事：把宿主适配器的合同从「一份能跑的实现」变成「两份
+带共享底座的合同 + 一套能真的失败的一致性套件」，然后把浏览器验收从第 4 手推到第 11 手。
+
+提交范围 `46d5b5d..0e80395`。
+
+### 一、两份合同，一个共享底座
+
+`src/contract/adapter-contract.cjs` 是底座，两份合同共用：请求/成功/错误三个信封、
+7 类错误映射（覆盖源码里 65 个码）、三层身份（`player_id` / `seat_handle` /
+`authority_id`）、生命周期迁移、能力协商。
+
+为什么是两份而不是一份：人类面（HostCommand/UI）与模型面（SeatModel）的权力不同。
+人类面能确认公开范围、能 ready、能下注；模型面一条都不能。把它们合成一份合同意味着
+权限差别只能靠运行期检查表达，而那种检查一旦漏一条就是模型拿到了下注权限。
+`ADAPTER_ROLES` 按引用指向 `HUMAN_COMMANDS` / `MODEL_COMMANDS`，不拷贝——拷贝会漂移。
+
+内核里不出现宿主专有判断。这一条由测试盯着：`test/adapter-contract.test.cjs` 扫源码
+匹配 `\b(claude|codex|cowork|anthropic)\b`。
+
+扫出来一处：`src/authority/table-store.cjs` 里有个 `name: "Codex` 的牌桌显示名。
+它在一个带 `SUPERSEDED_BY_` 头标记的冻结文件里，是用户可见字符串而不是判断分支。
+没有擅自改它——改用户可见语义不是我这一轮的权限。测试改成按标记豁免，并且钉住：
+带标记的文件有哪两个、其中只有一个真的需要豁免、那处出现不是分支条件。
+重命名列为待裁决项。
+
+### 二、一致性套件的第一版有四个洞
+
+`test-support/adapter-conformance.cjs` 写完之后，我拿 14 个故意坏掉的适配器变体去打它。
+四个洞是这么找出来的：
+
+1. 读命令硬编码成 `view.projection`，那是模型面独有的。于是人类面适配器跑到这条就
+   直接算过，整个信封与身份检查块从来没在人类面上执行过。
+2. 释放检查跑在 `handle_count: 0` 的状态上，所以一个只翻标志位、不清句柄的实现能过。
+3. 释放前后比的是整份 JSON，而 `state` 每次都变，于是这条比较恒真。
+4. 变体的角色从名字前缀推断，`release_keeps_tracked_ids` 因此被派到了错的角色上。
+
+四条都不是「测试写得不够多」，是「写出来的检查跑不到」。跑不到的检查在报告里和通过
+长得一模一样。修法分别是：按角色选读命令、要求实现 `seedForRelease()` 钩子、只比计数
+字段、每个变体显式声明 `roles`。
+
+### 三、谎称有主动唤醒，套件仍然全绿
+
+这是一条真实限度，不是缺陷。套件只验内部一致性，「无点击主动唤醒」只有真实宿主实机
+能证实。所以报告里加了 `unverifiable` 数组：`proactive_wake` 落在那里，带
+`gate: "Gate 5"`。记成不可验证而不是失败，是因为判失败会逼真有这个能力的宿主去少声明。
+
+`CAPABILITIES.proactive_wake` 带 `verified_on_any_host: false`。
+`docs/HOST-ADAPTER-CONTRACT.md` 里有 10 步实机清单，每步标「需要用户点击？」。
+第 5 步是「否——这是被测的那一步」，第 6 步要求三种结果都得记下来。
+
+HostCommandAdapter 没有实现。它要动 `table-web-host.cjs`，而那是一张已经闭合的单栈
+牌桌；两份合同拆成两份还是合成一份也该由 Codex 先裁。列为待裁决项。
+
+### 四、变异测试又指出三处我自己的死代码
+
+- `degradations-include-required` 存活，证明 `!capSpec.required` 恒真。删掉，
+  换一条关于检查顺序的变异。这和上一轮 `sessions.has` 那次同一类。
+- `classify-falls-through-to-first-class` 存活：`invalid_request` 与 `unknown` 的处置
+  相同，所以替换之后覆盖检查变成恒真。补一条类名断言。
+- `constructor-accepts-missing-custody` 存活：我在 `SeatModelAdapter` 里重复了
+  `ModelCommandSurface` 已经做过的检查，报的还是同一个码同一个字段名。删掉重复的那份。
+
+### 五、把验收打到第十手以上，以及五个自己造的缺陷
+
+原先只到第 4 手。跨十手要暴露的是累积状态错误：筹码结转、按钮位轮转、手序号，
+在第二手上对，在第八手上不一定还对。
+
+新增三节：8c 连续打到第 11 手、8d 五种畸形投影、9d 有人跟的全下摊牌。
+每一节都是先跑，再按跑出来的红灯改——五处红灯里有五处是我自己造的：
+
+1. **守恒写成等式必然误报。** 结算后 `stack` 是账本值（赢的已进账）而 `pot` 仍是
+   `settlement.total_pot`，相加把池算了两遍。真实运行的第 7 手上炸出 800+3=803。
+   DOM 里读不到 `in_hand`，所以画面上分不清阶段。改成双边界：上界抓凭空产生，
+   下界抓凭空消失，两个阶段都成立。
+2. **单挑数成了「有多少人动过手」。** 两弃两跟的一手里四个人都动过，于是被算成多人局，
+   而摊牌其实只有两家。第 5 轮运行凑巧出现过一次两人都动的手所以判通过，第 6 轮就红了。
+   一条看牌运气的断言比没有断言更糟：它会教人重跑到绿。改成数「还在这手牌里且没弃牌」
+   （底牌位有牌 = 在这手牌里），由弃牌偏好定死，两轮运行的逐手数字完全一致。
+3. **全下标记挂在 `onNewStreet` 上。** 全下常把一手打在翻牌前收掉，那一手一张公共牌都
+   不发，钩子一次都不触发。`playHand` 加 `onAction`。
+4. **8c 的全下原本有人跟，把 dave 打到 0。** 于是第 9 节在「reload 前 dave 看得到自己
+   两张底牌」上红了。那不是产品缺陷，是我这一节把下游的前置条件打掉了——筹码归零的
+   席位进 sit out 且再也进不了下一手。8c 改成无人跟的全下；有人跟的摊牌另放 9d，
+   破产风险按筹码大小选定：全下方取 carol 之外筹码最少的一席，跟注方取最多的一席，
+   于是只有全下方可能归零，而第 10 节依赖的 carol 一律弃牌。
+5. **畸形投影只有断言没有送达计数。** 路由没命中、或者改错了层（投影嵌在 `body.view`
+   里而不是顶层），页面收到的就是一份完好的投影，于是「页面没停死」恒为真、整节全绿。
+   加了 `delivered` 计数并判它 > 0。
+
+### 六、崩掉的运行在证据目录里留下了上一次的通过
+
+第 7 轮运行死在 `route.fulfill: Route is already handled` 上。路由回调里的抛出是一条
+未处理的拒绝，它绕过 `main` 的 `catch`，`finally` 不跑，`result.json` 写不出来——
+于是目录里留下的是第 6 轮那份。第 6 轮恰好是 `passed: false`，但如果它通过，
+一次崩掉的运行在证据目录里就长得和通过一模一样。
+
+这和上一节的 negctl6 是同一类缺陷，载体从「判定式漏了 aborted」换成「陈旧文件」。
+三处修：路由回调整体包 try（吞下的错误落进 `routeErrors`，由第 13 节结账，只吞不判
+等于开一个静默失败的口子）、开跑前先删 `result.json`、加 `unhandledRejection` 处理器
+（写明原因、删判定文件、退出码 1）。
+
+负控实测：注入一条未处理拒绝 → 退出码 1、`result.json` 不留下、stderr 写明原因。
+
+### 七、判定式抽到 .cjs，否则等于没有测试
+
+8c / 8d / 9d 的判定原本写在 `.mjs` 里，而 `.mjs` 的逻辑单元测试装不进来。上一节的
+「中止却判通过」正是这么漏过去的，所以这次先抽：`chipConservation`、
+`degradationVerdict`、`handCoverage` 三个纯函数进 `test-support/acceptance-result.cjs`，
+`.mjs` 调用它们。`test/multi-hand-verdict.test.cjs` 39 条，
+`test-support/mutations/multi-hand-verdict.json` 41 条变异全部杀掉。
+
+三条负控确认这些测试真的会红：等式式上界（旧写法）→ 2 红；不查送达次数 → 2 红；
+全下只看动作不看画面标记 → 2 红。
+
+一条变异第一次存活：`coverage-target-uses-loose-compare`（`reached < target` 放宽成
+`reached < target - 1`）。原因是我的测试只有「差得远」那一组（到第 6 手），
+而它在两种写法下都判失败。补了边界组：到第 9 手不算达标，刚好第 10 手算达标。
+
+两条变异第一次存活是因为查找串在文件里出现两次，而我的断言只判「存在」：删掉其中
+一处仍然被另一处满足。改成数出现次数。
+
+### 八、边池：如实记为覆盖缺口
+
+浏览器层证不了。投影只给 `pot_total`（`src/host/table-view-model.cjs:456`），
+引擎算出来的 `pots` 分层根本没进 `tokengame.table-view.v1`，DOM 里没有边池可读。
+没有写一条读 `undefined` 的断言——那种断言永远为真。分层由
+`test/holdem-engine.test.cjs`「三个不同深度的 all-in 形成主池和两层边池」与
+`test/cross-hand-stacks.test.cjs`「all-in 与边池结算后的 stack 跨手延续」在单元层钉住。
+是否把分层投影出去供 UI 显示，列为待裁决项。
+
+9d 补上了这条缺口的另一半：有人跟的全下确实走到摊牌、确实把一席打到 0，
+而「筹码归零的席位不带着 0 筹码进下一手」这条 F1 第一次在浏览器层被验过。
+
+```yaml
+review:
+  unit: TG-EU-HOST-ADAPTER-CONTRACT
+  date: 2026-08-28
+  acceptance_label: ai_generated_acceptance
+  commit_range: 46d5b5d..0e80395
+  measured:
+    npm_test: 644_pass_0_fail_0_skipped
+    mutation_gate: 315_killed_0_survived_0_skipped_GATE_PASS
+    browser_acceptance: 201_pass_0_fail_0_console_errors_27_screenshots_hand_12
+    browser_acceptance_consecutive_clean_runs: 3
+    new_mutation_specs:
+      adapter-contract: 34_of_34
+      seat-model-adapter: 14_of_14
+      multi-hand-verdict: 41_of_41
+  negative_controls:
+    conformance_suite_holes_found_by_broken_variants: 4
+    acceptance_verdict_equality_bound: 2_red
+    acceptance_delivery_count_removed: 2_red
+    acceptance_allin_tag_ignored: 2_red
+    unhandled_rejection_injected: exit_1_no_result_json_reason_on_stderr
+  defect_classes:
+    unreachable_check_reads_as_pass: 4
+    dead_condition_proven_by_surviving_mutation: 3
+    test_fault_not_product_fault: 4
+    stale_evidence_file_reads_as_pass: 1
+    vacuous_assertion_no_delivery_proof: 1
+    deal_dependent_assertion: 1
+    my_section_broke_downstream_preconditions: 1
+  host_neutrality:
+    core_scanned_for_host_specific_branches: yes
+    exempted_by_superseded_marker: [src/authority/event-store.cjs, src/authority/table-store.cjs]
+    exemption_actually_needed_by: [src/authority/table-store.cjs]
+    occurrence_is_branch_condition: no
+  deferred_to_user:
+    - host_command_adapter_implementation_requires_touching_closed_single_stack_host
+    - whether_two_contracts_or_one_is_the_right_split
+    - rename_codex_table_display_name_in_superseded_table_store
+    - project_side_pot_layers_into_table_view_v1_for_ui
+    - whether_all_of_test_support_enters_routine_mutation_scope
+  still_unverified:
+    - real_host_gate_5_proactive_wake
+    - four_human_uat
+    - side_pot_layering_in_browser_layer
+  not_covered:
+    - four_player_smoke_every_candidates_frozen_stack
+    - old_probe_stack_playwright_rerun
+  requires_user_acceptance: yes
+```

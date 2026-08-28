@@ -7,7 +7,7 @@
 - 初始化分类：`fresh_init`
 - 框架就绪度：`continue_ready`
 - 当前阶段：`prototype`
-- 当前目标：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；宿主中立权威内核已按这些合同实现并闭合 Codex 复核 F1–F6；新牌桌 UI 已与该内核形成单栈产品闭环，四个隔离浏览器上下文的多人回路已闭合。下一阶段是定义共享 HostAdapter 合同，再实现 Claude 侧适配器；真实宿主主动唤醒与用户体验验收仍未通过。
+- 当前目标：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；宿主中立权威内核已按这些合同实现并闭合 Codex 复核 F1–F6；新牌桌 UI 已与该内核形成单栈产品闭环，四个隔离浏览器上下文的多人回路已闭合。共享 HostAdapter 合同的底座与模型面适配器已实现并过一致性套件，自动化验收已打到第 12 手；HostCommandAdapter 尚未实现（要动已闭合的单栈宿主，且合同拆分待 Codex 裁决）；真实宿主主动唤醒（Gate 5）与四真人 UAT 仍未通过，不得写成已验证。
 - 当前路径：`SC-TG-L0-ROOT-20260827-B`、`SC-TG-L1-HOST-ENTRY-20260827-A`、`SC-TG-L2-SESSION-LAUNCH-20260827-B`、`SC-TG-L2-PLAYABLE-TABLE-20260827-D` 与 `SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D` 是现行已验证语义主链；语义完成不等于相关产品能力已经实现。
 - 裸指令 `继续`：在本次显式语义流程回交后，只授权恢复同一已确认路线的专业刷新与开发；不会扩大产品范围，也不会授权发布、部署或付费服务。
 
@@ -219,6 +219,11 @@ project_intelligence:
         - "【2026-08-28 复开勘误】上面那条「80 条断言全过」与当时的证据一致，但它掩盖了五处「有代码、有按钮、有权威支持，而功能从未成立」的缺口——共同点是它们都不会红：没有失败的测试，没有报错，画面上也看不出异常。80 条断言之所以全过，是因为没有一条走到那些路径上。逐条见 `PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE` 的 `errata`：连接租约不存在（真实关页面/刷新/拔网线之后席位永远显示在线）、自愿亮牌恒假（`can_reveal` 查了一个权威侧不存在的 `settlement.payouts`，按钮一次都没出现过，因此客户端缺参数的缺陷也从未被触发）、同意门在绑定之后而非之前、换绑或改桌规之后同意门再也不出现（`public_scope_confirmed` 算的是「存在过一份确认」）、畸形上游投影让 `/api/view` 回 500 而页面停在上一帧"
         - "【2026-08-28 复开后实测】`npm test` 498/498 通过、fail 0；`npm run gate` MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0 GATE=PASS；浏览器验收 `artifacts/acc-item7-redact` 150 条断言全过、控制台错误 0、四个隔离上下文、打到第 4 手、24 张截图（artifacts/ 被忽略，路径只在本机存在）。新增六个变异规格：connection-lease 16/16、voluntary-reveal 6/6、entry-consent-idempotency 11/11、scope-reconfirmation 12/12、view-model-degradation 7/7、acceptance-result 15/15。不再引用本轮之前的 351/351、122 个变异或 80 条断言作为当前实测"
         - "【2026-08-28 复开后工具修正】变异驱动此前对非 JS 文件一律判 INVALID（`node --check` 认扩展名），于是 HTML 结构与 CSS 规则这两类产品真的依赖的不变量永远不会被评估——报出来是「未评估」而不是「防线有洞」。已按扩展名分流，`web/table/index.html` 与 `table.css` 上的变异现在可判定"
+        - "【2026-08-28 适配器合同与多手验收实测】提交范围 `46d5b5d..0e80395`。`npm test` 644/644 通过、fail 0、skipped 0；`npm run gate` MUTATION_TOTAL=315 KILLED=315 SURVIVED=0 SKIPPED=0 GATE=PASS；浏览器验收 201 条断言全过、控制台错误 0、四个隔离上下文、**打到第 12 手**、27 张截图，连续三轮干净运行。新增三个变异规格：adapter-contract 34/34、seat-model-adapter 14/14、multi-hand-verdict 41/41。验收新增三节：8c 连续打到第 11 手并逐手查筹码守恒、8d 五种畸形投影的有界降级、9d 有人跟的全下摊牌（浏览器层首次验到「筹码归零的席位不带着 0 筹码进下一手」这条 F1）。不再引用本轮之前的 498/498、226 个变异或 150 条断言作为当前实测"
+        - "【2026-08-28 宿主中立底座】`src/contract/adapter-contract.cjs` 是两份合同的共享底座：三个信封、7 类错误映射（覆盖源码 65 个码）、三层身份（`player_id`/`seat_handle`/`authority_id`，`seat_credential` 刻意不在其中）、生命周期迁移、能力协商。`src/host/seat-model-adapter.cjs` 是真实的模型面适配器，过一致性套件。内核里不出现 Claude/Codex 专有判断，由 `test/adapter-contract.test.cjs` 扫源码盯着；唯一命中是 `src/authority/table-store.cjs` 里一个用户可见的牌桌显示名，文件带 `SUPERSEDED_BY_` 冻结标记，未擅自改，列为待裁决项。HostCommandAdapter 未实现：它要动已闭合的 `table-web-host.cjs`，且两份合同的拆分该由 Codex 先裁"
+        - "【2026-08-28 判定式可测性】8c/8d/9d 的判定原本写在 `.mjs` 里，而 `.mjs` 的逻辑单元测试装不进来——装不进来的判定式等于没有测试（上一轮「中止却判通过」正是这么漏过去的）。`chipConservation`/`degradationVerdict`/`handCoverage` 抽进 `test-support/acceptance-result.cjs`，`test/multi-hand-verdict.test.cjs` 39 条盯着，含盯调用点的静态断言"
+        - "【2026-08-28 证据完整性修正】第 7 轮运行死在路由回调的未处理拒绝上，它绕过 `main` 的 `catch`，`finally` 不跑、`result.json` 写不出来，于是目录里留下的是上一轮那份——上一轮恰好通过的话，崩掉的运行看起来和通过一模一样（与 negctl6 同类，载体换成陈旧文件）。三处修：路由回调包 try 且吞下的错误由第 13 节结账、开跑前先删 `result.json`、加 `unhandledRejection` 处理器。负控实测：退出码 1、判定文件不留下、stderr 写明原因"
+        - "【2026-08-28 如实记为缺口】边池分层在浏览器层不可观测：投影只给 `pot_total`（`src/host/table-view-model.cjs:456`），引擎算出的 `pots` 没进 `tokengame.table-view.v1`。没有写读 `undefined` 的断言（那种断言永远为真），由 `test/holdem-engine.test.cjs` 与 `test/cross-hand-stacks.test.cjs` 在单元层覆盖。是否投影出去列为待裁决项"
         - "【2026-08-28 仍未验证】真实宿主 Gate 5（事件驱动主动唤醒）未通过，四真人 UAT 未做。本轮全部证据来自自动化，不能代替实机门禁；主动唤醒不得写成已验证"
       claim_limits:
         - 尚未证明当前 Codex 桌面会渲染插件 MCP UI
@@ -313,6 +318,12 @@ project_intelligence:
     - browser_acceptance:150_pass_0_fail_measured_2026-08-28_after_reopen
     - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,web_host_16,vacuous_3,total_122,survivors_0
     - browser_acceptance:80_assertions_0_console_errors_exit_0_clean_clone_x3
+    - npm_test:644_pass_0_fail_measured_2026-08-28_adapter_contract
+    - mutation_gate:315_killed_0_survived_0_skipped_measured_2026-08-28_adapter_contract
+    - browser_acceptance:201_pass_0_fail_0_console_errors_27_screenshots_hand_12_x3_runs
+    - mutation_specs_added:adapter_contract_34,seat_model_adapter_14,multi_hand_verdict_41
+    - docs/HOST-ADAPTER-CONTRACT.md
+    - commit_range:46d5b5d..0e80395
   protected_semantic_delta: none
   semantic_reconciliation: all_current_mvp_charters_and_protected_rules_aligned
   collaboration_state: implementation_in_progress_on_confirmed_route

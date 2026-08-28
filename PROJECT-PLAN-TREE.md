@@ -429,15 +429,96 @@ plan_tree:
           still_unverified: >-
             真实宿主 Gate 5（事件驱动主动唤醒）仍未验证，四真人 UAT 未做。本轮全部证据来自自动化，
             不能代替实机门禁。
+        - date: 2026-08-28
+          kind: coverage_extension
+          what: >-
+            自动化验收从第 4 手推到第 11 手。跨十手要暴露的是另一类问题：累积状态错误——筹码结转、
+            按钮位轮转、手序号，在第二手上对，在第八手上不一定还对。新增三节，都放在玩家开始离桌
+            （第 10/11 节）之前，那之后桌上凑不出多人局：8c 连续打到第 11 手并逐手查筹码守恒、
+            8d 五种畸形投影的有界降级、9d 有人跟的全下摊牌。
+          measured:
+            browser_acceptance: 201_pass_0_fail_0_console_errors_27_screenshots_hand_12
+            consecutive_clean_runs: 3
+            npm_test: 644_pass_0_fail_0_skipped
+            mutation_gate: 315_killed_0_survived_0_skipped_GATE_PASS
+          my_own_defects_fixed_along_the_way:
+            - "筹码守恒写成等式必然误报：结算后 stack 是账本值而 pot 仍是 settlement.total_pot，相加把池算了两遍，真实运行的第 7 手上炸出 800+3=803。DOM 里读不到 in_hand 所以画面上分不清阶段，改成双边界（上界抓凭空产生、下界抓凭空消失），两个阶段都成立。"
+            - "单挑数成了「有多少人动过手」：两弃两跟的一手里四个人都动过，于是被算成多人局，而摊牌其实只有两家。第 5 轮凑巧出现过一次两人都动的手所以判通过，第 6 轮就红了——一条看牌运气的断言比没有断言更糟，它会教人重跑到绿。改成数「还在这手牌里且没弃牌」（底牌位有牌即在这手牌里），由弃牌偏好定死，两轮逐手数字完全一致。"
+            - "全下标记挂在 onNewStreet 上：全下常把一手打在翻牌前收掉，那一手一张公共牌都不发，钩子一次都不触发。playHand 加 onAction 钩子。"
+            - "8c 的全下原本有人跟，把 dave 打到 0，于是第 9 节在「reload 前 dave 看得到自己两张底牌」上红了。那不是产品缺陷，是这一节把下游前置条件打掉了——筹码归零的席位进 sit out 且再也进不了下一手。8c 改成无人跟的全下；有人跟的摊牌另放 9d，破产风险按筹码大小选定落在非 carol 的一席上。"
+            - "畸形投影只有断言没有送达计数：路由没命中或改错层（投影嵌在 body.view 里而非顶层）时页面收到的是完好投影，于是「页面没停死」恒为真、整节全绿。加了 delivered 计数并判它大于 0。"
+          evidence_integrity_fix: >-
+            第 7 轮运行死在路由回调的未处理拒绝上（route.fulfill: Route is already handled）。
+            那条拒绝绕过 main 的 catch，finally 不跑、result.json 写不出来，于是目录里留下的是
+            第 6 轮那份。第 6 轮恰好 passed:false，但如果它通过，一次崩掉的运行在证据目录里就长得
+            和通过一模一样——与上一节的 negctl6 同类，载体从「判定式漏了 aborted」换成「陈旧文件」。
+            三处修：路由回调整体包 try 且吞下的错误落进 routeErrors 由第 13 节结账（只吞不判等于开一个
+            静默失败的口子）、开跑前先删 result.json、加 unhandledRejection 处理器。
+            负控实测：注入一条未处理拒绝，退出码 1、result.json 不留下、stderr 写明原因。
+          verdict_logic_extracted_for_testability: >-
+            8c/8d/9d 的判定原本写在 .mjs 里，而 .mjs 的逻辑单元测试装不进来——装不进来的判定式等于
+            没有测试（上一节「中止却判通过」正是这么漏过去的）。chipConservation /
+            degradationVerdict / handCoverage 三个纯函数抽进 test-support/acceptance-result.cjs，
+            test/multi-hand-verdict.test.cjs 39 条盯着，含盯调用点的静态断言；
+            multi-hand-verdict 变异 41/41 全杀。
+          f1_first_verified_in_browser: >-
+            9d 让 bob（89）全下、dave（405）跟，摊牌后 bob 归零、桌上总额 797 → 797 一致，
+            且 bob 没有带着 0 筹码进下一手。「筹码归零的席位不带着 0 筹码进下一手」这条 F1
+            此前只有单元测试，这是第一次在浏览器层被验过。
+          honest_coverage_gap: >-
+            边池分层在浏览器层不可观测：投影只给 pot_total（src/host/table-view-model.cjs:456），
+            引擎算出的 pots 没进 tokengame.table-view.v1，DOM 里没有边池可读。没有写一条读 undefined
+            的断言——那种断言永远为真，会让缺口看起来像覆盖。由 test/holdem-engine.test.cjs 与
+            test/cross-hand-stacks.test.cjs 在单元层覆盖；是否投影出去列为待裁决项。
     - id: TG-EU-HOST-ADAPTER-CONTRACT
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:
         - TG-EU-SINGLE-STACK-WEB-TABLE
-      status: planned
+      status: partially_implemented
       unit_kind: contract
       summary: 先定义两个宿主共享的 HostAdapter 合同，再实现任一侧适配器；不把 Claude 特例写进核心。合同的可发命令分类已由 host-surface.cjs 划出雏形，但适配器侧契约尚未成文。
-      implementation_refs: []
-      claim_limit: 未开始。
+      implementation_refs:
+        - src/contract/adapter-contract.cjs
+        - src/host/seat-model-adapter.cjs
+        - test-support/adapter-conformance.cjs
+        - test-support/adapter-simulator.cjs
+        - docs/HOST-ADAPTER-CONTRACT.md
+        - test/adapter-contract.test.cjs
+        - test/adapter-conformance.test.cjs
+        - test/seat-model-adapter.test.cjs
+      progress_2026_08_28:
+        commit_range: 46d5b5d..0e80395
+        done: >-
+          共享底座已成文并实现：三个信封、7 类错误映射（覆盖源码 65 个码）、三层身份
+          （player_id / seat_handle / authority_id，seat_credential 刻意不在其中）、生命周期迁移、
+          能力协商。模型面适配器 SeatModelAdapter 已实现并过一致性套件。一致性套件配 14 个
+          故意坏掉的变体，每个必须至少让一条检查变红。
+        two_contracts_rationale: >-
+          人类面（HostCommand/UI）与模型面（SeatModel）权力不同：人类面能确认公开范围、能 ready、
+          能下注，模型面一条都不能。合成一份意味着权限差别只能靠运行期检查表达，而那种检查漏一条
+          就是模型拿到了下注权限。ADAPTER_ROLES 按引用指向 HUMAN_COMMANDS / MODEL_COMMANDS，
+          不拷贝——拷贝会漂移。
+        host_neutrality_enforced_by_test: >-
+          test/adapter-contract.test.cjs 扫源码，按词边界匹配 claude / codex / cowork / anthropic 四个词。
+          唯一命中是 src/authority/table-store.cjs 里一个用户可见的牌桌显示名，文件带
+          SUPERSEDED_BY_ 冻结标记，是字符串而非判断分支。未擅自改（改用户可见语义不在本轮权限内），
+          测试改为按标记豁免，并钉住：带标记的是哪两个文件、其中只有一个真的需要豁免、
+          那处出现不是分支条件。
+        conformance_suite_own_holes_found_and_fixed: 4
+        measured:
+          npm_test: 644_pass_0_fail_0_skipped
+          mutation_gate: 315_killed_0_survived_0_skipped_GATE_PASS
+          new_mutation_specs: adapter-contract_34_of_34, seat-model-adapter_14_of_14, multi-hand-verdict_41_of_41
+      not_done:
+        - id: host_command_adapter
+          reason: >-
+            要动 src/host/table-web-host.cjs，而那是一张已经闭合的单栈牌桌；两份合同拆成两份
+            还是合成一份带角色字段，也该由 Codex 先裁。列为待裁决项而不是擅自开工。
+      claim_limit: >-
+        底座与模型面适配器可声称已实现并过自动化一致性套件。不得声称 HostCommandAdapter 已存在，
+        也不得声称主动唤醒（Gate 5）已验证——一致性套件只验内部一致性，谎称有这个能力它仍然全绿，
+        所以报告里另有 unverifiable 数组承载它，CAPABILITIES.proactive_wake 带
+        verified_on_any_host: false。
     - id: TG-EU-CLAUDE-HOST-ADAPTER
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:
@@ -471,20 +552,32 @@ plan_tree:
         - .trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md
       blocking_reason: >-
         单栈产品闭环已完成（TG-EU-SINGLE-STACK-WEB-TABLE），但 TG-EU-PROACTIVE-WAKE-SPIKE 未执行，
-        且本门禁自身的两层都还没跑：自动化层要求至少 10 手与故障矩阵、隐私金丝雀，现有浏览器验收只打到
-        第 3 手；真人层要四个真人 45 分钟试玩签字。
-      claim_limit: 两层均未执行。自动化层不能顶替真人层签字，模拟席或一人多窗口不能计入真人签字。
+        真人层也还没跑：要四个真人 45 分钟试玩签字。
+      automation_layer_progress_2026_08_28: >-
+        自动化层的手数要求已达成：浏览器验收现在打到第 12 手（此前第 3 至 4 手），201 条断言全过、
+        控制台错误 0、四个隔离上下文、27 张截图、连续三轮干净运行。故障矩阵已覆盖：五种畸形投影的
+        有界降级（带送达计数，否则整节恒真）、真实 reload、真实关闭上下文、网络中断与 120 秒保留窗
+        恢复、陈旧版本号撞 409、入口幂等探针、有人跟的全下摊牌与筹码归零后的席位处理。
+        隐私金丝雀与逐查看者本地隐藏另在第 8 节。
+      automation_layer_still_missing: >-
+        边池分层在浏览器层不可观测（投影只含 pot_total），如实记为缺口，由单元层覆盖。
+        自动化层全部结果来自 simulated 模型适配器，不含任何真实宿主能力。
+      claim_limit: >-
+        自动化层的手数与故障矩阵要求已达成，真人层未执行。自动化层不能顶替真人层签字，
+        模拟席或一人多窗口不能计入真人签字。
   active_node: TG-L3-MULTIPLAYER-VERTICAL-SLICE
   current_next_leaf: TG-EU-HOST-ADAPTER-CONTRACT
   current_execution_unit_ref: PROJECT-PLAN-TREE.md#TG-EU-HOST-ADAPTER-CONTRACT
   reliable_boundary:
     earliest_trustworthy_node_or_checkpoint: TG-EU-SINGLE-STACK-WEB-TABLE@eef01e9
-    first_invalid_or_unverified_node: TG-EU-HOST-ADAPTER-CONTRACT
+    first_invalid_or_unverified_node: TG-EU-CLAUDE-HOST-ADAPTER
     boundary_meaning: >-
-      八个执行单元有实现、自动化测试与变异测试证据，产品闭环另有四上下文浏览器验收，止于此。
-      共享适配器合同、Claude 适配器、无点击主动唤醒与可玩性门禁均无证据，不得按已通过对待。
-      特别地：浏览器验收用的是 simulated 模型适配器，它证明 UI 到权威这条链路，不证明任何
-      真实宿主能力。
+      八个执行单元有实现、自动化测试与变异测试证据，产品闭环另有四上下文浏览器验收（现已到第 12 手）。
+      TG-EU-HOST-ADAPTER-CONTRACT 部分实现：共享底座与模型面适配器有实现、一致性套件与变异证据；
+      HostCommandAdapter 未实现，止于此。Claude 适配器、无点击主动唤醒与可玩性门禁的真人层均无证据，
+      不得按已通过对待。特别地：浏览器验收与一致性套件用的都是 simulated 适配器，它们证明 UI 到权威
+      这条链路与合同的内部一致性，不证明任何真实宿主能力——谎称有主动唤醒，一致性套件仍然全绿，
+      所以那一项由 unverifiable 数组单独承载。
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
   next_owner: primary_ai_execute_TG-EU-HOST-ADAPTER-CONTRACT

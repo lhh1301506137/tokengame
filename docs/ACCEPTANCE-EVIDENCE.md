@@ -2,6 +2,191 @@
 
 本文件按批次累积，最新在前。每节自带日期与范围；旧节按其原范围保留，不因新节通过而改写。
 
+## 宿主中立适配器合同 + 打到第十手以上的验收（2026-08-28，Asia/Shanghai）
+
+范围 `TG-EU-HOST-ADAPTER-CONTRACT`，提交范围 `46d5b5d..0e80395`。
+下一节那份记录按其原范围保留，本节是补充，不改写它。
+
+### 本轮实测结果
+
+- `npm test`：644/644 通过、0 失败、0 跳过（`ℹ tests 644` / `ℹ pass 644` / `ℹ fail 0`
+  / `ℹ skipped 0`）。
+- `npm run gate`：`MUTATION_TOTAL=315 KILLED=315 SURVIVED=0 SKIPPED=0` / `GATE=PASS`。
+- 浏览器验收：**201 条断言全过、控制台错误 0、四个隔离 Chromium 上下文、打到第 12 手、
+  27 张截图**。连续三轮干净运行（第 8、9、10 轮），逐手数字一致。
+- 新增三个变异规格，全部 0 存活 0 未评估：`adapter-contract` 34/34、
+  `seat-model-adapter` 14/14、`multi-hand-verdict` 41/41。
+
+复现命令（与门禁同一口径）：
+
+```
+npm test
+npm run gate
+node test-support/table-web-acceptance.mjs
+```
+
+`npm test` 会忽略文件参数，跑单个文件用
+`node --test --test-concurrency=1 test/<名>.test.cjs`。
+
+### 验收从第 4 手推到第 11 手
+
+原先只到第 4 手。跨十手要暴露的是另一类问题：累积状态错误——筹码结转、按钮位轮转、
+手序号，在第二手上对，在第八手上不一定还对。
+
+新增三节，都在玩家开始离桌（第 10/11 节）之前，那之后桌上凑不出多人局：
+
+| 节 | 内容 | 断言数 |
+| --- | --- | --- |
+| 8c | 连续打到第 11 手，每手换一种形状，逐手查筹码守恒 | 20 |
+| 8d | 五种畸形投影下的有界降级 | 18 |
+| 9d | 有人跟的全下摊牌，以及筹码归零之后 | 6 |
+
+8c 的三种形状按手轮换，两轮运行的逐手争池家数完全一致（形状 1 → 2 家，形状 2 → 4 家，
+形状 0 → 2 家）：**单挑与多人局的覆盖由弃牌偏好定死，不看发牌运气**。
+
+### 筹码守恒用双边界，不用等式
+
+等式在这里必然误报。`#chips` 与 `#pot-total` 的语义按阶段切换
+（`src/host/table-view-model.cjs:180-192`、`src/game/holdem.cjs:782`）：
+
+- **手内**：`stack` 是引擎值（下注已扣），`pot` 是争夺中的池，两者相加守恒。
+- **结算后**：`stack` 是账本值（赢的已进账），`pot` 仍是 `settlement.total_pot`，
+  相加等于把池算两遍。
+
+DOM 里读不到 `in_hand`，所以画面上分不清阶段。第一版写成等式，在真实运行的第 7 手上
+炸出 `800 + 3 = 803`。改成双边界：上界抓凭空产生，下界抓凭空消失，两个阶段都成立。
+第 9d 节读的是手间账本值、池已分完，那里用等式（797 → 797 实测一致）。
+
+### 五种畸形投影的实际反应
+
+`/api/view` 的响应被逐种改写，每种都记送达次数。**没有送达计数这一节可能什么都没测到**：
+路由没命中、或者改错了层（投影嵌在 `body.view` 里而不是顶层），页面收到的就是一份完好
+投影，于是「页面没停死」恒为真、整节全绿。
+
+| 畸形 | 送达 | 页面反应 |
+| --- | --- | --- |
+| `seats` 不是数组 | 2–3 次 | 错误条：`view.seats.find is not a function` |
+| `seats` 里混进 null | 2–3 次 | 错误条：`Cannot read properties of null (reading 'is_viewer')` |
+| `timeline` 不是数组 | 2 次 | 静默退到默认值，保留上一帧 |
+| `hand` 整个缺失 | 2–3 次 | 静默退到默认值（可选链兜住） |
+| 整份投影是 null | 2–3 次 | 错误条：`Cannot read properties of null (reading 'ok')` |
+
+两条正当的降级路都出现了：`render` 抛错 → `refresh` 的 `catch` → `#global-error` 显示；
+或者字段本来带可选链与默认值 → 静默退到合理值。判据不是「画面正常」——畸形投影下画面
+本来就该退化。判的是四件事：真的送到了页面、页面没整体停死、没把玩家打回入口页、
+坏响应过去之后不刷新也能自己恢复（错误条也自己收起）。
+
+**不允许「五种全静默」**：那时坏投影的唯一表现是一张不动的旧牌桌，而那比一张空桌子更糟
+——空桌子能看出问题，不动的旧桌子看起来是真的。
+
+一处产品观察，未改：错误条直接显示 JS 的 TypeError 原文
+（`view.seats.find is not a function`）。这是给玩家看的界面，改文案属于用户可见语义，
+列为待裁决项而不是擅自改。
+
+### 有人跟的全下：破产风险是选定的，不是碰运气
+
+跟注的全下会按牌力把一席打到 0，而筹码归零的席位进 sit out 且再也进不了下一手
+（`test/cross-hand-stacks.test.cjs` 的两条 F1）。破产的是谁取决于发牌，
+而第 9 到 11 节各自依赖 dave / carol / bob 还在牌里。
+
+第一版没想到这一点：8c 的全下有人跟，把 dave 打到 0，于是第 9 节在
+「reload 前 dave 看得到自己两张底牌」上红了。**那不是产品缺陷，是这一节把下游的前置
+条件打掉了。** 所以拆成两处：
+
+- 8c 的全下**没人跟**（其余人全弃），只走全下按钮与全下标记，不改变谁有筹码。
+- 9d 专门做**有人跟**的摊牌，风险按筹码大小选定：全下方取 carol 之外筹码最少的一席
+  （跟注方覆盖得住，所以只有全下方可能归零），跟注方取筹码最多的一席，
+  carol 一律弃牌（第 10 节要她「排定本手后暂离」，一个已在 sit out 里的席位走不出那条
+  断言）。
+
+实测（第 8 轮）：bob 89 全下、dave 405 跟、carol 与 alice 弃 → 摊牌 → bob 归零、
+dave 397→497、桌上总额 797 → 797 一致 → **bob 没有带着 0 筹码进下一手**。
+这条 F1 第一次在浏览器层被验过，之前只有单元测试。
+
+### 边池分层在浏览器层不可观测
+
+投影只给 `pot_total`（`src/host/table-view-model.cjs:456`），引擎算出来的 `pots` 分层
+根本没进 `tokengame.table-view.v1`，所以 DOM 里没有边池可读。
+
+**没有写一条读 `undefined` 的断言**——那种断言永远为真，会让覆盖缺口看起来像覆盖。
+如实记为缺口，由单元层覆盖：`test/holdem-engine.test.cjs`「三个不同深度的 all-in 形成
+主池和两层边池并分别支付合资格赢家」与 `test/cross-hand-stacks.test.cjs`
+「F1：all-in 与边池结算后的 stack 跨手延续」。是否把分层投影出去供 UI 显示，
+列为待裁决项。
+
+### 崩掉的运行曾在证据目录里留下上一次的通过
+
+第 7 轮运行死在 `route.fulfill: Route is already handled` 上。路由回调里的抛出是一条
+未处理的拒绝，它绕过 `main` 的 `catch`，`finally` 不跑、`result.json` 写不出来，
+于是目录里留下的是第 6 轮那份。第 6 轮恰好是 `passed: false`，但**如果它通过，
+一次崩掉的运行在证据目录里就长得和通过一模一样**。
+
+这和上一节的 negctl6 是同一类缺陷，载体从「判定式漏了 aborted」换成「陈旧文件」。三处修：
+
+1. 路由回调整体包 `try`。吞下的错误落进 `routeErrors`，由第 13 节结账——
+   只吞不判等于给自己开一个静默失败的口子。
+2. 开跑前先删 `result.json`。
+3. 加 `unhandledRejection` 处理器：写明原因、删判定文件、退出码 1。
+
+负控实测：注入一条未处理拒绝 → `node 退出码=1`、`result.json` 已不存在、
+stderr 写明「未处理的拒绝，本次运行不算通过」。
+
+### 判定式抽到 .cjs，否则等于没有测试
+
+8c / 8d / 9d 的判定原本写在 `.mjs` 里，而 `.mjs` 的逻辑单元测试装不进来。上一节的
+「中止却判通过」正是这么漏过去的。三个纯函数进 `test-support/acceptance-result.cjs`：
+`chipConservation`、`degradationVerdict`、`handCoverage`，`.mjs` 调用它们，
+`test/multi-hand-verdict.test.cjs` 39 条测试盯着（包含盯调用点的静态断言，
+抽出来又不用等于测了一份没人跑的代码）。
+
+三条负控确认这些测试真的会红：
+
+| 负控 | 结果 |
+| --- | --- |
+| 守恒改回等式式上界（第一版写法） | 30 项：pass 28 / fail 2 |
+| 不查送达次数 | 30 项：pass 28 / fail 2 |
+| 全下只看动作不看画面标记 | 30 项：pass 28 / fail 2 |
+
+### 适配器合同的一致性套件
+
+`test-support/adapter-conformance.cjs` 对两个角色各跑一遍内部一致性检查，
+`test-support/adapter-simulator.cjs` 提供 14 个故意坏掉的变体，每个变体必须至少让一条
+检查变红。这套变体找出了**套件自己的四个洞**（详见 `REVIEW-LOG.md` 同日一节）：
+硬编码的读命令、跑在空状态上的释放检查、恒真的整份 JSON 比较、按名字前缀推断的角色。
+
+四个洞都不是「测试写得不够多」，是「写出来的检查跑不到」。
+**跑不到的检查在报告里和通过长得一模一样。**
+
+### 仍未验证的部分
+
+- **真实宿主 Gate 5（无点击主动唤醒）：未验证。** 一致性套件只验内部一致性，
+  谎称有这个能力它仍然全绿——这是真实限度，不是缺陷。所以报告里有 `unverifiable` 数组，
+  `proactive_wake` 落在那里并带 `gate: "Gate 5"`；`CAPABILITIES.proactive_wake` 带
+  `verified_on_any_host: false`。10 步实机清单在 `docs/HOST-ADAPTER-CONTRACT.md`，
+  每步标「需要用户点击？」。`SAME_VISIBLE_TASK_SPIKE_V1` 尚未执行，两个宿主都未验证。
+- **四真人 UAT：未做。** 本节全部结果来自脚本化模型适配器
+  （`test-support/scripted-model-adapter.cjs`，`simulated: true`），
+  不能代替真人。
+- **HostCommandAdapter：未实现。** 它要动 `table-web-host.cjs`，而那是一张已经闭合的
+  单栈牌桌；两份合同拆成两份还是合成一份也该由 Codex 先裁。
+- **边池分层的浏览器层观测：不可行**（投影里没有），已如实记为缺口。
+
+### 交用户裁决
+
+1. HostCommandAdapter 的实现是否可以动 `table-web-host.cjs`。
+2. 两份合同拆成两份、还是合成一份带角色字段。
+3. `src/authority/table-store.cjs` 里那个 `name: "Codex` 牌桌显示名是否重命名
+   （文件带 `SUPERSEDED_BY_` 冻结标记，是用户可见字符串而非判断分支）。
+4. 是否把边池分层投影进 `tokengame.table-view.v1` 供 UI 显示。
+5. 畸形投影时错误条是否该显示 JS 的 TypeError 原文。
+6. 是否把 `test-support/` 下所有参与判定的代码都纳入常规变异范围。
+
+### 引用的 artifacts/ 路径不在仓库里
+
+`artifacts/` 整个被 `.gitignore:3` 忽略，零文件被跟踪。本节引用的
+`artifacts/table-web-acceptance/`（27 张截图 + `result.json`）是本机产物。
+复核者按上面的复现命令重新生成即可，数字应当一致。
+
 ## 单栈牌桌复开：补齐合同与实现之间的真实差距（2026-08-28，Asia/Shanghai）
 
 范围仍是 `TG-EU-SINGLE-STACK-WEB-TABLE`。它此前记为 completed、80 条断言全过；下一节那份记录
