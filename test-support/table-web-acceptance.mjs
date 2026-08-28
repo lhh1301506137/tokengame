@@ -474,8 +474,22 @@ async function main() {
       && firstHand.seats.some((s) => s.tags.includes("大盲")));
     check("开手即有底池（盲注已入池）", firstHand.pot > 0, `pot=${firstHand.pot}`);
     // ---- 3. 底牌隔离：这是整个验收里最要紧的一条 ----
+    //
+    // 四页各自按 700ms 轮询、起点互不相同，所以「alice 见到第一手」不等于四页都见到了。
+    // 上面那个 until 只看 alice，早期版本紧接着就读四页，于是在稍慢的机器上 bob /
+    // carol / dave 会差一个 tick——读到的是空桌。
+    //
+    // 等的条件刻意选 handIndex 与 pot：它们与底牌来自同一次同步 DOM 读取，但不依赖
+    // 底牌是否画出来。若等成「等到两张底牌」，这条断言就变成自我实现的了。现在的写法
+    // 下，「页面已显示第一手、盲注已入池，却没有本席底牌」仍然会被判失败。
     const tables = new Map();
-    for (const player of players) tables.set(player.name, await readTable(player.page));
+    for (const player of players) {
+      const table = await until(`${player.name} 自己的页面进入第一手`, async () => {
+        const snapshot = await readTable(player.page);
+        return snapshot.handIndex >= 1 && snapshot.pot > 0 ? snapshot : false;
+      }, { timeout: 15_000 });
+      tables.set(player.name, table);
+    }
 
     const myHole = new Map();
     for (const [name, table] of tables) {
@@ -484,15 +498,24 @@ async function main() {
       check(`${name} 看得见自己的两张底牌`,
         mine.hole.length === 2 && mine.hole.every((c) => c !== "?"),
         `hole=${JSON.stringify(mine.hole)}`);
+      // 空集合会让 every() 无条件成立。上一版就是这样：三页一张牌都没渲染时，
+      // 「只看到别人的暗牌」照样通过，把缺口报成了绿色。断言在无数据时通过比没有
+      // 这条断言更糟——所以先要求真的看到了别人的牌位，再要求它们全是暗的。
       const others = table.seats.filter((s) => !s.isViewer);
+      const otherHole = others.map((s) => s.hole);
       check(`${name} 只看到别人的暗牌`,
-        others.every((s) => s.hole.every((c) => c === "?")),
-        `others=${JSON.stringify(others.map((s) => s.hole))}`);
+        others.length === PLAYERS.length - 1
+        && otherHole.every((hole) => hole.length === 2)
+        && otherHole.every((hole) => hole.every((c) => c === "?")),
+        `others=${JSON.stringify(otherHole)}`);
     }
 
     // 交叉核对：把每个人的底牌拿去别人的整页文本里搜。UI 只要在任何地方泄漏了一次
     // （侧栏、tooltip、aria-label、隐藏节点），这一条就会失败——比只看 .seat-hole 更严。
+    // searched 计数是为了不让这一条空过：某人底牌读成空数组时内层循环一次都不跑，
+    // leaked 仍是 0，于是「没有泄漏」通过——而它其实什么都没搜。
     let leaked = 0;
+    let searched = 0;
     for (const owner of players) {
       const cards = myHole.get(owner.name);
       for (const viewer of players) {
@@ -501,6 +524,7 @@ async function main() {
         for (const card of cards) {
           const rank = card.slice(0, -1);
           const glyph = card.slice(-1);
+          searched += 1;
           // 同时出现点数与花色符号才算命中。单看 "♥" 会被公共牌误伤。
           if (body.includes(`${rank}${glyph}`)) {
             leaked += 1;
@@ -510,11 +534,17 @@ async function main() {
         }
       }
     }
-    if (leaked === 0) ok("四个上下文两两交叉：没有任何一方的底牌出现在别人的整页 DOM 里");
+    // 4 人 × 2 张 × 3 个别人的页面 = 24 次。
+    const expectedSearches = PLAYERS.length * 2 * (PLAYERS.length - 1);
+    check("四个上下文两两交叉：没有任何一方的底牌出现在别人的整页 DOM 里",
+      leaked === 0 && searched === expectedSearches,
+      `已搜 ${searched} 次（应为 ${expectedSearches}），命中 ${leaked} 次`);
 
+    // 同样先要求数量对。少一张就去重，永远都是「互不相同」。
     const allCards = [...myHole.values()].flat();
     check("八张底牌互不相同（不是同一副发给了所有人）",
-      new Set(allCards).size === allCards.length,
+      allCards.length === PLAYERS.length * 2
+      && new Set(allCards).size === allCards.length,
       `cards=${JSON.stringify(allCards)}`);
     artifacts.push(await shot(alice, "04-hole-cards-alice"));
     artifacts.push(await shot(players[1], "04-hole-cards-bob"));
