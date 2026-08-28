@@ -225,7 +225,16 @@ async function createRoom(player) {
   await player.page.click("#create-form button[type=submit]");
   const state = await until(`${player.name} 建房后进入牌桌`, async () => {
     const table = await readTable(player.page);
-    return table.entryVisible === false && table.inviteCode !== "—" ? table : false;
+    // 等第一份视图真的落地，而不只是等 entryVisible 翻面。
+    //
+    // entryVisible 与 inviteCode 都是 enterTable() 同步设的，第一次 /api/view 还在路上
+    // 就已经成立。于是紧接着那条「建房者自己也要过公开范围确认」读到的是 HTML 初始态
+    // hidden=true，报一个不存在的缺陷——实测门在 t+500ms 出现。
+    //
+    // 用 seats 非空作为「视图到了」的判据：座位列表只可能由 render() 填。这不放宽断言，
+    // 门若真的不出现，下面那条 check 照旧失败。
+    return table.entryVisible === false && table.inviteCode !== "—" && table.seats.length > 0
+      ? table : false;
   });
   return state.inviteCode;
 }
