@@ -1,0 +1,101 @@
+{
+  "name": "scope-reconfirmation",
+  "note": "阶段 1 项 6：绑房 / 桌规版本 / 发言限制版本任一变化都要重新确认。原缺陷是 public_scope_confirmed 算的是「存在过一份确认」而不是「存在一份对得上当前这张桌子的确认」，于是换绑或改桌规之后 UI 说已确认，而权威侧 chat.say 一律被拒为 default_public_scope_not_confirmed——页面上没有任何东西解释原因，也没有可以点的东西。三个维度性质不同：前两维权威强制，发言限制那一维权威只记不比对，所以它只进 reason 不进 confirmed。",
+  "test": "test/scope-reconfirmation.test.cjs",
+  "mutations": [
+    {
+      "id": "confirmed-means-exists",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  const confirmed = bindingMatches && rulesMatch;",
+      "replace": "  const confirmed = true;",
+      "note": "退回缺陷本体：只要存在一份确认就算确认，不问它对应哪张桌子。"
+    },
+    {
+      "id": "confirmed-ignores-binding",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  const confirmed = bindingMatches && rulesMatch;",
+      "replace": "  const confirmed = rulesMatch;",
+      "note": "换绑后仍报已确认。权威按 room_binding_id 比对，所以那一席说什么都会被拒。"
+    },
+    {
+      "id": "confirmed-ignores-rules",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  const confirmed = bindingMatches && rulesMatch;",
+      "replace": "  const confirmed = bindingMatches;",
+      "note": "桌规版本变化后仍报已确认。规则 1 明确点了桌规版本这一维。"
+    },
+    {
+      "id": "reason-order-flipped",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  if (!bindingMatches) reason = \"new_room_binding\";\n  else if (!rulesMatch) reason = \"table_rules_changed\";",
+      "replace": "  if (!rulesMatch) reason = \"table_rules_changed\";\n  else if (!bindingMatches) reason = \"new_room_binding\";",
+      "note": "换绑与改桌规同时发生时报桌规。顺序必须确定且以最强的一层为先，否则同一份状态在两次渲染里可能给出不同理由，页面上表现为对话框标题自己变来变去。"
+    },
+    {
+      "id": "limits-change-enters-confirmed",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  return { public_scope_confirmed: confirmed, public_scope_reconfirm_reason: reason };",
+      "replace": "  return { public_scope_confirmed: confirmed && !limitsChanged, public_scope_reconfirm_reason: reason };",
+      "note": "把发言限制版本算进 confirmed。它比权威更严：权威侧 requireConfirmedScope 不比对 limits_version，所以这样说等于告诉 UI「你会被拒」，而实际上不会。confirmed 必须如实等于「权威会不会放行」。"
+    },
+    {
+      "id": "limits-absent-counts-as-changed",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  const limitsChanged = typeof speechLimitsVersion === \"string\"\n    && typeof confirmation.limits_version === \"string\"\n    && confirmation.limits_version !== speechLimitsVersion;",
+      "replace": "  const limitsChanged = confirmation.limits_version !== speechLimitsVersion;",
+      "note": "宿主没报版本时判定为变化。后果是每一席永远看到同意门，而这在只有一个版本的仓里恰好看不出来——只有把「没报」这一路单独测掉才拦得住。"
+    },
+    {
+      "id": "missing-fields-count-as-match",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  const bindingMatches = confirmation.room_binding_id === roomBindingId\n    && typeof roomBindingId === \"string\";",
+      "replace": "  const bindingMatches = confirmation.room_binding_id === roomBindingId;",
+      "note": "两边都是 undefined 时算对上。一份没有 room_binding_id 的确认在权威侧同样对不上，把它当成有效只会让 UI 比权威更宽松——而更宽松的方向正是「说你能发言，其实会被拒」。"
+    },
+    {
+      "id": "other-seats-get-reason",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  if (!isViewer) {\n    return { public_scope_confirmed: null, public_scope_reconfirm_reason: null };\n  }",
+      "replace": "  void isViewer;",
+      "note": "把别席的确认状态和重新确认理由也铺出去。UI 于是有机会替别人显示一个「去确认」按钮，而别人确认了没有不是这个查看者的事。"
+    },
+    {
+      "id": "host-reports-lifecycle-version",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      speechLimitsVersion: this.limits.version ?? null,",
+      "replace": "      speechLimitsVersion: projection.limits_version ?? null,",
+      "note": "宿主取错版本对象：roomState.limits_version 是 TABLE_LIFECYCLE_V1（席位数、保留窗），而权威侧记进确认的是 LIVELY_V1（字素上限、每手条数、启动间隔）。两个字段同名不同义，取错的表现是这道门永远弹或永远不弹，两个方向都不报错。"
+    },
+    {
+      "id": "reason-copy-missing",
+      "file": "web/table/table.js",
+      "find": "  public_limits_changed: \"发言限制（长度、每手条数、AI 启动间隔）的版本变了。请重新过一遍。\",",
+      "replace": "",
+      "note": "少一条文案。表现是对话框第二次出现、措辞和第一次一模一样，玩家无从判断自己是不是刚才点漏了——而这恰好是重新确认最需要说清楚的一刻。"
+    },
+    {
+      "id": "never-confirmed-gets-copy",
+      "file": "web/table/table.js",
+      "find": "const SCOPE_REASONS = {",
+      "replace": "const SCOPE_REASONS = {\n  never_confirmed: \"首次入桌，请先确认。\",",
+      "note": "给首次入桌也加一句解释。正文本身就是那段说明，再顶一句「首次入桌」是废话，而它会把「这次为什么又问你」这个位置占掉。"
+    },
+    {
+      "id": "reason-node-outside-gate",
+      "file": "web/table/index.html",
+      "find": "    <p class=\"scope-reason\" id=\"scope-reason\" hidden></p>",
+      "replace": "",
+      "note": "对话框里没有放理由的元素，于是理由无处显示。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "gate-ignores-reconfirm-reason",
+      "why": "renderScopeGate 里那句 `|| reason !== null` 只在浏览器里可观察，而变异驱动只跑 node --test；web/table/table.js 是经典脚本，不被任何单元测试加载。删掉它的后果是发言限制版本变化时门不出现（那一维 confirmed 仍为 true）。这一条有单独跑出来的隔离负控：artifacts/negctl6c 只回退这一行、其余全为本轮代码，验收恰好卡在「public_limits_changed 让同意门重新出现」等待超时，而前 24 步全过。规格里另外两条针对 table.js 的变异（文案缺失、给 never_confirmed 加文案）能被静态文案测试杀掉，所以留在规格里；这一条不能，如实排除。"
+    },
+    {
+      "id": "authority-enforces-limits-version",
+      "why": "把 limits_version 加进权威侧 requireConfirmedScope 的比对——本轮刻意没做，所以没有对应的变异。规则 3 的触发条件是「实质改变热闹度或公平性的调整」，而「实质」是人的判断，机器只有版本串可比；按版本串强制会让一次非实质的版本号变动也让既有确认失效，那是改变已确认的用户结果，属于待用户裁决项。当前仓里只有一个 LIVELY_V1，所以这条路径在产品上还不可能发生。"
+    }
+  ]
+}

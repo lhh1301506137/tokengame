@@ -83,7 +83,59 @@ function pickHandSource(publicHand, privateHand) {
   return privateHand ?? publicHand ?? null;
 }
 
-function buildSeats({ roomState, publicHand, privateHand, viewerSeatId, aiStates, localHidden }) {
+// 规则 1 与规则 3 的确认状态。
+//
+// 权威侧 requireConfirmedScope 按 (room_binding_id, table_rules_version, seat_id) 比对，
+// 所以 confirmed 必须照着同一份判据算——算成「存在过一份确认」的后果是换绑或改桌规之后
+// UI 说已确认，而每一次 chat.say 都被拒为 default_public_scope_not_confirmed，页面上
+// 没有任何东西解释原因，也没有可以点的东西。
+//
+// 发言限制版本单独一路：权威记它但不比对它（规则 3 说的是「实质改变热闹度或公平性的调整
+// 仍须重新确认」，而「实质」是人的判断，机器只有版本串）。所以它不进 confirmed，只进
+// reason——如实说成「权威会放行，但该重新给玩家看一遍」。
+//
+// 理由的判定顺序是固定的：没确认过 -> 换绑 -> 桌规 -> 发言限制。不定的话同一份状态在两次
+// 渲染里可能给出不同理由，表现为对话框标题自己变来变去。
+function scopeConfirmationState({
+  confirmation,
+  isViewer,
+  roomBindingId,
+  tableRulesVersion,
+  speechLimitsVersion,
+}) {
+  if (!isViewer) {
+    return { public_scope_confirmed: null, public_scope_reconfirm_reason: null };
+  }
+  if (confirmation === null || typeof confirmation !== "object") {
+    return { public_scope_confirmed: false, public_scope_reconfirm_reason: "never_confirmed" };
+  }
+
+  // 权威强制的两维。缺字段一律按对不上处理：一份没有 room_binding_id 的确认在权威侧
+  // 同样对不上，把它当成有效只会让 UI 比权威更宽松。
+  const bindingMatches = confirmation.room_binding_id === roomBindingId
+    && typeof roomBindingId === "string";
+  const rulesMatch = confirmation.table_rules_version === tableRulesVersion
+    && typeof tableRulesVersion === "string";
+  const confirmed = bindingMatches && rulesMatch;
+
+  // 发言限制版本。宿主没报时不判定为变化——它可能还没接上这个字段，而那不该让每一席
+  // 都永远看到同意门。
+  const limitsChanged = typeof speechLimitsVersion === "string"
+    && typeof confirmation.limits_version === "string"
+    && confirmation.limits_version !== speechLimitsVersion;
+
+  let reason = null;
+  if (!bindingMatches) reason = "new_room_binding";
+  else if (!rulesMatch) reason = "table_rules_changed";
+  else if (limitsChanged) reason = "public_limits_changed";
+
+  return { public_scope_confirmed: confirmed, public_scope_reconfirm_reason: reason };
+}
+
+function buildSeats({
+  roomState, publicHand, privateHand, viewerSeatId, aiStates, localHidden,
+  speechLimitsVersion = null,
+}) {
   const hand = pickHandSource(publicHand, privateHand);
   const byPlayer = handSeatByPlayer(hand);
   const seats = roomState?.seats ?? [];
@@ -157,10 +209,22 @@ function buildSeats({ roomState, publicHand, privateHand, viewerSeatId, aiStates
       },
       // 只有自己那一席带公开范围确认状态。别人确认了没有不是查看者的事，
       // 而把它铺给所有席会让 UI 有机会替别人显示一个「去确认」按钮。
-      public_scope_confirmed: isViewer
-        ? aiStates?.[seat.seat_id]?.public_scope_confirmation !== null
-          && aiStates?.[seat.seat_id]?.public_scope_confirmation !== undefined
-        : null,
+      //
+      // 两个字段而不是一个，因为要答的是两个问题：
+      //   public_scope_confirmed        —— 权威会不会放行这一席发言。
+      //   public_scope_reconfirm_reason —— 要不要重新给玩家看一遍那段说明，以及为什么。
+      // 合成一个的后果是发言限制版本变化那一维无处安放：权威放行（所以不能说未确认），
+      // 但规则 3 要求重新确认（所以不能什么都不说）。一个字段兼两职责的教训在别处已经
+      // 付过一次代价，这里不再重演。
+      ...scopeConfirmationState({
+        confirmation: isViewer
+          ? aiStates?.[seat.seat_id]?.public_scope_confirmation ?? null
+          : null,
+        isViewer,
+        roomBindingId: roomState?.room?.room_binding_id ?? null,
+        tableRulesVersion: roomState?.room?.table_rules_version ?? null,
+        speechLimitsVersion,
+      }),
     };
   });
 }
@@ -307,6 +371,11 @@ function build(input = {}) {
     pendingIntentCount = 0,
     modelAdapter = null,
     limits = null,
+    // 发言限制（LIVELY_V1 那一套）的版本串。刻意与 roomState.limits_version 分开取：
+    // 后者来自 RoomStore 的 TABLE_LIFECYCLE_V1（席位数、保留窗），而规则 3 要重新确认的
+    // 是前者（字素上限、每手条数、启动间隔）。两个字段同名不同义，拿错一个会让
+    // 「限制变了吗」这个问题永远答错，而答错的方向是永远弹门或永远不弹。
+    speechLimitsVersion = null,
     // 座位旁气泡的退出时刻要靠它算。缺省 null 而不是 Date.now()：本模块不读时钟，
     // 而一个偷偷读时钟的缺省值会让「投影是纯函数」这句话在某些调用路径上不成立。
     // 不传时座位旁一条都不显示，时间线不受影响——宁可少显示，不要显示一份算错时刻的。
@@ -326,6 +395,7 @@ function build(input = {}) {
     viewerSeatId,
     aiStates,
     localHidden: hidden,
+    speechLimitsVersion,
   });
 
   const seatIndexById = new Map(seats.map((seat) => [seat.seat_id, seat.seat_index]));

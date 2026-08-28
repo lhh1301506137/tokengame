@@ -66,6 +66,12 @@
          aria-labelledby="scope-title" hidden>
   <div class="scope-box">
     <h2 id="scope-title">这一桌上，什么是公开的</h2>
+    <!--
+      重新确认的理由。首次入桌时是空的（正文本身就是说明）；换绑、桌规版本变化、
+      发言限制版本变化时说明是哪一项变了——不说的话玩家看到的是一个第二次出现、
+      措辞一模一样的对话框，无从判断自己是不是刚才点漏了。
+    -->
+    <p class="scope-reason" id="scope-reason" hidden></p>
     <ul class="scope-list">
       <li>你的公开发言，同桌所有人可见。</li>
       <li>你座位旁 AI 的公开发言，同桌所有人可见，并且会标注为 AI。</li>

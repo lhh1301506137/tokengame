@@ -282,11 +282,33 @@ function renderScopeGate(view) {
   const me = view.seats.find((seat) => seat.is_viewer) ?? null;
   // public_scope_confirmed 只在自己那一席上有值。null 表示"还不知道"，不当作未确认——
   // 那会在视图刚建立的一瞬间闪一下对话框。
-  const needsConfirm = me !== null && me.public_scope_confirmed === false;
+  // 两个条件，因为权威强制的和不强制的要分开看：
+  //   public_scope_confirmed === false —— 权威会拒绝这一席发言。必须弹。
+  //   reconfirm_reason !== null        —— 规则 3 那一维。权威放行，但玩家该重看一遍。
+  // 只看前者的话，发言限制版本变化时门不会出现（因为权威放行），而规则 3 要求它出现。
+  const reason = me?.public_scope_reconfirm_reason ?? null;
+  const needsConfirm = me !== null && (me.public_scope_confirmed === false || reason !== null);
   // 有待落座的入口时对话框必须一直在。轮询本来只在 enterTable 之后才起，两者不该同时
   // 成立；写出来是因为「渲染悄悄收起一个正在等玩家回答的对话框」这种缺陷在页面上看不出
   // 原因——玩家只会看到自己点了创建、闪过一个框、然后什么都没发生。
   el("scope-gate").hidden = state.pendingEntry === null && !needsConfirm;
+  renderScopeReason(reason);
+}
+
+// 重新确认的理由。首次入桌不显示：正文本身就是那段说明，再加一句「首次入桌」是废话。
+// 换绑 / 桌规变化 / 限制变化都要显示，否则玩家看到的是一个第二次出现、措辞完全一样的
+// 对话框，无从判断自己是不是点漏了。
+const SCOPE_REASONS = {
+  new_room_binding: "你换到了一张新的牌桌，之前那次确认只对上一张桌子有效。请重新过一遍。",
+  table_rules_changed: "这张桌子的桌规版本变了。之前那次确认对应旧桌规，请重新过一遍。",
+  public_limits_changed: "发言限制（长度、每手条数、AI 启动间隔）的版本变了。请重新过一遍。",
+};
+
+function renderScopeReason(reason) {
+  const node = el("scope-reason");
+  const text = reason === null ? null : SCOPE_REASONS[reason] ?? null;
+  node.textContent = text ?? "";
+  node.hidden = text === null;
 }
 
 // 确认之后才建房 / 才落座，然后立刻把确认记到权威侧。

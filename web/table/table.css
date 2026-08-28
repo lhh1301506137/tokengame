@@ -166,6 +166,15 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   padding: 20px;
   z-index: 40;
 }
+/* 重新确认的理由。比正文更显眼一点：它是「这次为什么又问你」的唯一解释。 */
+.scope-reason {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, .04);
+  font-size: 14px;
+  line-height: 1.5;
+}
 .scope-box {
   background: var(--panel);
   border: 1px solid var(--line);

@@ -186,6 +186,12 @@ function readTable(page) {
         if (node === null || node.hidden === true) return false;
         return node.offsetParent !== null || node.getClientRects().length > 0;
       })(),
+      // 重新确认的理由。空串表示没显示——首次入桌就该是空的。
+      scopeReason: (() => {
+        const node = document.getElementById("scope-reason");
+        if (node === null || node.hidden === true) return "";
+        return node.textContent.trim();
+      })(),
       roomId: text("#room-id"),
       inviteCode: text("#invite-code"),
       handIndex: Number.parseInt(text("#hand-index") ?? "0", 10),
@@ -493,6 +499,9 @@ async function main() {
     // 这三条一起才说明「确认在绑定之前」：对话框已经在了，入口页还在，而服务端那边
     // 什么都没建。少了最后一条就只是「对话框出现过」——改顺序之前那一版同样满足。
     check("确认之前还停在入口页", aliceGate.entryVisible === true);
+    // 首次入桌不显示「为什么又问你」——正文本身就是那段说明。
+    check("首次入桌不显示重新确认理由", aliceGate.scopeReason === "",
+      `scopeReason=${JSON.stringify(aliceGate.scopeReason)}`);
     const duringGate = await sessionCount(alice.page, banner.origin);
     check("确认之前服务端没有建任何会话（合同：确认在绑定之前）",
       duringGate === 0, `sessions=${duringGate}`);
@@ -580,6 +589,52 @@ async function main() {
       roomIds.length === PLAYERS.length
       && roomIds.every((id, _, all) => id === all[0] && id !== "—"),
       `room_id=${JSON.stringify(roomIds)}`);
+
+    // ---- 1c. 绑房 / 桌规 / 发言限制版本变化 -> 重新确认 ----
+    //
+    // 三个维度在真实服务上都不可能在一局中途发生：桌规版本在建房时定下且没有改它的命令，
+    // 换绑要另建一个房而 room.create 会撞 room_already_exists，发言限制版本整仓只有一个
+    // LIVELY_V1。所以这里改写 /api/view 的响应体，让客户端收到一份「版本变了」的投影。
+    //
+    // 为什么用路由改写而不是给产品加一个测试钩子：钩子会在产品里留下一条能让全桌重新确认
+    // 的路，而那正是隐私门最不该有的东西。改写只影响这一个浏览器上下文，服务端一无所知，
+    // 而被检验的是真实的客户端代码路径——render -> renderScopeGate -> renderScopeReason。
+    // 服务端那一半由 test/scope-reconfirmation.test.cjs 在单元层钉住。
+    const reconfirmCases = [
+      { reason: "public_limits_changed", confirmed: true, expect: "发言限制" },
+      { reason: "new_room_binding", confirmed: false, expect: "新的牌桌" },
+      { reason: "table_rules_changed", confirmed: false, expect: "桌规版本" },
+    ];
+    for (const item of reconfirmCases) {
+      await alice.context.route("**/api/view", async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        for (const seat of body.view?.seats ?? []) {
+          if (seat.is_viewer !== true) continue;
+          seat.public_scope_confirmed = item.confirmed;
+          seat.public_scope_reconfirm_reason = item.reason;
+        }
+        await route.fulfill({ response, json: body });
+      });
+      const shown = await until(`${item.reason} 让同意门重新出现`, async () => {
+        const table = await readTable(alice.page);
+        return table.scopeGateVisible && table.scopeReason !== "" ? table : false;
+      }, { timeout: 15_000 });
+      check(`${item.reason}：同意门重新出现并说明是哪一项变了`,
+        shown.scopeReason.includes(item.expect),
+        `scopeReason=${JSON.stringify(shown.scopeReason)}`);
+      await alice.context.unroute("**/api/view");
+      // 版本回到原样之后门必须自己收起来。不收的话玩家被永久挡在一个点了也不消失的
+      // 对话框后面，而那比不弹更糟。
+      await until(`${item.reason} 恢复后同意门收起`, async () => {
+        const table = await readTable(alice.page);
+        return table.scopeGateVisible === false && table.scopeReason === "";
+      }, { timeout: 15_000 });
+    }
+    // public_limits_changed 那一条是三者里唯一权威不强制的：它 confirmed 仍为 true，
+    // 门却必须出现。只看 confirmed 的实现会漏掉它，所以单列一条把这件事说清楚。
+    ok("三个维度各自都能让同意门重新出现，且恢复后自己收起");
+    artifacts.push(await shot(alice, "01c-reconfirm-cleared"));
 
     await until("四席在每个人的画面上都可见", async () => {
       for (const player of players) {

@@ -262,6 +262,11 @@ class TableWebHost {
         simulated: this.modelAdapter.simulated !== false,
       },
       limits: { max_text_graphemes: this.limits.maxGraphemesPerMessage ?? null },
+      // 发言限制的版本串。this.limits 就是 LIVELY_V1（或注入的替代品），也就是权威侧
+      // seat-ai-store 记进确认里的那一份——两处必须取自同一个对象，否则「限制变了吗」
+      // 永远答错。刻意不用 roomState.limits_version：那是 TABLE_LIFECYCLE_V1，管席位数
+      // 和保留窗，与规则 3 要重新确认的东西无关。
+      speechLimitsVersion: this.limits.version ?? null,
       // 座位旁气泡的退出时刻按协调器的时钟算。不传的话 recent_speech 恒为空，
       // 座位旁一条都不显示——测试里注入的假时钟也走这条路，所以退出时刻可判定。
       now: this.now(),
