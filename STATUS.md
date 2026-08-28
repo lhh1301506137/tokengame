@@ -209,7 +209,8 @@ project_intelligence:
         - "已按 D 版合同实现宿主中立权威内核：`room-store.cjs`（房间/席位生命周期）、`seat-ai-store.cjs`（公开 AI 七条规则）、`table-orchestrator.cjs`（咬合三内核、不新增语义）、`action-ledger.cjs`（官方动作幂等账）、`due-work.cjs`（到期驱动）、`command-surface.cjs`/`command-server.cjs`/`host-surface.cjs`（唯一命令词表与进程外传输）、`host/seat-custody.cjs`（凭据本机托管）、`run-table-core.cjs`（进程入口 `npm run core`）"
         - "`npm test` 2026-08-28 实测 351/351 通过、fail 0，工作树与全新克隆两处各跑一次；旧探针栈的 11 项 Codex 桥接回归仍在其中。不再引用历史 23/23 或本轮之前的 336/336"
         - "Codex 实现复核 F1–F6 已逐条闭合，每条都有失败复现、修复与回归测试：F1 `99acd63`、F2 `444607c`、F3 `684d680`+`ffbcf51`、F4 `2e18b94`+`6bf7f30`、F5 `d8caeec`、F6 `fb3f323`；回应文档 `3081d01`"
-        - "七个变异规格在修好的驱动下重跑：f1 15/15、f2 18/18、f3 14/14、f4 14/14、f5 28/28、f6 14/14、web-host-boundary 16/16，合计 119 个变异 0 存活 0 未评估。此前 F3/F4 的 14/14 是假绿，原因是判定用 `grep -E \"^not ok\"` 而 Node 默认 reporter 不输出 TAP，已在 `675a7d3` 修好并在 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md` 更正"
+        - "八个变异规格在修好的驱动下全部重跑：f1 15/15、f2 18/18、f3 14/14、f4 14/14、f5 28/28、f6 14/14、web-host-boundary 16/16、vacuous-empty-collections 3/3，合计 122 个变异 122 杀掉 0 存活 0 未评估。此前 F3/F4 的 14/14 是假绿，原因是判定用 `grep -E \"^not ok\"` 而 Node 默认 reporter 不输出 TAP，已在 `675a7d3` 修好并在 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md` 更正"
+        - "`vacuous-empty-collections.json` 是自查产物，问的是另一个问题：把被断言的集合替换成空数组，整个测试是否仍然通过。判定刻意不是「某条断言是否空过」而是「集合空了是否产生假绿」——三条变异全部 KILLED，说明 holdem / mcp / 协调器三条路径上的 `every()` 都有别的断言兜住"
         - "`test/two-process-table.test.cjs` 已用两个独立 Node 进程在同一份权威状态上打完一手牌，实证 L0 宿主中立性；错凭据进程失败且权威状态不变"
         - "最新 `npm run table` 已验证旧探针栈的权威服务、本地桥、四席观察者零底牌及 Ctrl+C 无监听残留；该栈现已被替代，作为历史证据冻结保留"
         - "新牌桌 UI 已与宿主中立内核形成单栈闭环：`host/table-web-host.cjs`（会话、连接、动作转发、出口泄漏扫描）、`host/table-view-model.cjs`（权威投影 → `tokengame.table-view.v1`）、`run-table-web.cjs`（进程入口 `npm run web`）、`web/table/`（原生 HTML/CSS/JS 牌桌）。浏览器拿不到权威原始事件与秘密，也拿不到席位凭据——凭据留在协调器进程内"
@@ -302,7 +303,7 @@ project_intelligence:
     - docs/CLAUDE-REVIEW-RESPONSE-20260828.md
     - docs/ACCEPTANCE-EVIDENCE.md#四上下文浏览器验收
     - npm_test:351_pass_0_fail_measured_2026-08-28
-    - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,web_host_16,survivors_0
+    - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,web_host_16,vacuous_3,total_122,survivors_0
     - browser_acceptance:80_assertions_0_console_errors_exit_0_clean_clone_x3
   protected_semantic_delta: none
   semantic_reconciliation: all_current_mvp_charters_and_protected_rules_aligned
@@ -379,7 +380,7 @@ capability_inventory:
 
 宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2、可玩牌桌的 Ready/掉线/退出/亮牌规则，以及公开座位 AI 的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏规则，均已分别由用户确认并通过内容寻址校验；旧 Codex 专属 L0/L1/会话、公开测试桌、被动问答章程及其规则转为已替代历史。当前 L0-L2 语义基线为 `confirmed`，不再存在待确认的当前 MVP 产品规则门禁。
 
-Project Intelligence 刷新门禁已于 2026-08-28 通过：宿主中立权威内核按 D 版合同实现，Codex 实现复核 F1–F6 逐条闭合，新牌桌 UI 与同一内核形成单栈闭环。`npm test` 本轮实测 351/351（工作树与全新克隆各一次），七个变异规格合计 119 个变异 0 存活，浏览器验收 80 条断言全过、控制台错误 0、exit 0（工作树四次、全新克隆三次）。此前 F3/F4 的 14/14 属假绿并已更正，理由见 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md`。旧探针栈（`EventStore` / `TableStore` / `server.cjs` / `web/app.js`）按原记录保留为已替代历史，其 Codex 桥接回归仍在测试集中，本轮未重跑该栈的 Playwright 烟测，也不把历史 23/23 冒充本轮实测。
+Project Intelligence 刷新门禁已于 2026-08-28 通过：宿主中立权威内核按 D 版合同实现，Codex 实现复核 F1–F6 逐条闭合，新牌桌 UI 与同一内核形成单栈闭环。`npm test` 本轮实测 351/351（工作树与全新克隆各一次），八个变异规格全部重跑合计 122 个变异 122 杀掉 0 存活，浏览器验收 80 条断言全过、控制台错误 0、exit 0（工作树五次、全新克隆三次）。此前 F3/F4 的 14/14 属假绿并已更正，理由见 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md`。旧探针栈（`EventStore` / `TableStore` / `server.cjs` / `web/app.js`）按原记录保留为已替代历史，其 Codex 桥接回归仍在测试集中，本轮未重跑该栈的 Playwright 烟测，也不把历史 23/23 冒充本轮实测。
 
 本轮浏览器验收自身查出并修掉的缺陷记在 `PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE` 与 `docs/ACCEPTANCE-EVIDENCE.md`，其中两条值得单独记住：全新克隆第一次跑就暴露了工作树连续三次全绿都没暴露的读页竞态；同一份失败产物又暴露出五条在空数据上无条件通过的断言——断言在无数据时通过比没有这条断言更糟，它把缺口报成绿色。
 

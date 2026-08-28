@@ -366,3 +366,119 @@ single_stack_web_table_acceptance:
     - production_auth_or_remote_deployment
   requires_user_acceptance: yes
 ```
+
+## 2026-08-28：交付前自查（不含新功能开发）
+
+按用户指示，在提交 Codex 审查前做一次系统自查，只修补、不推进第四阶段。五个方向逐个实跑，结论如下。
+
+### 一、行尾归一化：不是缺陷
+
+工作树 283 个文件里 31 个含 CRLF，但 `git ls-files --eol` 显示入库侧全部 `i/lf`（唯一例外 `.trellis/.version` 是 `i/none`，无行尾可转）。落在 PI 哈希集内的只有 `plugins/tokengame/.codex-plugin/plugin.json` 一个，且它是 `i/lf w/mixed`——库内 LF、工作树 CRLF。因此全新克隆拿到的是 LF，PI 门禁可复现，不需要改动。
+
+这一条差别是判定的关键：只看工作树会把它报成缺陷，只看 `git status` 又完全看不见它（git 按 `eol=lf` 归一化后比对，认为无差异）。
+
+### 二、PI 收据：一个真实缺口，不归我修
+
+两份收据的哈希全部自己重算，不采信收据自述值。
+
+`CODEX-BRIDGE-RECEIPT.json` 全项通过：生成上下文 `40026d4f…1dca5`、三份投影、两个 `owner_reads` 快照都对得上。
+
+`PUBLIC-AI-EXCHANGE-RECEIPT.json` 的生成上下文 `d06b1849…b7b4f6` 与三份投影都对，但两个 `owner_reads` 快照哈希在全仓 283 个文件里反查不到：
+
+- `project_intelligence` → `project-intelligence.md` → `913b4580743c08f2b469be191fa5fdee749d1f4094aa661d50e8a19863bf0e3e`
+- `plan_tree` → `plan-tree.md` → `5c5cbca1d001ed72fc1a9b15549a4faefbbd23e5d341bca5f84e08491bd22776`
+
+`.dual/` 下只有 `CODEX-BRIDGE-R3-OWNERS/` 与 `CODEX-BRIDGE-R4-OWNERS/`，没有 `PUBLIC-AI-EXCHANGE-R1-OWNERS/`。同一批哈希也出现在 `.dual/PUBLIC-AI-EXCHANGE-GENERATION-CONTEXT.json` 的 `oracle_owner` / `dependency_owner` 里，`provenance: owner_derived_before_generation`，所以收据与生成上下文内部自洽——缺的是那两个快照文件从未随 `343291c` 入库。
+
+反查方法本身用 CB-R4 的两个哈希做过阳性对照，两个都在预期路径命中，方法有效。
+
+不伪造快照。产物由 Codex 生成（`artifact_producer_id: tokengame-public-ai-understanding-generator`），补一份我自己算的内容等于重写 Codex 的 PI 产物。验证器 `validate_understanding_artifacts.py` 属外部框架、不在仓库内，无法本地复跑确认它是否真的校验 `owner_reads`；`343291c` 声称 15 项检查全 pass。交 Codex 裁定。
+
+### 三、空断言排查：查出并修掉一个真实缺陷
+
+按四种危险形状扫描 `test/*.test.cjs` 与 `test-support/*.mjs`，40 个候选逐个判定。判定标准刻意不是「某条断言是否会空过」，而是「集合空了整个测试是否仍然通过」——只有后者产生假绿。
+
+五个单元测试处实测集合非空，断言有效：`holdem-engine.test.cjs:109/110/114`（各 2 个元素 `["fold","call"]`）、`hook-integration.test.cjs:144`（3 条事件）、`room-store.test.cjs:291`（10 条事件）。探针一律照抄测试自己的 fixture 与辅助函数，不另建构造——第一次自己拼牌堆时用了 16 张，被 `invalid_deck_size` 拦下，那正说明重建 fixture 比复用更容易出错。
+
+一个真实缺陷，已修（`472af28`）：
+
+```js
+// 修前：alice 的页面读到空表时立刻通过
+return table.seats.every((seat) => seat.name !== "eve");
+```
+
+这条等待本该证明「拒绝公开范围确认后座位不残留」，而它紧跟 `eve.context.close()`，是全脚本最容易读到空表的位置。改为先要求 `seats.length === 1` 再要求没有 eve。承重性单独证过：空表输入下旧条件 `true`、新条件 `false`；两个正确状态下两者判定一致。
+
+`vacuous-empty-collections.json` 把同一问题在单元测试上问了一遍：把牌局投影的 `seats` 换成空数组，看三条路径的测试是否仍通过。三条全部 KILLED，说明 `holdem` / `mcp` / 协调器上的 `every()` 都有别的断言兜住，无假绿。
+
+余下候选安全的理由记在此以免重查：`command-surface.test.cjs:282/671` 前一行就是 `length > 0`；`seat-ai-store.test.cjs:274` 由 `deepEqual` 钉死 3 个元素；`table-web-acceptance.mjs` 的 620/623 由上方 `until` 保证 `aiBubbles` 非空，431 由 416-422 的 `until(seats.length === 4)` 传递性保证，712 的数组是字面量；`four-player-smoke.mjs` 随旧探针栈冻结。
+
+### 四、文档引用：全部有效
+
+40 份治理与规范文档里 193 个「看起来像仓库路径」的引用逐个核实存在，0 缺失。这一项做全量是因为本轮我自己写错过两处：`src/authority/holdem.cjs`（真身 `src/game/holdem.cjs`，两套栈共用）与 `seat-ai-pump.cjs`（不存在，座位 AI 驱动是 `table-web-host.cjs` 的 `driveOnce()`）。
+
+### 五、数字声明：更新变异总数，历史数字保持原值
+
+八个变异规格全部重跑：f1 15、f2 18、f3 14、f4 14、f5 28、f6 14、web-host-boundary 16、vacuous-empty-collections 3，合计 **122 条变异 122 杀掉 0 存活 0 未评估**。STATUS 与计划树顶部的合计已更新。
+
+`PROJECT-PLAN-TREE.md` 里 `TG-EU-REVIEW-CLOSURE-F1-F6` 节点的 `336/336` 与 `103 变异` **不改**：那是该单元闭合时的实测值，改成 351/122 等于篡改当时实测的内容。同理，历史节里的 23/23 与 11/11 都在各自范围内，保持原样。
+
+### 自查未覆盖
+
+- `four-player-smoke.mjs` 的 10 处 `every()` 未逐个判定（随旧探针栈冻结，不是产品路径）。
+- 未重跑旧探针栈的 Playwright 烟测。
+- 第四阶段（共享 HostAdapter 合同、Claude 侧适配器）按指示未推进。
+
+### 一个待裁定的结构问题
+
+计划树把下一叶写成单数「HostAdapter 合同」，但仓库里事实上需要两份，它们只共享一半形状：**宿主命令适配器**（`HOST_COMMANDS` 唯一词表、席位句柄间接、错误码原样透传、凭据不出进程）与**座位模型适配器**（`evaluate({seat_id, turn_id, context})` → `{decision, text?}`、两段租约各 30 秒与 120 秒、失败落 silent 而非悬住回合、未接真实模型必须 `simulated: true`）。合成一节会让实现者以为满足其一即满足其二。是否拆分涉及已确认产品语义的表述，交用户与 Codex 裁定，我不自行改。
+
+- 裁决：`SELF_AUDIT_COMPLETE`。查出并修掉一个真实空断言缺陷，确认一个不属我范围的 PI 收据缺口，其余四项实测无缺陷。
+
+```yaml
+pre_review_self_audit:
+  acceptance_label: ai_generated_acceptance
+  result: complete
+  directives:
+    - repair_only_no_new_development
+  checks:
+    line_endings:
+      scanned_files: 283
+      worktree_crlf: 31
+      index_non_lf: 1_dot_version_i_none
+      in_pi_hash_set_and_tracked: 1
+      verdict: not_a_defect_fresh_clone_gets_lf
+    pi_receipts:
+      codex_bridge: all_hashes_verified_independently
+      public_ai_exchange:
+        generation_context: verified
+        projections: verified
+        owner_read_snapshots: missing_from_repo
+        reverse_lookup_positive_control: passed
+        disposition: reported_not_fabricated_codex_artifact
+    vacuous_assertions:
+      candidates: 40
+      probed_empirically: 5
+      defects_found: 1
+      defects_fixed: 1
+      fix_commit: 472af28
+      load_bearing_proof: empty_input_old_true_new_false
+    doc_references:
+      docs: 40
+      refs_checked: 193
+      missing: 0
+    numeric_claims:
+      mutation_specs: 8
+      mutations_total: 122
+      mutations_killed: 122
+      mutations_survived: 0
+      historical_values_preserved: [npm_test_336, mutations_103, npm_test_23, npm_test_11]
+  not_covered:
+    - four_player_smoke_every_candidates_frozen_stack
+    - old_probe_stack_playwright_rerun
+    - phase_four_host_adapter_contract
+  open_for_codex:
+    - public_ai_exchange_owner_read_snapshots_absent
+    - host_adapter_contract_singular_vs_two_contracts
+  requires_user_acceptance: yes
+```
