@@ -216,6 +216,10 @@ project_intelligence:
         - "新牌桌 UI 已与宿主中立内核形成单栈闭环：`host/table-web-host.cjs`（会话、连接、动作转发、出口泄漏扫描）、`host/table-view-model.cjs`（权威投影 → `tokengame.table-view.v1`）、`run-table-web.cjs`（进程入口 `npm run web`）、`web/table/`（原生 HTML/CSS/JS 牌桌）。浏览器拿不到权威原始事件与秘密，也拿不到席位凭据——凭据留在协调器进程内"
         - "`test-support/table-web-acceptance.mjs` 用四个隔离浏览器上下文跑通完整回路：建房/邀请码加入 → 逐席公开范围确认 → Ready 与倒计时 → 连续三手无限注德州（跨手筹码延续）→ 玩家公开聊天 → 座位 AI 公开发言与沉默（THINKING/DEGRADED/OFFLINE/OFF 与迟到标注）→ 掉线与 120 秒保留窗恢复 → 暂离 → 离桌 → 逐查看者本地隐藏。2026-08-28 实测 80 条断言全过、控制台错误 0、exit 0；工作树四次、全新克隆三次"
         - "座位 AI 用 `test-support/scripted-model-adapter.cjs` 这个确定性 fake 宿主适配器驱动，覆盖公开/沉默/降级/离线各分支；它证明的是内核与 UI 的咬合，不能据此声称真实宿主模型能力已验证"
+        - "【2026-08-28 复开勘误】上面那条「80 条断言全过」与当时的证据一致，但它掩盖了五处「有代码、有按钮、有权威支持，而功能从未成立」的缺口——共同点是它们都不会红：没有失败的测试，没有报错，画面上也看不出异常。80 条断言之所以全过，是因为没有一条走到那些路径上。逐条见 `PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE` 的 `errata`：连接租约不存在（真实关页面/刷新/拔网线之后席位永远显示在线）、自愿亮牌恒假（`can_reveal` 查了一个权威侧不存在的 `settlement.payouts`，按钮一次都没出现过，因此客户端缺参数的缺陷也从未被触发）、同意门在绑定之后而非之前、换绑或改桌规之后同意门再也不出现（`public_scope_confirmed` 算的是「存在过一份确认」）、畸形上游投影让 `/api/view` 回 500 而页面停在上一帧"
+        - "【2026-08-28 复开后实测】`npm test` 498/498 通过、fail 0；`npm run gate` MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0 GATE=PASS；浏览器验收 `artifacts/acc-item7-redact` 150 条断言全过、控制台错误 0、四个隔离上下文、打到第 4 手、24 张截图（artifacts/ 被忽略，路径只在本机存在）。新增六个变异规格：connection-lease 16/16、voluntary-reveal 6/6、entry-consent-idempotency 11/11、scope-reconfirmation 12/12、view-model-degradation 7/7、acceptance-result 15/15。不再引用本轮之前的 351/351、122 个变异或 80 条断言作为当前实测"
+        - "【2026-08-28 复开后工具修正】变异驱动此前对非 JS 文件一律判 INVALID（`node --check` 认扩展名），于是 HTML 结构与 CSS 规则这两类产品真的依赖的不变量永远不会被评估——报出来是「未评估」而不是「防线有洞」。已按扩展名分流，`web/table/index.html` 与 `table.css` 上的变异现在可判定"
+        - "【2026-08-28 仍未验证】真实宿主 Gate 5（事件驱动主动唤醒）未通过，四真人 UAT 未做。本轮全部证据来自自动化，不能代替实机门禁；主动唤醒不得写成已验证"
       claim_limits:
         - 尚未证明当前 Codex 桌面会渲染插件 MCP UI
         - 安装后的新能力应在新聊天或新 CLI 会话使用；旧会话热激活不作为产品承诺
@@ -303,6 +307,9 @@ project_intelligence:
     - docs/CLAUDE-REVIEW-RESPONSE-20260828.md
     - docs/ACCEPTANCE-EVIDENCE.md#四上下文浏览器验收
     - npm_test:351_pass_0_fail_measured_2026-08-28
+    - npm_test:498_pass_0_fail_measured_2026-08-28_after_reopen
+    - mutation_gate:226_killed_0_survived_0_skipped_measured_2026-08-28_after_reopen
+    - browser_acceptance:150_pass_0_fail_measured_2026-08-28_after_reopen
     - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,web_host_16,vacuous_3,total_122,survivors_0
     - browser_acceptance:80_assertions_0_console_errors_exit_0_clean_clone_x3
   protected_semantic_delta: none

@@ -1,0 +1,118 @@
+{
+  "name": "acceptance-result",
+  "note": "验收结果的判定式。这一条不是产品缺陷，是证据缺陷：artifacts/negctl6/result.json 自称 passed:true，而那次运行是第 25 步超时中止的——判定式 failures.length === 0 在异常终止时一条 failure 都读不到。负控证据的全部价值在于它失败，一份自称通过的负控比没有证据更糟。判定式原先内联在 table-web-acceptance.mjs 里，而 .mjs 单元测试加载不了（两个浏览器 UI 因为同样的原因被排除在变异之外），所以它只能靠跑一次真浏览器才发现是错的；搬进 .cjs 是为了让它落进这个门禁的射程内。",
+  "test": "test/acceptance-result.test.cjs",
+  "mutations": [
+    {
+      "id": "passed-ignores-abort",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    passed: failures.length === 0 && aborted === null,",
+      "replace": "    passed: failures.length === 0,",
+      "note": "缺陷本体。中止与跑完在文件里同形，negctl6 就是这么写出 passed:true 的。"
+    },
+    {
+      "id": "passed-ignores-failures",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    passed: failures.length === 0 && aborted === null,",
+      "replace": "    passed: aborted === null,",
+      "note": "另一半：断言失败但没中止时判为通过。两个条件写在一个 if 里就得分开各杀一次。"
+    },
+    {
+      "id": "passed-always-true",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    passed: failures.length === 0 && aborted === null,",
+      "replace": "    passed: true,",
+      "note": "恒为真。本轮反复撞到的就是这一类，判定式自己也得挡住它。"
+    },
+    {
+      "id": "abort-swallowed-as-null",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    aborted: aborted === null ? null : {",
+      "replace": "    aborted: null && {",
+      "note": "中止原因不落盘。passed 仍为 false，但文件里读不出「卡在哪一步」——诊断只能靠重跑，而重跑未必再现。"
+    },
+    {
+      "id": "abort-loses-stack",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "      stack: aborted.stack ?? null,",
+      "replace": "      stack: null,",
+      "note": "只留 message。超时消息里有标签、没有位置。"
+    },
+    {
+      "id": "abort-message-dropped",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "      message: aborted.message ?? String(aborted),",
+      "replace": "      message: String(aborted),",
+      "note": "String(error) 会带上 \"Error: \" 前缀。这条杀不掉就说明没人核对过消息原文。"
+    },
+    {
+      "id": "steps-ran-padded",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    steps_ran: steps.length,",
+      "replace": "    steps_ran: 150,",
+      "note": "把跑到第几步伪装成跑满。中止的那份文件里这个数字是唯一能读出「后面一条都没跑」的地方。"
+    },
+    {
+      "id": "abort-folded-into-failures",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    failures,",
+      "replace": "    failures: aborted === null ? failures : [...failures, `中止：${aborted.message}`],",
+      "note": "把中止折算成一条断言失败。passed 仍对，但「某条断言不成立」和「后面的断言一条都没跑」是两件事，混起来会让人去查一条根本没跑过的断言。"
+    },
+    {
+      "id": "summary-hides-abort",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (aborted === null) return line;\n  return `${line} 运行在此中止：${aborted.message ?? String(aborted)}`;",
+      "replace": "  return line;",
+      "note": "终端那一行不提中止。人看的就是这一行，它读作「通过 24，失败 0」。"
+    },
+    {
+      "id": "note-drops-simulated-warning",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "      + \"本文件不构成真实宿主主动唤醒已验证的证据。\",",
+      "replace": "      + \"\",",
+      "note": "去掉「不构成真实宿主证据」。这份文件会被当成 Gate 5 的证据引用，那句话是它自己声明射程的地方。"
+    },
+    {
+      "id": "redaction-disabled",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (typeof detail !== \"string\" || detail === \"\") return detail;",
+      "replace": "  if (true) return detail;",
+      "note": "缺陷本体：邀请码原文写进 result.json。artifacts/negctl5 里就有一条真的。"
+    },
+    {
+      "id": "redaction-drops-length",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "      (_match, quote, sep, value) => `${quote}${key}${quote}${sep}[已脱敏 ${value.length} 字]`,",
+      "replace": "      (_match, quote, sep) => `${quote}${key}${quote}${sep}[已脱敏]`,",
+      "note": "脱敏做过头。「拿到了一个 43 字长的邀请码」是断言要说的话，长度一去掉那条断言的产物就读不出所以然了。"
+    },
+    {
+      "id": "redaction-eats-short-values",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "([A-Za-z0-9._~+/-]{6,})\"?`, \"g\"),",
+      "replace": "([A-Za-z0-9._~+/-]{1,})\"?`, \"g\"),",
+      "note": "下界降到 1 会盖住凭据键下的短值——`session_token=null` 变成 `[已脱敏 4 字]`。一条断言失败时印出的往往正是那个 null：「这里本该有凭据而它没有」是根因，盖掉它等于把根因盖掉。真凭据都远长于 6（邀请码 43 字）。第一版这条我写的理由是错的（说它会盖住 sessions=1），而 sessions 不在 CREDENTIAL_KEYS 里，所以那条根本不受影响——变异存活下来正是因为我当时一条对应的断言都没写。"
+    },
+    {
+      "id": "redaction-single-key-only",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  for (const key of CREDENTIAL_KEYS) {\n    // 同时盖 `key=值` 与 JSON 里的 `\"key\":\"值\"`。留下长度，因为「拿到了一个 43 字长的\n    // 邀请码」本身就是断言要说的话，而值不是。",
+      "replace": "  for (const key of [CREDENTIAL_KEYS[0]]) {",
+      "note": "只脱敏 invite_code。session_token 与座位凭据照旧原文落盘——F6 边界上更要紧的恰好是后者。"
+    },
+    {
+      "id": "console-errors-force-fail",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    passed: failures.length === 0 && aborted === null,",
+      "replace": "    passed: failures.length === 0 && aborted === null && totalConsole === 0,",
+      "note": "看着更严，其实是错的：控制台错误由第 12 节的 check 判定，在这里再判一次会让「故意失败」那一节没法自证。多一个条件不等于多一分正确。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "mjs-delegation",
+      "reason": "table-web-acceptance.mjs 是 ESM，node --test 加载不了它，所以「判定式确实被委托出去了、中止确实被 catch 住了」这两条只能靠 test/acceptance-result.test.cjs 末尾那两个静态源码断言守住，不能由变异杀死。负控是手工做的：把 .cjs 判定式退回 failures.length === 0，12 项里红 1；再把 .mjs 的 catch 块整段删掉，12 项里红 1。两次都精确落在对应的那一条上。"
+    }
+  ]
+}

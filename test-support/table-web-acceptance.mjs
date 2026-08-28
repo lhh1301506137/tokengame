@@ -26,6 +26,8 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const resolver = require("./playwright-resolve.cjs");
+// 判定式与摘要行住在 .cjs 里，这样 node --test 也能加载它们。见那个文件的顶注。
+const { buildResult, summarize, redactDetail } = require("./acceptance-result.cjs");
 
 const artifactDir = path.resolve(process.argv[2] ?? "artifacts/table-web-acceptance");
 fs.mkdirSync(artifactDir, { recursive: true });
@@ -38,12 +40,14 @@ function log(message) {
   process.stdout.write(`${message}\n`);
 }
 
-function ok(name, detail = "") {
+function ok(name, rawDetail = "") {
+  const detail = redactDetail(rawDetail);
   steps.push({ name, ok: true, detail });
   log(`  [通过] ${name}${detail ? `　${detail}` : ""}`);
 }
 
-function bad(name, detail) {
+function bad(name, rawDetail) {
+  const detail = redactDetail(rawDetail);
   steps.push({ name, ok: false, detail });
   failures.push(`${name}：${detail}`);
   log(`  [失败] ${name}　${detail}`);
@@ -484,6 +488,8 @@ async function main() {
   // 被记两遍：正常跑完时它在第 12 节记过了，只有中途抛错才轮到 finally 补记。
   let consoleChecked = false;
   let finalHandIndex = 0;
+  // 中止原因。finally 里要拿它做判定，所以只能声明在 try 之外。
+  let aborted = null;
 
   try {
     // ---- 1. 建房、邀请码加入、逐席公开范围确认 ----
@@ -1655,6 +1661,10 @@ async function main() {
       stale.length === 0 ? `${artifacts.length} 张已交叉核对` : stale.join("；"));
 
     finalHandIndex = (await readTable(alice.page)).handIndex;
+  } catch (error) {
+    // 记下来再原样抛出。吞掉它会让退出码变成 0，那是另一种假绿。
+    aborted = error;
+    throw error;
   } finally {
     // 结果无条件落盘，包括脚本中途抛错的情况。第一版把写入放在 try 里，于是一次
     // 异常终止之后我手上只有 "通过 77，失败 3" 这一行、没有失败项——诊断只能靠重跑。
@@ -1671,26 +1681,23 @@ async function main() {
       check("四个上下文的控制台错误合计为 0", totalConsole === 0,
         totalConsole === 0 ? "0" : JSON.stringify(consoleReport));
     }
-    const result = {
-      generated_at: new Date().toISOString(),
-      server: banner,
-      note: "模型适配器是 test-support/scripted-model-adapter.cjs（simulated:true）。"
-        + "本文件不构成真实宿主主动唤醒已验证的证据。",
+    const summaryInput = {
+      banner,
       contexts: PLAYERS.length,
-      hands_reached: finalHandIndex,
-      console_errors: totalConsole,
-      console_detail: consoleReport,
+      finalHandIndex,
       artifacts,
       steps,
       failures,
-      passed: failures.length === 0,
+      consoleReport,
+      totalConsole,
+      aborted,
     };
+    const result = buildResult(summaryInput);
     fs.writeFileSync(path.join(artifactDir, "result.json"),
       `${JSON.stringify(result, null, 2)}\n`);
 
     log("");
-    log(`步骤 ${steps.length}：通过 ${steps.filter((s) => s.ok).length}，`
-      + `失败 ${failures.length}；控制台错误 ${totalConsole}；到第 ${finalHandIndex} 手。`);
+    log(summarize(summaryInput));
     log(`产物：${artifactDir}`);
 
     for (const player of players) {

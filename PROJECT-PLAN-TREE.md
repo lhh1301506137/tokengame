@@ -373,6 +373,10 @@ plan_tree:
         - "浏览器验收 test-support/table-web-acceptance.mjs：80 条断言全过，控制台错误 0，四个隔离 Chromium 上下文，连续打到第 3 手"
         - "npm test 2026-08-28 实测 351/351 pass、0 fail；全新克隆一次、工作树一次"
         - "浏览器验收在全新克隆连跑三次、工作树连跑四次，均 80/80"
+        - "【2026-08-28 复开后实测】npm test 498/498 pass、0 fail"
+        - "【2026-08-28 复开后实测】npm run gate：MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0 GATE=PASS"
+        - "【2026-08-28 复开后实测】浏览器验收 artifacts/acc-item7-redact：150 条断言全过，控制台错误 0，四个隔离上下文，打到第 4 手，24 张截图。artifacts/ 被 .gitignore 忽略，该路径只在本机存在；判定数字誊在 docs/ACCEPTANCE-EVIDENCE.md，那才是记录在案的证据"
+        - "【2026-08-28 复开后新增变异规格】connection-lease 16/16、voluntary-reveal 6/6、entry-consent-idempotency 11/11、scope-reconfirmation 12/12、view-model-degradation 7/7，全部 0 存活 0 未评估"
       commits:
         - 8ad8cac
         - bfaaea5
@@ -383,6 +387,14 @@ plan_tree:
         - 550d719
         - b11528a
         - eef01e9
+        - 0e46add
+        - 560282c
+        - 149f275
+        - 2d89671
+        - 0346d3c
+        - 959a29c
+        - 2e00f01
+        - af0865d
       acceptance_intent:
         - 用确定性 fake 宿主/模型适配器做自动化产品测试，不用假模型结果冒充真实宿主能力
         - 2～4 个隔离浏览器上下文验证，控制台错误必须为 0
@@ -398,6 +410,24 @@ plan_tree:
       claim_limit: >-
         已验证本地单栈产品闭环与四上下文隔离。不含真实宿主适配器、无点击主动唤醒、真人试玩签字、
         生产鉴权与远程部署；桥接鉴权仍是 U-TG-LOCAL-BRIDGE-AUTH，未设计完成。
+      errata:
+        - date: 2026-08-28
+          why_reopened: >-
+            上面那份 completed 与当时的证据一致（80 条断言确实全过），但它掩盖了五处「有代码、有按钮、
+            有权威支持，而功能从未成立」的缺口——共同点是它们都不会红：没有失败的测试，没有报错，
+            画面上也看不出异常。80 条断言之所以全过，是因为没有一条走到那些路径上。
+          gaps_found:
+            - "连接租约不存在：seat.disconnect 只由「模拟掉线」按钮触发，页面上既没有 pagehide 也没有 sendBeacon。真实关标签页、刷新、拔网线之后权威侧那一席一直是 connected，保留窗永远不起算、位子永远不还，别人只看到一个「在线但永远不行动」的席位。"
+            - "自愿亮牌从未成立：can_reveal 检查 settlement.payouts，而权威侧不存在这个字段（真实字段是 winner_ids）。这个条件恒假，所以按钮一次都没出现过；又因为它没出现过，客户端只传一个参数的缺陷从未被触发——两个缺陷互相掩盖。"
+            - "同意门在绑定之后：提交表单先 POST create/join，座位建好、凭据发出、公开时间线落下 SEAT_BOUND，然后才弹说明。合同要求确认在绑定之前。"
+            - "换绑或改桌规之后同意门再也不出现：public_scope_confirmed 算的是「存在过一份确认」，而权威按三元组比对。玩家看到已确认而每句话都被拒，页面上没有任何解释。"
+            - "畸形上游投影让整页停更：视图模型在四条路径上抛 TypeError，而它在请求路径上——抛错就是 /api/view 回 500，页面永远停在最后一帧，牌桌看起来还在只是不动了。"
+          also_fixed_in_tooling: >-
+            变异驱动此前对非 JS 文件一律判 INVALID（node --check 认扩展名），于是 HTML 结构与 CSS 规则
+            这两类产品真的依赖的不变量永远不会被评估。已改为按扩展名分流。
+          still_unverified: >-
+            真实宿主 Gate 5（事件驱动主动唤醒）仍未验证，四真人 UAT 未做。本轮全部证据来自自动化，
+            不能代替实机门禁。
     - id: TG-EU-HOST-ADAPTER-CONTRACT
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:

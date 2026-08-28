@@ -482,3 +482,154 @@ pre_review_self_audit:
     - host_adapter_contract_singular_vs_two_contracts
   requires_user_acceptance: yes
 ```
+
+## 2026-08-28：复开单栈牌桌，补齐合同与实现之间的真实差距
+
+上一节把 `TG-EU-SINGLE-STACK-WEB-TABLE` 记成 completed，80 条断言全过。那份记录与当时的证据
+一致，但它掩盖了五处缺口。五处的共同点值得单独说：**它们都不会红**。没有失败的测试，没有报错，
+画面上也看不出异常。80 条断言之所以全过，是因为没有一条走到那些路径上。
+
+### 五处缺口，按发现方式分类
+
+三处是「恒假条件」——代码在，条件永远不成立，所以功能从未执行过一次：
+
+1. **自愿亮牌**：`can_reveal` 检查 `settlement.payouts`，而权威侧不存在这个字段（真实字段是
+   `winner_ids`，`payouts` 全仓搜不到）。按钮因此一次都没出现过；又因为它没出现过，客户端只传
+   一个参数的缺陷从未被触发。两个缺陷互相掩盖，各自都没有失败的测试。
+   恒假的条件与恒真的断言是同一类问题：都不读现实，都不会变红。
+
+2. **换绑或改桌规之后同意门再也不出现**：`public_scope_confirmed` 算的是「这一席存在过一份
+   确认」，而权威按 `(room_binding_id, table_rules_version, seat_id)` 三元组比对。玩家看到
+   「已确认」而每一次 `chat.say` 都被拒为 `default_public_scope_not_confirmed`，页面上没有任何
+   东西解释原因，也没有可以点的东西。
+
+3. **入口幂等里我自己写的一层**：`entryReplay` 原本还查一次「这个会话还在不在」。变异测试
+   指出它恒假——`sessions.delete` 全仓只有一处，紧跟着就是 `forgetEntryKeysFor`，中间没有
+   `await`。这一处是本轮新写的代码，当场删掉，记在这里是因为它说明同一个毛病很容易再犯。
+
+两处是「从未有人走到」——真实用户行为对应的路径根本没有实现：
+
+4. **连接租约不存在**：`seat.disconnect` 只由「模拟掉线」按钮触发，页面上既没有 `pagehide`
+   也没有 `sendBeacon`。真实关标签页、刷新、拔网线之后，权威侧那一席一直是 connected，保留窗
+   永远不起算、位子永远不还，别人只看到一个「在线但永远不行动」的席位。
+   补上租约时另有一处自查发现的漏洞：`touchConnection` 忽略被扫描摘掉的连接 id，于是网络恢复后
+   的页面永远回不来，而它自己的视图还在更新——看起来一切正常。
+
+5. **同意门在绑定之后**：提交表单先 POST create/join，座位建好、凭据发出、公开时间线落下
+   `SEAT_BOUND`，然后才弹说明。合同要求确认在绑定之前。这一条还连着一个把它藏了很久的 DOM
+   缺陷：`#scope-gate` 嵌在 `#table-main` 里，而入口页阶段 `#table-main` 带着 `hidden`，
+   `[hidden]` 的 `display:none` 连同后代一起关掉。元素自己的 `hidden` 仍然是 `false`，所以
+   凡是读 `el.hidden` 的检查都报「可见」——验收脚本的 `scopeGateVisible` 正是这么读的。
+
+另有一处不属于上面两类：**畸形上游投影让整页停更**。视图模型在四条路径上抛 TypeError，而它在
+协调器的请求路径上——抛错就是 `/api/view` 回 500，页面永远停在最后一帧成功的画面上。牌桌看起来
+还在，只是不动了。一张空桌子能看出问题，一张不动的旧桌子看起来是真的。
+
+### 变异测试指出的两处「测试本身的缺陷」
+
+这一轮里变异存活两次不是因为产品有洞，而是因为我的测试没测到自己声称在测的东西：
+
+- `input()` 里用 `??` 处理 override，于是显式传进来的 `null` 被当成「没传」而回落到默认值——
+  「宿主没报版本」那一路一直在测有版本的情形。
+- 「两边都缺字段」需要显式 `null` 才撞得上守卫：缺字段读出来是 `undefined`，与视图侧的
+  `?? null` 不相等，所以那一路自己就不成立。
+
+两处都改了测试而不是改产品。另有三次存活是等价变异或工具射程边界，逐条记在各变异规格的
+`excluded` 里。
+
+### 一处工具修正
+
+变异驱动此前对非 JS 文件一律判 INVALID（`node --check` 认扩展名），于是 HTML 结构与 CSS 规则
+这两类产品真的依赖的不变量永远不会被评估——报出来是「未评估」而不是「防线有洞」。已按扩展名
+分流。这不是顺手改的：同意门挂在哪个 `main` 下面、`[hidden]` 的 `display:none` 有没有
+`!important`，都是浏览器验收里表现为 30 秒点击超时（脚本崩溃，不是指名道姓的断言）的东西。
+
+### 第六处缺口：证据文件自己会说谎
+
+核对本节引用的路径时发现的，所以它不在原先那五处里。`artifacts/negctl6/result.json` 与
+`negctl6c/result.json` 都写着 `"passed": true`、24 步全过、控制台错误 0。**两次运行都没有通过**
+——它们是在第 25 步超时中止的。判定式当时是 `passed: failures.length === 0`，异常终止不会往
+`failures` 里放任何东西，于是「中止」和「跑完且全过」在文件里完全同形。
+
+这跟前五处是同一个缺陷类：恒为真的条件读不出任何真东西。区别只在于这一次它长在证据采集器上
+而不是产品里，而后果更重——一份自称通过的负控比没有证据更糟，负控的全部价值在于它失败。
+
+判定式原先内联在 `test-support/table-web-acceptance.mjs` 的 `finally` 里。`.mjs` 单元测试加载
+不了（两个浏览器 UI 因为同样的原因被排除在变异门禁之外），所以它只能靠跑一次真浏览器才可能
+发现是错的，而它恰好只在中止的那种运行里才错——那种运行本来就没人细看。已搬进
+`test-support/acceptance-result.cjs`：判定改为 `failures.length === 0 && aborted === null`，
+新增 `aborted`（含 message 与 stack）与 `steps_ran`。中止**不**折算成一条断言失败：
+「某条断言不成立」和「后面的断言一条都没跑」是两件事，混起来会让人去查一条根本没跑过的断言。
+
+实测中止路径：临时注入一个 throw，产物写出 `passed: false` / `steps_ran: 13` / `failures: 0`
+/ message 与 stack 齐全 / 退出码 1；随后移除注入，探针产物一并删掉（它是我造的中止，不是证据）。
+两份历史 `result.json` 保持原样不回改，各自旁边加 `ERRATA.md`——改成 `passed: false`
+会让人以为当时就记对了。
+
+### 第七处：产物里有凭据原文，且产物根本不在仓库里
+
+同一次核对带出来的两件事。
+
+`artifacts/negctl5/result.json` 里有一条真邀请码原文 `invite_code=Kep2jgEI…`（43 字）。
+那次进程早没了所以它是死的，但复核的人分不出死活。修在记录路径上而不是那一个调用点：
+脱敏进 `redactDetail()`，由 `ok()`/`bad()` 统一调用，否则下一条写出凭据的断言照样会漏。
+凭据键下的短值（`session_token=null`）刻意不脱敏——一条断言失败时印出的往往正是那个 null，
+它是根因，盖掉它等于把根因盖掉。
+
+另一件：`.gitignore` 第 3 行忽略整个 `artifacts/`（55 MB、591 张 PNG），所以本节与下一节
+引用的每一个 `artifacts/...` 路径都只存在于跑过它的那台机器上，全新克隆里一个都没有——
+包括下一节早就在引的 `acc-item4-negctl2`。此前没有交代过，读起来像仓库自带证据。不改成入库
+（体量之外，`result.json` 里有凭据形状的字符串，而「被忽略」和「不存在」只差一次 `git add -f`），
+改成在 `docs/ACCEPTANCE-EVIDENCE.md` 里说明清楚并给出每条引用的重跑命令。产物是可重跑的
+中间物，判定数字誊在文档里，那才是记录在案的证据。
+
+一条留给 Codex 的判断：这七处里有五处是「读不出任何真东西的条件」。变异门禁能挡住产品里的
+这一类，但它对采集器本身只有本轮新加的 15 条。是否要把 `test-support/` 下所有参与判定的
+代码都纳入常规变异范围，我没有擅自扩大。
+
+```yaml
+reopen_review:
+  unit: TG-EU-SINGLE-STACK-WEB-TABLE
+  date: 2026-08-28
+  acceptance_label: ai_generated_acceptance
+  gaps_closed: 8
+  evidence_defects_found_while_citing: 3
+  measured:
+    npm_test: 498_pass_0_fail
+    mutation_gate: 226_killed_0_survived_0_skipped
+    browser_acceptance: 150_pass_0_fail_0_console_errors
+    new_mutation_specs:
+      connection-lease: 16_of_16
+      voluntary-reveal: 6_of_6
+      entry-consent-idempotency: 11_of_11
+      scope-reconfirmation: 12_of_12
+      view-model-degradation: 7_of_7
+      acceptance-result: 15_of_15
+  historical_values_preserved: [npm_test_351, mutations_122, browser_assertions_80]
+  errata_added_not_rewritten:
+    - artifacts/negctl6/ERRATA.md
+    - artifacts/negctl6c/ERRATA.md
+  defect_classes:
+    always_false_condition: 4
+    never_exercised_path: 2
+    unbounded_degradation: 1
+    test_fault_not_product_fault: 2
+    evidence_reads_as_pass_while_aborted: 1
+    credential_literal_in_artifact: 1
+    cited_path_absent_from_repo: 1
+  tooling_fixed:
+    - mutation_driver_rejected_non_js_files_as_invalid
+    - acceptance_verdict_ignored_abort
+    - acceptance_detail_recorded_raw_invite_code
+  deferred_to_user:
+    - authority_enforce_limits_version_in_require_confirmed_scope
+    - whether_all_of_test_support_enters_routine_mutation_scope
+  still_unverified:
+    - real_host_gate_5_proactive_wake
+    - four_human_uat
+  not_covered:
+    - four_player_smoke_every_candidates_frozen_stack
+    - old_probe_stack_playwright_rerun
+    - fresh_checkout_rerun_of_final_gate
+  requires_user_acceptance: yes
+```

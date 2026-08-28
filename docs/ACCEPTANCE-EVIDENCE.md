@@ -2,6 +2,145 @@
 
 本文件按批次累积，最新在前。每节自带日期与范围；旧节按其原范围保留，不因新节通过而改写。
 
+## 单栈牌桌复开：补齐合同与实现之间的真实差距（2026-08-28，Asia/Shanghai）
+
+范围仍是 `TG-EU-SINGLE-STACK-WEB-TABLE`。它此前记为 completed、80 条断言全过；下一节那份记录
+按其原范围保留，本节是对它的勘误与补充，不改写它。
+
+### 为什么复开
+
+下一节的 80 条断言与当时的证据一致，但它掩盖了五处缺口，而五处的共同点是**它们都不会红**：
+没有失败的测试，没有报错，画面上也看不出异常。80 条断言之所以全过，是因为没有一条走到那些
+路径上。逐条见 `REVIEW-LOG.md#2026-08-28：复开单栈牌桌，补齐合同与实现之间的真实差距`。
+
+最能说明问题的是自愿亮牌：`can_reveal` 检查 `settlement.payouts`，而权威侧不存在这个字段
+（真实字段是 `winner_ids`，`payouts` 全仓搜不到）。这个条件恒假，所以按钮一次都没出现过；
+又因为它没出现过，客户端只传一个参数的缺陷从未被触发。功能有代码、有权威支持、有按钮，
+而它从未成立。
+
+### 本轮实测结果
+
+- `npm test`：498/498 通过、0 失败（`ℹ tests 498` / `ℹ pass 498` / `ℹ fail 0`）。
+- `npm run gate`：`MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0` / `GATE=PASS`。
+  门禁对 `SKIPPED != 0`、`SURVIVED != 0`、`TOTAL != KILLED` 与非零 npm-test 退出码都会失败，
+  所以「未评估」不会被当成通过。
+- 浏览器验收 `artifacts/acc-item7-redact`：150 条断言全过、控制台错误 0、四个隔离 Chromium
+  上下文、打到第 4 手、24 张截图（每张连同状态指纹，可交叉核对新鲜度）。
+- 新增六个变异规格，全部 0 存活 0 未评估：`connection-lease` 16/16、`voluntary-reveal` 6/6、
+  `entry-consent-idempotency` 11/11、`scope-reconfirmation` 12/12、`view-model-degradation` 7/7、
+  `acceptance-result` 15/15。
+
+复现命令（工作树）：
+
+```
+npm test
+npm run gate
+node test-support/table-web-acceptance.mjs artifacts/acc-item7-redact
+```
+
+### 引用的 `artifacts/` 路径不在仓库里
+
+`.gitignore` 第 3 行忽略了整个 `artifacts/`，本文件与下一节引用的每一个 `artifacts/...`
+路径都**只存在于跑过它的那台机器上**。全新克隆里一个都没有——包括下一节早就在引的
+`artifacts/acc-item4-negctl2`。这一点此前没有交代过，读起来像是仓库自带证据。
+
+不改成入库，有两个理由，后一个更要紧：
+
+1. 55 MB、591 张 PNG。`.gitignore` 那一行是刻意的。
+2. `result.json` 里有凭据形状的字符串。`artifacts/negctl5/result.json` 就有一条真邀请码原文
+   `invite_code=Kep2jgEI…`（43 字）。那次的进程早没了所以它是死的，但复核的人分不出死活，
+   而「被忽略」和「不存在」只差一次 `git add -f`。
+
+所以：**产物是可重跑的中间物，不是交付物。判定用的数字誊在本文件里，那才是记录在案的证据。**
+每一条引用旁边给出重跑命令：
+
+| 引用路径 | 重跑命令 |
+| --- | --- |
+| `artifacts/acc-item7-redact`（本轮终态） | `node test-support/table-web-acceptance.mjs artifacts/acc-item7-redact` |
+| `artifacts/negctl5`、`negctl6`、`negctl6c`（负控） | 先按 `REVIEW-LOG.md` 对应条目回退那一处，再跑同一条命令换个输出目录 |
+| `artifacts/mut-*.txt`（变异明细） | `npm run gate`，明细落在 `$OUT/mut-<规格名>.txt` |
+
+顺带修掉了 2 的根因：脱敏挪进 `test-support/acceptance-result.cjs` 的 `redactDetail()`，
+由 `ok()`/`bad()` 两条记录路径统一调用——不是只改那一处 `invite_code=${...}`，否则下一条
+写出凭据的断言照样会漏。凭据键下的短值（`session_token=null`）刻意不脱敏：一条断言失败时
+印出的往往正是那个 null，它是根因。覆盖它的是 `test/acceptance-result.test.cjs` 里 9 条脱敏
+断言，变异规格 4 条。
+
+### 每项的负控
+
+每一项都先有一条能在旧代码上失败的测试，或一次真的跑出来的负控。这是本节最重要的部分——
+没有它，「修好了」只是一句话。
+
+| 项 | 负控 | 结果 |
+| --- | --- | --- |
+| 连接租约 | `test/connection-lease.test.cjs` 对修复前代码 | 13 条里 12 条红 |
+| 自愿亮牌 | `test/voluntary-reveal.test.cjs` 对修复前代码 | 5 条里 3 条红 |
+| 自愿亮牌（浏览器） | `artifacts/acc-item4-negctl2`：只还原客户端那个单参数处理器 | 恰好卡在「亮牌后对手看到赢家的两张底牌」 |
+| 同意门顺序 + 入口幂等 | `test/entry-consent-idempotency.test.cjs` 对旧内核 | 10 条里 8 条红，2 条钉既有行为的照旧绿 |
+| 同意门顺序（浏览器） | `artifacts/negctl5`：本轮脚本对旧客户端 | 恰好 4 条新断言红，其余 141 条照旧过 |
+| 重新确认 | `test/scope-reconfirmation.test.cjs` 对旧视图模型 | 12 条全红 |
+| 重新确认（浏览器） | `artifacts/negctl6`：本轮脚本对旧视图模型与旧客户端 | **超时中止**于第 25 步「public_limits_changed 让同意门重新出现」，前 24 步全过。注意那份 `result.json` 写着 `passed: true`——判定式当时读不出中止，见下文与 `artifacts/negctl6/ERRATA.md` |
+| 重新确认（隔离到一行） | `artifacts/negctl6c`：只回退客户端 `\|\| reason !== null` 这一行 | 同一处中止。这是那条无法在单元层判定的变异的唯一证据。`result.json` 同样自称 `passed: true`，见 `artifacts/negctl6c/ERRATA.md` |
+| 有界降级 | `test/view-model-degradation.test.cjs` 对修复前视图模型 | 10 条里 4 条红（四条真实抛错路径），其余 6 条钉既有行为的照旧绿 |
+| 验收判定式自身 | `test/acceptance-result.test.cjs`：判定式退回 `failures.length === 0` | 12 条里红 1（恰好是「异常终止时判定为不通过」）；另把 `.mjs` 的 `catch` 块整段删掉，同样红 1 |
+
+「2 条照旧绿」不是凑数：它们钉的是**不能改变**的行为（换一个入口键仍然撞 409、不带键的老客户端
+照样能建房）。幂等如果变成「任何重复请求都放过」，一个人就能同时占两个座。
+
+### 证据文件自己也会说谎
+
+核对上面两行引用的路径时发现的：`artifacts/negctl6/result.json` 与 `negctl6c/result.json`
+都写着 `"passed": true`、24 步全过、控制台错误 0。**两次运行都没有通过**，它们是在第 25 步
+超时中止的。判定式当时是 `passed: failures.length === 0`，而异常终止不会往 `failures` 里
+放任何东西——于是「中止」和「跑完且全过」在文件里完全同形。
+
+这跟本轮反复撞到的是同一个缺陷类：恒为真的条件读不出任何真东西。区别只在于这一次它长在
+证据采集器上，而不是产品里。一份自称通过的负控比没有证据更糟：负控的全部价值在于它失败。
+
+判定式原先内联在 `test-support/table-web-acceptance.mjs` 的 `finally` 里。`.mjs` 单元测试
+加载不了（两个浏览器 UI 因为同样的原因被排除在变异门禁之外），所以它只能靠跑一次真浏览器
+才可能发现是错的——而它恰好只在中止的那种运行里才错，那种运行本来就没人细看。已搬进
+`test-support/acceptance-result.cjs` 让 `node --test` 看得见，判定式改为
+`failures.length === 0 && aborted === null`，另加 `aborted`（含 message 与 stack）与
+`steps_ran` 两个字段。此后生成的 `result.json` 中止不再读作通过。
+
+两份历史 `result.json` **保持原样不回改**，各自旁边加一份 `ERRATA.md`。理由与
+「历史证据只追加勘误」是同一条：把文件改成 `passed: false` 会让人以为当时就记对了。
+
+### 浏览器验收新增的段落
+
+- **1b 入口幂等**：同一 `entry_key` 连发两次 join 回到同一会话同一座位；换键仍撞
+  `player_binding_not_released`；探针自己离桌不留座位。走 `fetch` 直发而不是点两下按钮——
+  页面上的连点被 `entryInFlight` 挡在客户端，根本到不了服务端，那道防线证明不了服务端的重放行为。
+- **1c 重新确认**：三个维度各跑一遍，用 `context.route` 改写 `/api/view` 的响应体，让客户端
+  收到一份「版本变了」的投影，然后要求同意门重新出现并说出是哪一项变了；恢复原样之后门必须
+  自己收起来。刻意不给产品加测试钩子——钩子会在产品里留下一条能让全桌重新确认的路，而那正是
+  隐私门最不该有的东西。
+- **8b 自愿亮牌**：显式三次弃牌凑出 `all_others_folded`，赢家点亮牌，对手页面上的底牌由暗变明；
+  重复点击不报错；另有三条 `page.evaluate` 探针分别验证新键配陈旧版本号（`revision_conflict`）、
+  已用过的键换版本号（`idempotency_key_conflict`）、同键同版本号重发（回到原结果）。
+- **9b/9c/11b 真实断线**：真 `reload`、真断网（`context.route` 全部 abort）、真
+  `context.close()`。三者都要求同桌看到掉线且席位进入保留窗，而不是永远在线。断网那条另有一条
+  非空检查：断网期间必须真的产生过失败请求，否则「看到掉线」是靠别的原因过的。
+
+### 仍未验证的部分
+
+- **真实宿主 Gate 5（事件驱动主动唤醒）：未通过。** 本轮全部证据来自自动化与确定性 fake 适配器
+  （`test-support/scripted-model-adapter.cjs`，`simulated: true` 硬编码不可覆盖，视图上显示为
+  「（模拟）」，所以每张截图都自证不是真实宿主能力）。自动化结果不能代替实机门禁。
+- **四真人 UAT：未做。** 本节没有任何真人试玩证据。
+- **最终门禁未在全新克隆或 worktree 重跑。** 本节数字均来自工作树。
+- 旧探针栈的 Playwright 烟测本轮未重跑；`four-player-smoke.mjs` 的 10 处 `every()` 仍未逐个判定
+  （随旧栈冻结，不是产品路径）。
+
+### 一项交用户裁决
+
+权威侧 `requireConfirmedScope` 记 `limits_version` 但从不比对它。规则 3 的原文是「实质改变热闹度
+或公平性的调整仍须重新确认」，而「实质」是人的判断，机器只有版本串可比；按版本串强制会让一次
+非实质的版本号变动也让既有确认失效，那是改变已确认的用户结果。本轮只做了 UI 侧重新询问，
+权威侧是否加这道比对留给用户与 Primary 裁定。当前仓里只有一个 `LIVELY_V1`，所以这条路径在产品上
+还不可能发生。
+
 ## 宿主中立单栈牌桌产品闭环（2026-08-28，Asia/Shanghai）
 
 范围是 `TG-EU-SINGLE-STACK-WEB-TABLE`：`web/table/` 的新 UI 经协调器连同一份宿主中立权威内核，入口 `npm run web`。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为已替代历史证据，不再是产品路径。
