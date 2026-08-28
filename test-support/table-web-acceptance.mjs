@@ -399,7 +399,12 @@ async function main() {
     await eve.context.close();
     await until("eve 的座位被放回", async () => {
       const table = await readTable(alice.page);
-      return table.seats.every((seat) => seat.name !== "eve");
+      // 先要求真的读到了席位。只写 every(name !== "eve") 时，桌子为空也成立——
+      // 而这一步本该证明「eve 的座位被放回」，空过等于什么都没证明。这条等待还在
+      // eve 关掉上下文之后，alice 的页面正好可能处在两拍之间，最容易读到空表。
+      // 数量取 1：此刻只剩 alice，bob/carol/dave 要到下面的循环才加入。
+      return table.seats.length === 1
+        && table.seats.every((seat) => seat.name !== "eve");
     });
     ok("拒绝确认后座位不残留");
     for (const name of PLAYERS.slice(1)) {
@@ -408,10 +413,12 @@ async function main() {
       await joinRoom(player, inviteCode);
       await acceptScope(player);
     }
+    const roomIds = await Promise.all(
+      players.map(async (p) => (await readTable(p.page)).roomId));
     check("四个隔离上下文都在同一房间",
-      (await Promise.all(players.map(async (p) => (await readTable(p.page)).roomId)))
-        .every((id, _, all) => id === all[0] && id !== "—"),
-      `room_id=${(await readTable(alice.page)).roomId}`);
+      roomIds.length === PLAYERS.length
+      && roomIds.every((id, _, all) => id === all[0] && id !== "—"),
+      `room_id=${JSON.stringify(roomIds)}`);
 
     await until("四席在每个人的画面上都可见", async () => {
       for (const player of players) {

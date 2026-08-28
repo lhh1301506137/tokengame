@@ -1,0 +1,36 @@
+{
+  "name": "空集合空过排查：让被断言的集合变空，看测试是否仍然通过",
+  "notes": [
+    "浏览器验收里查出五条断言在空集合上无条件通过（[].every(...) 恒真）。",
+    "本规格把同一问题在单元测试上问一遍，但判定标准不是「某条断言是否空过」，",
+    "而是「集合空了整个测试是否仍然通过」——只有后者才产生假绿。",
+    "驱动一条变异只配一个测试文件，所以同一个替换按文件拆成多条。",
+    "KILLED 表示该文件里有断言真的挡住了；SURVIVED 表示这条路径上所有断言在无数据时都成立，那是真实缺口。"
+  ],
+  "mutations": [
+    {
+      "id": "VAC-1-牌局投影丢席位-holdem",
+      "why": "holdem-engine.test.cjs:88/138/222/376 都对 seats 用 every()；seats 为空时它们全部恒真。",
+      "file": "src/game/holdem.cjs",
+      "find": "      seats: this.seats.map((seat) => ({",
+      "replace": "      seats: [].map((seat) => ({",
+      "test": "test/holdem-engine.test.cjs"
+    },
+    {
+      "id": "VAC-2-牌局投影丢席位-mcp",
+      "why": "mcp-and-http.test.cjs:165/172/234 同样对 seats 用 every()，且跨 HTTP 与 SSE 两条路径。",
+      "file": "src/game/holdem.cjs",
+      "find": "      seats: this.seats.map((seat) => ({",
+      "replace": "      seats: [].map((seat) => ({",
+      "test": "test/mcp-and-http.test.cjs"
+    },
+    {
+      "id": "VAC-3-牌局投影丢席位-协调器",
+      "why": "协调器视图模型也从同一个投影读席位。它若在无席位时照样出视图，浏览器会画出一张空桌而不报错。",
+      "file": "src/game/holdem.cjs",
+      "find": "      seats: this.seats.map((seat) => ({",
+      "replace": "      seats: [].map((seat) => ({",
+      "test": "test/table-web-host.test.cjs"
+    }
+  ]
+}
