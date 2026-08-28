@@ -6,7 +6,7 @@
 
 范围是 `TG-EU-SINGLE-STACK-WEB-TABLE`：`web/table/` 的新 UI 经协调器连同一份宿主中立权威内核，入口 `npm run web`。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为已替代历史证据，不再是产品路径。
 
-### 自动化结果
+### 单栈自动化结果
 
 - `npm test`：351/351 通过、0 失败（`ℹ tests 351` / `ℹ pass 351` / `ℹ fail 0`）。全新克隆一次、工作树一次，两次同数。
 - `test/table-web-host.test.cjs`：15/15 通过。覆盖底牌只认权威私密视图、视图不透传原始事件、凭据形状键与自由文本双向出口扫描、字素计数与权威一致、手内余额与手间账本不重复计入、协调器拒绝非回环监听、模型失败落成 silent 而非把回合悬住。

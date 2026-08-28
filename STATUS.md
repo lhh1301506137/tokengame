@@ -7,7 +7,7 @@
 - 初始化分类：`fresh_init`
 - 框架就绪度：`continue_ready`
 - 当前阶段：`prototype`
-- 当前目标：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；宿主中立权威内核已按这些合同实现并闭合 Codex 复核 F1–F6。下一阶段是把 `web/` 从旧探针栈切到同一内核形成单栈产品闭环，再定义共享 HostAdapter 合同；真实宿主主动唤醒与用户体验验收仍未通过。
+- 当前目标：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；宿主中立权威内核已按这些合同实现并闭合 Codex 复核 F1–F6；新牌桌 UI 已与该内核形成单栈产品闭环，四个隔离浏览器上下文的多人回路已闭合。下一阶段是定义共享 HostAdapter 合同，再实现 Claude 侧适配器；真实宿主主动唤醒与用户体验验收仍未通过。
 - 当前路径：`SC-TG-L0-ROOT-20260827-B`、`SC-TG-L1-HOST-ENTRY-20260827-A`、`SC-TG-L2-SESSION-LAUNCH-20260827-B`、`SC-TG-L2-PLAYABLE-TABLE-20260827-D` 与 `SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D` 是现行已验证语义主链；语义完成不等于相关产品能力已经实现。
 - 裸指令 `继续`：在本次显式语义流程回交后，只授权恢复同一已确认路线的专业刷新与开发；不会扩大产品范围，也不会授权发布、部署或付费服务。
 
@@ -56,8 +56,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: continue_single_stack_web_table_then_host_adapter_contract
-  reason: authority_kernel_implemented_and_review_findings_closed_but_web_ui_still_on_superseded_probe_stack
+  recommendation: define_shared_host_adapter_contract_then_claude_side_adapter
+  reason: single_stack_product_loop_closed_in_browser_but_no_shared_host_adapter_contract_exists_yet
 
 continuous_risk_authorization:
   status: active
@@ -157,7 +157,8 @@ project_intelligence:
       - prototype
       - local_first
       - host_probe_completed_and_uninstalled
-      - multiplayer_vertical_slice_next
+      - single_stack_browser_loop_closed
+      - host_adapter_contract_next
     professional_challenges:
       - 首次安装后同一旧会话立即获得新插件能力并非当前文档保证；完整能力可靠可用通常需要新会话
       - 自定义斜杠命令不是公开插件扩展面；入口改为显式 Skill 或插件提及
@@ -206,11 +207,14 @@ project_intelligence:
         - 本机 enable_mcp_apps 为未启用的开发中能力，不能据此承诺 Codex 内嵌牌桌
         - 已新增项目内无限注德州扑克领域状态机与四身份表级权威层，覆盖四轮下注、短额 all-in、主池/多层边池、平池奇数筹码、标准摊牌、超时与自愿亮牌
         - "已按 D 版合同实现宿主中立权威内核：`room-store.cjs`（房间/席位生命周期）、`seat-ai-store.cjs`（公开 AI 七条规则）、`table-orchestrator.cjs`（咬合三内核、不新增语义）、`action-ledger.cjs`（官方动作幂等账）、`due-work.cjs`（到期驱动）、`command-surface.cjs`/`command-server.cjs`/`host-surface.cjs`（唯一命令词表与进程外传输）、`host/seat-custody.cjs`（凭据本机托管）、`run-table-core.cjs`（进程入口 `npm run core`）"
-        - "`npm test` 2026-08-28 实测 336/336 通过、fail 0，工作树与全新克隆两处各跑一次；旧探针栈的 11 项 Codex 桥接回归仍在其中。不再引用历史 23/23"
+        - "`npm test` 2026-08-28 实测 351/351 通过、fail 0，工作树与全新克隆两处各跑一次；旧探针栈的 11 项 Codex 桥接回归仍在其中。不再引用历史 23/23 或本轮之前的 336/336"
         - "Codex 实现复核 F1–F6 已逐条闭合，每条都有失败复现、修复与回归测试：F1 `99acd63`、F2 `444607c`、F3 `684d680`+`ffbcf51`、F4 `2e18b94`+`6bf7f30`、F5 `d8caeec`、F6 `fb3f323`；回应文档 `3081d01`"
-        - "六个变异规格在修好的驱动下重跑：f1 15/15、f2 18/18、f3 14/14、f4 14/14、f5 28/28、f6 14/14，合计 103 个变异 0 存活 0 未评估。此前 F3/F4 的 14/14 是假绿，原因是判定用 `grep -E \"^not ok\"` 而 Node 默认 reporter 不输出 TAP，已在 `675a7d3` 修好并在 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md` 更正"
+        - "七个变异规格在修好的驱动下重跑：f1 15/15、f2 18/18、f3 14/14、f4 14/14、f5 28/28、f6 14/14、web-host-boundary 16/16，合计 119 个变异 0 存活 0 未评估。此前 F3/F4 的 14/14 是假绿，原因是判定用 `grep -E \"^not ok\"` 而 Node 默认 reporter 不输出 TAP，已在 `675a7d3` 修好并在 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md` 更正"
         - "`test/two-process-table.test.cjs` 已用两个独立 Node 进程在同一份权威状态上打完一手牌，实证 L0 宿主中立性；错凭据进程失败且权威状态不变"
-        - "最新 `npm run table` 已验证旧探针栈的权威服务、本地桥、四席观察者零底牌及 Ctrl+C 无监听残留；`web/` 仍连旧探针栈，尚未切到新内核"
+        - "最新 `npm run table` 已验证旧探针栈的权威服务、本地桥、四席观察者零底牌及 Ctrl+C 无监听残留；该栈现已被替代，作为历史证据冻结保留"
+        - "新牌桌 UI 已与宿主中立内核形成单栈闭环：`host/table-web-host.cjs`（会话、连接、动作转发、出口泄漏扫描）、`host/table-view-model.cjs`（权威投影 → `tokengame.table-view.v1`）、`run-table-web.cjs`（进程入口 `npm run web`）、`web/table/`（原生 HTML/CSS/JS 牌桌）。浏览器拿不到权威原始事件与秘密，也拿不到席位凭据——凭据留在协调器进程内"
+        - "`test-support/table-web-acceptance.mjs` 用四个隔离浏览器上下文跑通完整回路：建房/邀请码加入 → 逐席公开范围确认 → Ready 与倒计时 → 连续三手无限注德州（跨手筹码延续）→ 玩家公开聊天 → 座位 AI 公开发言与沉默（THINKING/DEGRADED/OFFLINE/OFF 与迟到标注）→ 掉线与 120 秒保留窗恢复 → 暂离 → 离桌 → 逐查看者本地隐藏。2026-08-28 实测 80 条断言全过、控制台错误 0、exit 0；工作树四次、全新克隆三次"
+        - "座位 AI 用 `test-support/scripted-model-adapter.cjs` 这个确定性 fake 宿主适配器驱动，覆盖公开/沉默/降级/离线各分支；它证明的是内核与 UI 的咬合，不能据此声称真实宿主模型能力已验证"
       claim_limits:
         - 尚未证明当前 Codex 桌面会渲染插件 MCP UI
         - 安装后的新能力应在新聊天或新 CLI 会话使用；旧会话热激活不作为产品承诺
@@ -219,7 +223,8 @@ project_intelligence:
         - 当前本地事件不能作为远端可验证的 Codex 来源证明
         - 当前可以声称 Codex 插件宿主聚焦探针通过，不能声称完整产品集成、Codex 桌面原生牌桌 UI 或生产就绪
         - 当前可以声称本地四人牌桌垂直切片已实现并通过 AI 验收，不能据此声称用户已经接受、四个真实 Codex 会话已经绑定或完整 MVP 已完成
-        - 当前可以声称宿主中立权威内核已实现且自动化测试与变异测试通过，不能声称产品闭环已完成——`web/` 仍在旧探针栈上，新内核没有任何 UI
+        - 当前可以声称宿主中立权威内核已实现、新牌桌 UI 与之形成单栈闭环、四个隔离浏览器上下文的多人回路已闭合且自动化测试与变异测试通过；不能声称任一真实宿主已接入——桌面侧走的是确定性 fake 适配器，`SEAT_AI` 背后没有真实模型
+        - 浏览器验收的稳定性结论以全新克隆为准。工作树连续三次全绿之后，全新克隆第一次仍暴露出读页竞态与五条空断言；只在工作树跑通不能声称稳定
         - "`SAME_VISIBLE_TASK_SPIKE_V1` 未执行。无点击主动唤醒在两个宿主上都未验证，不得由自动化测试或源码推断代替"
         - Codex 与 Claude 的真实宿主 Gate 5 均未通过；本会话在终端 Claude Code 中，没有 Claude Desktop / Cowork 界面，跑不了实机门禁
         - "`PLAYABILITY_GATE_V1` 的自动化层与四真人试玩层均未执行；确定性 fake SEAT_AI 的分支覆盖不能冒充真实模型闭环"
@@ -295,8 +300,10 @@ project_intelligence:
   refresh_basis:
     - docs/CODEX-IMPLEMENTATION-REVIEW-20260828.md
     - docs/CLAUDE-REVIEW-RESPONSE-20260828.md
-    - npm_test:336_pass_0_fail_measured_2026-08-28
-    - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,survivors_0
+    - docs/ACCEPTANCE-EVIDENCE.md#四上下文浏览器验收
+    - npm_test:351_pass_0_fail_measured_2026-08-28
+    - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,web_host_16,survivors_0
+    - browser_acceptance:80_assertions_0_console_errors_exit_0_clean_clone_x3
   protected_semantic_delta: none
   semantic_reconciliation: all_current_mvp_charters_and_protected_rules_aligned
   collaboration_state: implementation_in_progress_on_confirmed_route
@@ -321,7 +328,7 @@ project_intelligence:
       - PROJECT-DECISION-LOG.md#DEC-20260827-023
       - CLAUDE-SEMANTIC-REVIEW-20260826.md#claude-round-2-final
       - PROJECT-PLAN-TREE.md#semantic_baseline
-  next_owner: primary_ai_single_stack_web_table_then_host_adapter_contract
+  next_owner: primary_ai_shared_host_adapter_contract_then_claude_side_adapter
 
 capability_inventory:
   contract: dual-ai.capability-inventory.v1
@@ -330,20 +337,21 @@ capability_inventory:
   last_reconcile:
     mode: material_scope_incremental
     completed_at: 2026-08-28
-    vcs_anchor: 7b9be79
+    vcs_anchor: ab29e34
     anchor_relation: head_at_reconcile
     relevant_surface_digest: superseded_see_note
     working_evidence_digest: superseded_see_note
     superseded_digest: 173d600bc05a53004b17f5fe6faf6d30d514063a865965254889a3d4482fb3c0
     superseded_digest_scope: package.json + src/** + web/** + plugins/tokengame/**
     superseded_digest_note: >-
-      该摘要在 2026-08-25 生成，覆盖面自那以后已被 a8763c4..7b9be79 大幅改写（新增
+      该摘要在 2026-08-25 生成，覆盖面自那以后已被 a8763c4..ab29e34 大幅改写（先是
       room-store / seat-ai-store / table-orchestrator / action-ledger / due-work /
-      command-surface / command-server / host-surface / seat-custody / run-table-core）。
+      command-surface / command-server / host-surface / seat-custody / run-table-core，
+      本轮又新增 host/table-web-host / host/table-view-model / run-table-web / web/table/**）。
       仓库内没有生成该摘要的脚本，算法不可复现，因此不自行编造新值冒充同一算法的结果。
-      本轮改用 Git 提交范围作为可独立复核的锚点。
+      本轮继续改用 Git 提交范围作为可独立复核的锚点。
     reliability: anchored_by_git_range
-    git_range: a8763c4..7b9be79
+    git_range: a8763c4..ab29e34
     checkpoint_receipt: STATUS.md#capability_inventory
   active_count: 2
   active_capability_refs:
@@ -357,8 +365,9 @@ capability_inventory:
     - TG-EU-HOST-NEUTRAL-SURFACE
     - TG-EU-SEAT-CUSTODY
     - TG-EU-REVIEW-CLOSURE-F1-F6
-  unverified_units:
+  implemented_product_units:
     - TG-EU-SINGLE-STACK-WEB-TABLE
+  unverified_units:
     - TG-EU-HOST-ADAPTER-CONTRACT
     - TG-EU-CLAUDE-HOST-ADAPTER
     - TG-EU-PROACTIVE-WAKE-SPIKE
@@ -370,6 +379,8 @@ capability_inventory:
 
 宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2、可玩牌桌的 Ready/掉线/退出/亮牌规则，以及公开座位 AI 的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏规则，均已分别由用户确认并通过内容寻址校验；旧 Codex 专属 L0/L1/会话、公开测试桌、被动问答章程及其规则转为已替代历史。当前 L0-L2 语义基线为 `confirmed`，不再存在待确认的当前 MVP 产品规则门禁。
 
-Project Intelligence 刷新门禁已于 2026-08-28 通过：宿主中立权威内核按 D 版合同实现，Codex 实现复核 F1–F6 逐条闭合，`npm test` 本轮实测 336/336（工作树与全新克隆各一次），六个变异规格合计 103 个变异 0 存活。此前 F3/F4 的 14/14 属假绿并已更正，理由见 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md`。旧探针栈（`EventStore` / `TableStore` / `web/`）按原记录保留为已替代历史，其 Codex 桥接回归仍在测试集中，本轮未重跑 Playwright，也不把历史 23/23 冒充本轮实测。
+Project Intelligence 刷新门禁已于 2026-08-28 通过：宿主中立权威内核按 D 版合同实现，Codex 实现复核 F1–F6 逐条闭合，新牌桌 UI 与同一内核形成单栈闭环。`npm test` 本轮实测 351/351（工作树与全新克隆各一次），七个变异规格合计 119 个变异 0 存活，浏览器验收 80 条断言全过、控制台错误 0、exit 0（工作树四次、全新克隆三次）。此前 F3/F4 的 14/14 属假绿并已更正，理由见 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md`。旧探针栈（`EventStore` / `TableStore` / `server.cjs` / `web/app.js`）按原记录保留为已替代历史，其 Codex 桥接回归仍在测试集中，本轮未重跑该栈的 Playwright 烟测，也不把历史 23/23 冒充本轮实测。
 
-仍未覆盖：`web/` 尚未切到新内核，新内核没有任何 UI，产品闭环未形成；`SAME_VISIBLE_TASK_SPIKE_V1` 未执行；Codex 与 Claude 的真实宿主 Gate 5 均未通过，无点击主动唤醒在两个宿主上都未验证；共享 HostAdapter 合同与 Claude 侧适配器未开始；`PLAYABILITY_GATE_V1` 的自动化层与四真人试玩层均未执行。生产认证/持久化/远程并发、隐私完备性、用户接受与发布状态同样不在现有证据内。
+本轮浏览器验收自身查出并修掉的缺陷记在 `PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE` 与 `docs/ACCEPTANCE-EVIDENCE.md`，其中两条值得单独记住：全新克隆第一次跑就暴露了工作树连续三次全绿都没暴露的读页竞态；同一份失败产物又暴露出五条在空数据上无条件通过的断言——断言在无数据时通过比没有这条断言更糟，它把缺口报成绿色。
+
+仍未覆盖：`SAME_VISIBLE_TASK_SPIKE_V1` 未执行；Codex 与 Claude 的真实宿主 Gate 5 均未通过，无点击主动唤醒在两个宿主上都未验证；共享 HostAdapter 合同与 Claude 侧适配器未开始；`PLAYABILITY_GATE_V1` 的自动化层与四真人试玩层均未执行。座位 AI 在验收里由确定性 fake 适配器驱动，真实宿主模型能力未接入。生产认证/持久化/远程并发、隐私完备性、用户接受与发布状态同样不在现有证据内。`U-TG-LOCAL-BRIDGE-AUTH` 仍是开放的专业设计未知，阻塞发布。
