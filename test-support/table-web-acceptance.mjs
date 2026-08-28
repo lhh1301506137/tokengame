@@ -174,7 +174,18 @@ function readTable(page) {
     }));
     return {
       entryVisible: document.getElementById("entry-view")?.hidden === false,
-      scopeGateVisible: document.getElementById("scope-gate")?.hidden === false,
+      // 真的在屏幕上，而不是「自己的 hidden 属性为 false」。
+      //
+      // 这两件事分开过一次：#scope-gate 曾经嵌在 #table-main 里面，而入口页阶段
+      // #table-main 带着 hidden。于是 el.hidden === false 成立、这里报「可见」，而
+      // [hidden] 的 display:none 把整棵子树都关掉了，屏幕上一片空白、按钮点不到。
+      // 读 offsetParent 能同时覆盖自己隐藏和祖先隐藏两种情况（fixed 定位的元素在可见时
+      // offsetParent 为 body，被 display:none 关掉时为 null）。
+      scopeGateVisible: (() => {
+        const node = document.getElementById("scope-gate");
+        if (node === null || node.hidden === true) return false;
+        return node.offsetParent !== null || node.getClientRects().length > 0;
+      })(),
       roomId: text("#room-id"),
       inviteCode: text("#invite-code"),
       handIndex: Number.parseInt(text("#hand-index") ?? "0", 10),
@@ -236,9 +247,89 @@ async function shot(player, label) {
 
 // ---- 入口动作 ----
 
-async function createRoom(player) {
+// 服务端此刻有几个 web session。用来判「点了创建但还没确认时，服务端什么都没建」——
+// 这件事在页面上看不出来，只能问服务。
+async function sessionCount(page, origin) {
+  return page.evaluate(async (base) => {
+    const response = await fetch(`${base}/api/health`);
+    const body = await response.json();
+    return body.sessions;
+  }, origin);
+}
+
+// 提交入口表单，停在公开范围确认那一步。此时入口页还在，什么都没建。
+async function stageCreate(player) {
   await player.page.fill("#create-player", player.name);
   await player.page.click("#create-form button[type=submit]");
+  await until(`${player.name} 提交后看到公开范围确认`, async () =>
+    (await readTable(player.page)).scopeGateVisible);
+}
+
+async function stageJoin(player, inviteCode) {
+  await player.page.fill("#join-player", player.name);
+  await player.page.fill("#join-code", inviteCode);
+  await player.page.click("#join-form button[type=submit]");
+  await until(`${player.name} 提交后看到公开范围确认`, async () =>
+    (await readTable(player.page)).scopeGateVisible);
+}
+
+// 入口幂等探针。开一个干净上下文，在页面里连发两次同键的 join，然后自己离桌。
+//
+// 走 fetch 而不是点按钮：页面上的连点被 entryInFlight 挡在客户端，根本到不了服务端，
+// 所以点两下证明不了服务端的重放行为。要验的是「重试」——第一次的响应丢在路上，浏览器
+// 用同一个键再发一次——而那在浏览器里只能这么模拟。
+async function entryIdempotencyProbe(browser, origin, inviteCode) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(origin, { waitUntil: "domcontentloaded" });
+  try {
+    return await page.evaluate(async (code) => {
+      const post = async (route, body) => {
+        const response = await fetch(route, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return { status: response.status, body: await response.json() };
+      };
+      const key = `entry-probe-${crypto.randomUUID()}`;
+      const first = await post("/api/room/join", {
+        player_id: "probe", invite_code: code, entry_key: key,
+      });
+      const second = await post("/api/room/join", {
+        player_id: "probe", invite_code: code, entry_key: key,
+      });
+      // 换一个键就不再是重放。内核那条 409 必须照旧出现，否则「幂等」就变成了
+      // 「任何重复加入都放过」，而那会让一个人同时占两个座。
+      const other = await post("/api/room/join", {
+        player_id: "probe", invite_code: code, entry_key: `entry-probe-${crypto.randomUUID()}`,
+      });
+      const view = await post("/api/view", { session_token: first.body.session_token });
+      const seatCount = view.body.view?.seats?.length ?? -1;
+      // 自己收拾干净：探针占的那一席要还回去，否则四个人凑不齐一桌。
+      await post("/api/action", {
+        session_token: first.body.session_token, command: "seat.leave", params: {},
+      });
+      // 会话令牌与入口键都不带出页面：它们是凭据，而这份返回值会进证据文件。只带出
+      // 比较结果。同理，比较必须在页面内做完。
+      return {
+        status: [first.status, second.status],
+        sameToken: first.body.session_token === second.body.session_token
+          && typeof first.body.session_token === "string",
+        sameSeat: first.body.seat_id === second.body.seat_id
+          && typeof first.body.seat_id === "string",
+        seatCount,
+        differentKey: other.body.code ?? `http_${other.status}`,
+      };
+    }, inviteCode);
+  } finally {
+    await context.close();
+  }
+}
+
+async function createRoom(player) {
+  await stageCreate(player);
+  await player.page.click("#scope-accept");
   const state = await until(`${player.name} 建房后进入牌桌`, async () => {
     const table = await readTable(player.page);
     // 等第一份视图真的落地，而不只是等 entryVisible 翻面。
@@ -256,19 +347,18 @@ async function createRoom(player) {
 }
 
 async function joinRoom(player, inviteCode) {
-  await player.page.fill("#join-player", player.name);
-  await player.page.fill("#join-code", inviteCode);
-  await player.page.click("#join-form button[type=submit]");
+  await stageJoin(player, inviteCode);
+  await player.page.click("#scope-accept");
   await until(`${player.name} 加入后进入牌桌`, async () => {
     const table = await readTable(player.page);
-    return table.entryVisible === false ? table : false;
+    return table.entryVisible === false && table.seats.length > 0 ? table : false;
   });
 }
 
+// 确认之后对话框要关掉。确认与建座位现在是同一次点击，所以这里只等结果：
+// scopeGateVisible 翻回 false 意味着 room.confirm_public_scope 真的落地了
+// （renderScopeGate 读的是权威给的 public_scope_confirmed，不是本地标记）。
 async function acceptScope(player) {
-  await until(`${player.name} 看到公开范围确认`, async () =>
-    (await readTable(player.page)).scopeGateVisible);
-  await player.page.click("#scope-accept");
   await until(`${player.name} 确认后对话框关闭`, async () =>
     (await readTable(player.page)).scopeGateVisible === false);
 }
@@ -393,12 +483,20 @@ async function main() {
     // ---- 1. 建房、邀请码加入、逐席公开范围确认 ----
     const alice = await newPlayer(browser, banner.origin, "alice");
     players.push(alice);
-    const inviteCode = await createRoom(alice);
-    check("建房拿到邀请码", typeof inviteCode === "string" && inviteCode.length >= 6,
-      `invite_code=${inviteCode}`);
 
+    // 确认在绑定之前。提交表单只该把对话框顶起来，不该建房、不该占座。
+    const beforeStage = await sessionCount(alice.page, banner.origin);
+    check("入口阶段服务端一个会话都没有", beforeStage === 0, `sessions=${beforeStage}`);
+    await stageCreate(alice);
     const aliceGate = await readTable(alice.page);
     check("建房者自己也要过公开范围确认", aliceGate.scopeGateVisible === true);
+    // 这三条一起才说明「确认在绑定之前」：对话框已经在了，入口页还在，而服务端那边
+    // 什么都没建。少了最后一条就只是「对话框出现过」——改顺序之前那一版同样满足。
+    check("确认之前还停在入口页", aliceGate.entryVisible === true);
+    const duringGate = await sessionCount(alice.page, banner.origin);
+    check("确认之前服务端没有建任何会话（合同：确认在绑定之前）",
+      duringGate === 0, `sessions=${duringGate}`);
+
     const bullets = await alice.page.$$eval("#scope-gate .scope-list li",
       (nodes) => nodes.map((n) => n.textContent.trim()));
     check("公开范围逐条列出（六条）", bullets.length === 6, `实际 ${bullets.length} 条`);
@@ -409,29 +507,67 @@ async function main() {
     check("公开范围说明了本地隐藏只影响自己",
       bullets.some((b) => b.includes("隐藏") && b.includes("自己")));
     artifacts.push(await shot(alice, "01-scope-gate"));
+
+    await alice.page.click("#scope-accept");
+    const aliceIn = await until("alice 确认后才进入牌桌", async () => {
+      const table = await readTable(alice.page);
+      return table.entryVisible === false && table.inviteCode !== "—"
+        && table.seats.length > 0 ? table : false;
+    });
+    const inviteCode = aliceIn.inviteCode;
+    check("建房拿到邀请码", typeof inviteCode === "string" && inviteCode.length >= 6,
+      `invite_code=${inviteCode}`);
+    const afterAccept = await sessionCount(alice.page, banner.origin);
+    check("确认之后才出现会话", afterAccept === 1, `sessions=${afterAccept}`);
     await acceptScope(alice);
 
-    // 先验「先不加入」这条路：它必须把座位放回去，否则第四个人会进不来。
+    // 「先不加入」这条路：现在它连座位都不该建出来。
+    //
+    // 改顺序之前 eve 会先落座、在公开时间线上留下 SEAT_BOUND、然后靠 seat.leave 还回去；
+    // 「座位不残留」是那一版能给出的最强保证。现在要求更强一层：她从来没绑定过，所以
+    // 服务端会话数不动，而 alice 的公开时间线里不该出现过 eve。
     const eve = await newPlayer(browser, banner.origin, "eve");
-    await joinRoom(eve, inviteCode);
-    await until("eve 看到公开范围确认", async () => (await readTable(eve.page)).scopeGateVisible);
+    await stageJoin(eve, inviteCode);
+    const duringEve = await sessionCount(eve.page, banner.origin);
+    check("eve 确认之前没有建会话", duringEve === 1, `sessions=${duringEve}`);
     await eve.page.click("#scope-decline");
-    const eveAfter = await until("eve 拒绝后回到入口", async () => {
+    const eveAfter = await until("eve 拒绝后留在入口", async () => {
       const table = await readTable(eve.page);
-      return table.entryVisible === true ? table : false;
+      return table.entryVisible === true && table.scopeGateVisible === false
+        ? table : false;
     });
-    check("不确认公开范围就回到入口，不占座", eveAfter.entryVisible === true);
+    check("不确认公开范围就留在入口，不占座", eveAfter.entryVisible === true);
+    const afterDecline = await sessionCount(eve.page, banner.origin);
+    check("拒绝确认没有留下任何会话", afterDecline === 1, `sessions=${afterDecline}`);
     await eve.context.close();
-    await until("eve 的座位被放回", async () => {
+    const aliceSeesEve = await readTable(alice.page);
+    // 席位数取 1：此刻只剩 alice，bob/carol/dave 要到下面的循环才加入。先要求真的读到了
+    // 席位，只写 every(name !== "eve") 时桌子为空也成立，而那等于什么都没证明。
+    check("eve 从未出现在桌上",
+      aliceSeesEve.seats.length === 1
+      && aliceSeesEve.seats.every((seat) => seat.name !== "eve"),
+      `seats=${JSON.stringify(aliceSeesEve.seats.map((s) => s.name))}`);
+    check("eve 从未出现在公开时间线上（她没有绑定过）",
+      aliceSeesEve.bubbles.every((bubble) => !(bubble.who ?? "").includes("eve")));
+
+    // ---- 1b. 入口幂等：丢响应之后重试回到同一个座位 ----
+    //
+    // 真实场景是「请求到了、座位建了、响应没回来」。浏览器里没法真的把一个已完成请求的
+    // 响应弄丢，所以这里直接用同一个 entry_key 发两次：第二次就是重试要走的那条路。
+    // 页面上的连点由 entryInFlight 挡住，压根到不了服务端，所以那道防线证明不了这条。
+    const idem = await entryIdempotencyProbe(browser, banner.origin, inviteCode);
+    check("同一入口键重试回到同一个会话",
+      idem.sameToken && idem.sameSeat && idem.status.every((s) => s === 200),
+      JSON.stringify(idem));
+    check("重试没有占掉第二个座位", idem.seatCount === 2, `seats=${idem.seatCount}`);
+    check("换一个入口键不再是重放，撞上内核的 409",
+      idem.differentKey === "player_binding_not_released",
+      `code=${idem.differentKey}`);
+    await until("探针席位被放回", async () => {
       const table = await readTable(alice.page);
-      // 先要求真的读到了席位。只写 every(name !== "eve") 时，桌子为空也成立——
-      // 而这一步本该证明「eve 的座位被放回」，空过等于什么都没证明。这条等待还在
-      // eve 关掉上下文之后，alice 的页面正好可能处在两拍之间，最容易读到空表。
-      // 数量取 1：此刻只剩 alice，bob/carol/dave 要到下面的循环才加入。
-      return table.seats.length === 1
-        && table.seats.every((seat) => seat.name !== "eve");
+      return table.seats.length === 1;
     });
-    ok("拒绝确认后座位不残留");
+    ok("入口幂等探针没有留下座位");
     for (const name of PLAYERS.slice(1)) {
       const player = await newPlayer(browser, banner.origin, name);
       players.push(player);

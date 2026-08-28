@@ -1,0 +1,98 @@
+{
+  "name": "entry-consent-idempotency",
+  "note": "阶段 1 项 5：同意门在任何 room/seat 创建之前，且 create/join 幂等。两个缺口的性质不同。同意门那半是顺序错了——先建房占座、再弹说明，而合同要求确认在绑定之前；它的证据是浏览器负控 artifacts/negctl5（新脚本对旧客户端，恰好 4 条新断言变红）。幂等那半是协调器缺了重放账，丢响应后重试会撞上内核的 409 而卡在入口；那一半可以在单元层判定，下面这些变异针对的就是它。",
+  "test": "test/entry-consent-idempotency.test.cjs",
+  "mutations": [
+    {
+      "id": "replay-ignores-identity",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (existing.kind !== kind || existing.identity !== identity) {",
+      "replace": "    if (existing.kind !== kind) {",
+      "note": "同一个键换个 player_id 就静默回放第一个人的响应，也就是把 p1 的会话令牌交给第二个请求者。入口键是能换回会话的东西，所以这不是「多给了一份数据」，而是一次会话移交。"
+    },
+    {
+      "id": "replay-ignores-kind",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (existing.kind !== kind || existing.identity !== identity) {",
+      "replace": "    if (existing.identity !== identity) {",
+      "note": "一次 join 的键拿去 create 时回放 join 那份响应。形状对不上：调用方等的是带 invite_code 的创建结果，拿到的是别人房间里的一个座位。"
+    },
+    {
+      "id": "short-key-treated-as-absent",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      throw new CoreError(\"invalid_field\", 400, { field: \"entry_key\" });",
+      "replace": "      return null;",
+      "note": "带了不合格的键时静默降级成「没带键」。调用方以为自己有重放保护，而真的丢响应时才发现没有——那时已经卡住了。静默降级比明确报错更难查，因为出错的那一刻什么都不会显示。"
+    },
+    {
+      "id": "key-length-floor-removed",
+      "file": "src/host/table-web-host.cjs",
+      "find": "const MIN_ENTRY_KEY_LENGTH = 16;",
+      "replace": "const MIN_ENTRY_KEY_LENGTH = 1;",
+      "note": "入口键能换回会话令牌，所以它的熵就是这道门的强度。下界降到 1 等于允许单字符键，别人可以枚举。"
+    },
+    {
+      "id": "create-does-not-remember",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.rememberEntry(\"create\", body.entry_key, body.player_id, payload);\n    sendJson(response, 200, payload);",
+      "replace": "    sendJson(response, 200, payload);",
+      "note": "建房不记账，于是重试撞上 room_already_exists——正是要修的那个卡死。"
+    },
+    {
+      "id": "join-does-not-remember",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.rememberEntry(\"join\", body.entry_key, body.player_id, payload);\n    sendJson(response, 200, payload);",
+      "replace": "    sendJson(response, 200, payload);",
+      "note": "加入不记账，重试撞上 player_binding_not_released。"
+    },
+    {
+      "id": "replay-rebuilds-payload-without-invite",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.entryKeys.set(keyValue, { kind, identity, response });",
+      "replace": "    this.entryKeys.set(keyValue, { kind, identity, response: { ...response, invite_code: undefined } });",
+      "note": "回放时丢掉邀请码。邀请码只在 room.create 的返回里出现一次，所以必须存整份响应而不是按会话重拼——否则重试成功的人建了一张没人能加入的桌子，而他自己看不出哪里不对。"
+    },
+    {
+      "id": "entry-keys-not-forgotten-on-cleanup",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      this.forgetEntryKeysFor(session.token);",
+      "replace": "      void session;",
+      "note": "会话清理时不删入口键。留下的是一份指向不存在会话的长期凭据，外加一张永不收缩的表。entryReplay 命中时会懒删，但一个再也不会被重放的键会一直躺在内存里。"
+    },
+    {
+      "id": "gate-nested-inside-entry-main",
+      "file": "web/table/index.html",
+      "find": "</main>\n\n<!--\n  公开范围确认。",
+      "replace": "\n\n<!--\n  公开范围确认。",
+      "note": "把同意门挪进 #entry-view 里面。这条变异针对的是那个真实缺陷的镜像：原先它嵌在 #table-main 里，入口页阶段被 [hidden] 的 display:none 连带关掉，而元素自己的 hidden 仍然是 false——读 el.hidden 的检查全都说「可见」，屏幕上却什么都没有、按钮点不到。浏览器验收里它表现为一次30 秒点击超时，那是脚本崩溃，不是一条会指名道姓的断言。所以要有一条按源文件嵌套关系判定的静态测试。"
+    },
+    {
+      "id": "gate-not-hidden-by-default",
+      "file": "web/table/index.html",
+      "find": "         aria-labelledby=\"scope-title\" hidden>",
+      "replace": "         aria-labelledby=\"scope-title\">",
+      "note": "默认展开：任何人一打开页面就看到一个无从回答的对话框。"
+    },
+    {
+      "id": "hidden-rule-loses-important",
+      "file": "web/table/table.css",
+      "find": "[hidden] { display: none !important; }",
+      "replace": "[hidden] { display: none; }",
+      "note": "去掉 !important。页面上六个靠 hidden 切换的元素里，.scope-gate 是display:grid 的全屏固定层、.entry 是 grid、.raise-row 是 flex——它们的类选择器写在后面，会赢过这条规则，于是带着 hidden 仍然显示。后果最重的是那个 inset:0 的遮罩：看不见，但吃掉之后每一次点击。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "client-posts-before-consent",
+      "why": "同意门的顺序只在浏览器里可观察，而变异驱动只跑 node --test。web/table/table.js 是经典脚本，不被任何单元测试加载，改它不会让任何一条单元测试变红——那不是测试的缺口，是这个工具的射程边界。这一半的负控是真的跑出来的：artifacts/negctl5 用本轮的验收脚本对HEAD 的旧客户端，恰好 4 条新断言变红（确认之前还停在入口页 / 确认之前服务端没有建任何会话 / eve 确认之前没有建会话 / 拒绝确认没有留下任何会话），其余 141 条照旧通过。"
+    },
+    {
+      "id": "entry-in-flight-guard",
+      "why": "entryInFlight 只挡浏览器上的连点，同样在 table.js 里，同样单元测试看不到。而且它刻意不是幂等的依据：验收里的入口幂等探针走 fetch 直发两次，正是因为点两下压根到不了服务端，那道客户端防线证明不了服务端的重放行为。真正的不变量在服务端，上面九条针对的就是它。"
+    },
+    {
+      "id": "replay-returns-dead-session",
+      "why": "这条变异发现的是我自己写的一段死代码，不是防线的洞。entryReplay 里原本还查一次「这个会话还在不在」，查不到就丢键、当成新请求。它恒假：sessions.delete 全仓只有一处，紧跟着下一行就是 forgetEntryKeysFor，两者之间没有 await，所以键必然先于任何一次重放消失。删掉整个分支没有一条测试变红——那不是缺测试，是那个分支读不到现实。恒假的条件和恒真的断言是同一类问题，项 4 的 settlement.payouts 是它的另一面。处理办法也一样：删掉代码，让「清理时即时删键」成为唯一机制，由 entry-keys-not-forgotten-on-cleanup 钉住。"
+    }
+  ]
+}

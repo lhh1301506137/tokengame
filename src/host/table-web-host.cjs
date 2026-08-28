@@ -45,6 +45,21 @@ const MAX_BODY_BYTES = 64 * 1024;
 // 加速手段，不能是判定依据——要求里那句「不能作为唯一断线依据」说的就是这件事。
 const CONNECTION_LEASE_MS = 8_000;
 
+// 入口键的长度下界。
+//
+// 入口键能换回一个会话令牌，所以它的熵就是这道门的强度：短键等于让人可以枚举「有没有
+// 别人刚建过房」，命中就拿到那一席的会话。浏览器用 crypto.randomUUID() 生成（36 字符、
+// 122 位），这个下界只是把明显不合格的挡在外面，顺带让「忘了生成、传了个空串」报出来
+// 而不是被当成「没带键」放过。
+//
+// 它跟会话令牌同一性质，因此同样不进 URL、不进日志、不进任何视图模型。
+const MIN_ENTRY_KEY_LENGTH = 16;
+
+// 「这是一个能用的入口键吗」只有这一个定义。拒绝路径和记账路径都问它。
+function usableEntryKey(value) {
+  return typeof value === "string" && value.length >= MIN_ENTRY_KEY_LENGTH;
+}
+
 // 「这一席已经不在了」的错误码。三者对本层是同一件事：会话指向的席位没了，该清理。
 // 与 driveOnce 里那一组保持同一份定义——分成两份的话，加了新码只改一处会让另一处
 // 把「席位没了」当成故障抛出去。
@@ -88,6 +103,15 @@ class TableWebHost {
     // 对象，它还要记住本地隐藏之类只属于这个查看者的东西。合成一个会让「换发句柄」和
     // 「浏览器重新连接」互相牵连。
     this.sessions = new Map();
+    // 入口键 -> 那次入口的完整响应。只为一件事存在：让「请求到了、座位建了、响应丢了」
+    // 之后的重试回到同一个座位，而不是撞上 room_already_exists /
+    // player_binding_not_released 卡在入口页。
+    //
+    // 为什么做在这一层而不是核心：room.create / room.join 属于 identity_creation，核心
+    // 刻意没给它们幂等账，「同一个人不能同时占两个座」正是那两条 409 在保护的东西。要
+    // 改的是协调器对重复请求的应答，不是内核的绑定语义——所以这里存的是「上次那份响应」，
+    // 而不是放宽下面任何一条检查。
+    this.entryKeys = new Map();
     this.modelAdapter = options.modelAdapter ?? null;
     this.now = options.now ?? (() => Date.now());
     this.limits = options.limits ?? LIVELY_V1;
@@ -123,6 +147,52 @@ class TableWebHost {
   sessionToken() {
     // 会话令牌只在本进程内存里有意义，进程结束即失效——与 F6 的句柄同一性质。
     return `web-session-${require("node:crypto").randomUUID()}`;
+  }
+
+  // ------------------------------------------------------------------ 入口幂等
+
+  // 取出这次入口键对应的既有响应，或者判定这是一次新请求。
+  //
+  // 返回 null 表示「继续按新请求处理」；返回对象表示「原样回放」。任何不一致都抛错而不是
+  // 静默选一边：同一个键配上另一个 player_id，最省事的做法是回放上次那份响应，但那等于
+  // 把第一个人的会话令牌交给第二个请求者。
+  entryReplay(kind, keyValue, identity) {
+    if (keyValue === undefined || keyValue === null) return null;
+    if (!usableEntryKey(keyValue)) {
+      // 不回落到「当成没带键」。带了一个不合格的键说明调用方以为自己有重放保护，
+      // 而静默降级会让它在真的丢响应时才发现没有——那时已经卡住了。
+      throw new CoreError("invalid_field", 400, { field: "entry_key" });
+    }
+    const existing = this.entryKeys.get(keyValue);
+    if (existing === undefined) return null;
+    if (existing.kind !== kind || existing.identity !== identity) {
+      throw new CoreError("entry_key_conflict", 409, { field: "entry_key" });
+    }
+    // 刻意不在这里再查一次「这个会话还在不在」。
+    //
+    // 写过那么一层：!this.sessions.has(...) 就丢掉记录、当成新请求。它读不到任何东西——
+    // sessions.delete 全仓只有一处，紧跟着的下一行就是 forgetEntryKeysFor，两者之间没有
+    // await，所以键必然先于任何一次重放消失，那个分支恒假。变异测试正是这么暴露出来的：
+    // 删掉整个分支，没有一条测试变红。
+    //
+    // 恒假的条件和恒真的断言是同一类问题——都不读现实，都不会变红。项 4 那处
+    // settlement.payouts 是同一个毛病的另一面，所以这里按同样的办法处理：删掉，让唯一
+    // 的机制（清理时即时删键）成为唯一的机制。
+    return existing.response;
+  }
+
+  // 没带键就不记账：幂等是可选的加固，不带键的老客户端照样能建房，只是没有重放保护。
+  // 用同一个 usableEntryKey 而不是就地再写一遍条件——两处各写一遍时，改了下界只改一处会
+  // 让「拒绝」和「记账」对什么算合格的键产生分歧，而那种分歧的表现是键存进去了却换不回来。
+  rememberEntry(kind, keyValue, identity, response) {
+    if (!usableEntryKey(keyValue)) return;
+    this.entryKeys.set(keyValue, { kind, identity, response });
+  }
+
+  forgetEntryKeysFor(token) {
+    for (const [key, entry] of [...this.entryKeys]) {
+      if (entry.response.session_token === token) this.entryKeys.delete(key);
+    }
   }
 
   requireSession(tokenValue) {
@@ -399,6 +469,11 @@ class TableWebHost {
   }
 
   async postCreate(response, body) {
+    const replay = this.entryReplay("create", body.entry_key, body.player_id);
+    if (replay !== null) {
+      sendJson(response, 200, replay);
+      return;
+    }
     const created = await this.core.dispatch("room.create", {
       player_id: body.player_id,
       table_rules_version: body.table_rules_version ?? "table-rules-v1",
@@ -410,7 +485,7 @@ class TableWebHost {
     // 邀请码要给浏览器：建房的人必须看得见才能转给朋友（同 F6 对邀请码的判断）。
     // 但它不进 knownSecrets 之外的任何地方，也不进视图模型。
     this.custody.remember(created.invite_code);
-    sendJson(response, 200, {
+    const payload = {
       ok: true,
       session_token: session.token,
       seat_id: session.seat_id,
@@ -418,25 +493,36 @@ class TableWebHost {
       // postDisconnect 在缺参数时也回落到会话令牌——两处巧合相等，但依赖巧合会在
       // 任一侧改动时断掉，而断掉的表现是「点了掉线却没掉」，很难查。
       connection_id: session.first_connection_id,
+      // 邀请码只在 room.create 的返回里出现这一次。所以整份响应必须存下来重放，而不是
+      // 重放时按会话重新拼一份：那样重试成功的人拿不到邀请码，等于建了一张没人能加入的桌。
       invite_code: created.invite_code,
       room_id: created.room?.room_id ?? null,
-    });
+    };
+    this.rememberEntry("create", body.entry_key, body.player_id, payload);
+    sendJson(response, 200, payload);
   }
 
   async postJoin(response, body) {
+    const replay = this.entryReplay("join", body.entry_key, body.player_id);
+    if (replay !== null) {
+      sendJson(response, 200, replay);
+      return;
+    }
     const joined = await this.core.dispatch("room.join", {
       player_id: body.player_id,
       invite_code: body.invite_code,
     });
     const bound = this.custody.bindFromResult(joined);
     const session = await this.openSession(bound);
-    sendJson(response, 200, {
+    const payload = {
       ok: true,
       session_token: session.token,
       seat_id: session.seat_id,
       connection_id: session.first_connection_id,
       room_id: joined.room?.room_id ?? null,
-    });
+    };
+    this.rememberEntry("join", body.entry_key, body.player_id, payload);
+    sendJson(response, 200, payload);
   }
 
   async openSession(bound) {
@@ -582,6 +668,10 @@ class TableWebHost {
       // 一个指向不存在席位的令牌仍然可用，而凭据还躺在内存里。
       this.sessions.delete(session.token);
       this.custody.forget(session.seat_handle);
+      // 入口键跟着会话一起走。留着的话它既是一份指向不存在会话的长期凭据，也是一张
+      // 永不收缩的表。这是唯一的清理点——entryReplay 那边刻意没有兜底的懒清理，理由
+      // 记在那里。
+      this.forgetEntryKeysFor(session.token);
       cleaned.push(session.seat_id);
     }
 
@@ -785,6 +875,7 @@ function normalizeDecision(value) {
 }
 
 module.exports = {
+  MIN_ENTRY_KEY_LENGTH,
   TableWebHost,
   BROWSER_ACTIONS,
   normalizeDecision,

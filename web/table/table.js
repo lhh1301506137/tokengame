@@ -34,6 +34,12 @@ const state = {
   disconnected: false,
   // 上一次渲染时时间线的长度，用来决定要不要把滚动条推到底。
   lastMessageCount: 0,
+  // 待落座的入口。填了表但还没确认公开范围时停在这里：房间和座位都还没建。
+  // 规则 1 要求确认在绑定之前，所以这份意图必须能在「什么都还没创建」的状态下存在。
+  //
+  // 刻意只放在内存里，不进 sessionStorage：没确认就什么都没建，刷新之后没有任何东西
+  // 需要恢复，重新填一次表才是对的。存下来反而会让「刷新后弹出一个说不清来源的对话框」。
+  pendingEntry: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -146,37 +152,47 @@ function clearError(node) {
 
 // ---- 入口 ----
 
-el("create-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
+// 入口键。一次入口意图一个键，重试沿用同一个。
+//
+// 它换得回一个会话令牌，所以按凭据对待：不进 URL、不进 sessionStorage、不显示在页面上。
+// randomUUID 在非安全上下文里可能没有，退回一个够长的随机串——协调器只要求长度下界。
+function newEntryKey() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `entry-${globalThis.crypto.randomUUID()}`;
+  }
+  // 退路刻意也够长（32 字符 + 前缀）。Math.random 不是密码学随机源，但这条分支只在
+  // 非安全上下文里成立，而那种环境下 loopback 页面本身就已经不是可信通道了。
+  let out = "entry-";
+  for (let i = 0; i < 32; i += 1) out += Math.floor(Math.random() * 36).toString(36);
+  return out;
+}
+
+// 填完表先弹确认，什么都不建。
+//
+// 改这个顺序之前：提交表单 -> POST create/join -> 座位建好、凭据发出、公开时间线里
+// 落下 SEAT_BOUND -> 然后才弹对话框；点「先不加入」走一次 seat.leave 把刚占的座还掉。
+// 玩家在读到那段说明之前，绑定已经完成了。合同要的是反过来：确认在绑定之前。
+function stageEntry(kind, body) {
   clearError(el("entry-error"));
+  clearError(el("scope-error"));
+  state.pendingEntry = { kind, body, key: newEntryKey() };
+  el("scope-gate").hidden = false;
+  el("scope-accept").focus();
+}
+
+el("create-form").addEventListener("submit", (event) => {
+  event.preventDefault();
   const playerId = el("create-player").value.trim();
   if (playerId === "") return;
-  try {
-    const result = await post("/api/room/create", {
-      player_id: playerId,
-      table_rules_version: "table-rules-v1",
-    });
-    enterTable(result);
-  } catch (error) {
-    showError(el("entry-error"), error);
-  }
+  stageEntry("create", { player_id: playerId, table_rules_version: "table-rules-v1" });
 });
 
-el("join-form").addEventListener("submit", async (event) => {
+el("join-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  clearError(el("entry-error"));
   const playerId = el("join-player").value.trim();
   const inviteCode = el("join-code").value.trim();
   if (playerId === "" || inviteCode === "") return;
-  try {
-    const result = await post("/api/room/join", {
-      player_id: playerId,
-      invite_code: inviteCode,
-    });
-    enterTable(result);
-  } catch (error) {
-    showError(el("entry-error"), error);
-  }
+  stageEntry("join", { player_id: playerId, invite_code: inviteCode });
 });
 
 function enterTable(result) {
@@ -267,16 +283,46 @@ function renderScopeGate(view) {
   // public_scope_confirmed 只在自己那一席上有值。null 表示"还不知道"，不当作未确认——
   // 那会在视图刚建立的一瞬间闪一下对话框。
   const needsConfirm = me !== null && me.public_scope_confirmed === false;
-  el("scope-gate").hidden = !needsConfirm;
+  // 有待落座的入口时对话框必须一直在。轮询本来只在 enterTable 之后才起，两者不该同时
+  // 成立；写出来是因为「渲染悄悄收起一个正在等玩家回答的对话框」这种缺陷在页面上看不出
+  // 原因——玩家只会看到自己点了创建、闪过一个框、然后什么都没发生。
+  el("scope-gate").hidden = state.pendingEntry === null && !needsConfirm;
 }
+
+// 确认之后才建房 / 才落座，然后立刻把确认记到权威侧。
+//
+// 两条路径共用这一个按钮，因为玩家看到的是同一句话、同一个决定：
+//   pendingEntry 非空 —— 还什么都没建。先 create/join，再 confirm。
+//   pendingEntry 为空 —— 座位已经在了，只差那一次确认。这条路径在刷新之后成立：会话恢复
+//     回来了，而权威侧那一席的 public_scope_confirmed 还是 false（确认本身没落地，或者
+//     落地前页面就没了）。
+//
+// 这个按钮可能被连点，也可能第一次的响应丢在路上。两种情况都靠入口键回到同一个座位；
+// 键在 pendingEntry 里，重试沿用它。所以失败时不清 pendingEntry——清了就等于把重试的
+// 唯一凭据丢掉，玩家再点一次会撞上 room_already_exists 而卡住。
+let entryInFlight = false;
 
 el("scope-accept").addEventListener("click", async () => {
   clearError(el("scope-error"));
+  // 连点的第一道防线在客户端：入口键保证重放安全，但没必要真发两次。
+  if (entryInFlight) return;
+  entryInFlight = true;
   try {
+    const pending = state.pendingEntry;
+    if (pending !== null) {
+      const route = pending.kind === "create" ? "/api/room/create" : "/api/room/join";
+      const result = await post(route, { ...pending.body, entry_key: pending.key });
+      // POST 成功了，座位在了。这时才清 pendingEntry：之后再点这个按钮走的是
+      // 「只补确认」那条路，而「先不加入」也该真的去 seat.leave 了。
+      state.pendingEntry = null;
+      enterTable(result);
+    }
     await act("room.confirm_public_scope", { acknowledged: true });
     await refresh();
   } catch (error) {
     showError(el("scope-error"), error);
+  } finally {
+    entryInFlight = false;
   }
 });
 
@@ -292,6 +338,10 @@ function returnToEntry(message) {
   state.seatId = null;
   state.view = null;
   state.disconnected = false;
+  // 待落座的意图跟着一起清。留着的话下次回到入口时 renderScopeGate 会把对话框顶起来，
+  // 而它对应的那次意图早就作废了。
+  state.pendingEntry = null;
+  el("scope-gate").hidden = true;
   el("table-main").hidden = true;
   el("entry-view").hidden = false;
   el("invite-wrap").hidden = false;
@@ -304,7 +354,16 @@ function returnToEntry(message) {
 }
 
 el("scope-decline").addEventListener("click", async () => {
-  // 不确认就直接离桌。留在桌上但不确认会占着一个座位，而规则 1 要求确认在进桌之前。
+  // 还没建东西的那条路径：没有座位可离，收起对话框就完了。这正是重排顺序想要的结果——
+  // 拒绝确认的人不会在公开时间线上留下任何痕迹，因为他从来没绑定过。
+  if (state.pendingEntry !== null) {
+    state.pendingEntry = null;
+    el("scope-gate").hidden = true;
+    clearError(el("scope-error"));
+    return;
+  }
+  // 已经落座但没确认（刷新恢复回来的那条路径）。这时才需要离桌：留在桌上不确认会占着
+  // 一个座位，而规则 1 要求确认在进桌之前。
   try {
     await act("seat.leave", {});
   } catch {

@@ -64,12 +64,21 @@ try {
   fs.writeFileSync(target, original.replace(needle, replacement));
   // 变异必须仍然是合法 JavaScript。删掉 `if (...) {` 这类行会破坏花括号配对，产出的是
   // 「整文件语法错」，那会让每个测试都失败——看起来像杀掉，实际什么行为都没测到。
+  //
+  // 只对 JS 做这一步。node --check 认扩展名，喂给它 .html / .css 会直接
+  // ERR_UNKNOWN_FILE_EXTENSION，而那被上面记成 INVALID——于是一条针对 HTML 结构或 CSS
+  // 规则的变异永远不会被评估，报出来是「未评估」而不是「防线有洞」。产品确实依赖这两类
+  // 文件里的不变量（同意门挂在哪个 main 下面、[hidden] 的 display:none 有没有
+  // !important），所以要的是让检查按类型分流，不是把那些变异删掉。
+  const JS_EXTENSIONS = [".js", ".cjs", ".mjs"];
   let syntaxError = null;
-  try {
-    execFileSync("node", ["--check", target], { stdio: "pipe" });
-  } catch (failure) {
-    const detail = `${failure.stderr ?? ""}`.split("\n").find((line) => line.includes("Error")) ?? "";
-    syntaxError = new SyntaxCheckFailed(detail.trim());
+  if (JS_EXTENSIONS.includes(path.extname(target).toLowerCase())) {
+    try {
+      execFileSync("node", ["--check", target], { stdio: "pipe" });
+    } catch (failure) {
+      const detail = `${failure.stderr ?? ""}`.split("\n").find((line) => line.includes("Error")) ?? "";
+      syntaxError = new SyntaxCheckFailed(detail.trim());
+    }
   }
   if (syntaxError !== null) {
     verdict = `INVALID 变异产生语法错，不是行为改动: ${syntaxError.message}`;

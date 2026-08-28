@@ -53,35 +53,40 @@
   <p class="entry-error" id="entry-error" role="alert" hidden></p>
 </main>
 
+<!--
+  公开范围确认。规则 1 要求逐席、绑定之前、可见地确认，所以这是一个挡住整屏的
+  对话框而不是角落里的一行小字。
+
+  它是两个 <main> 的兄弟节点，不在任何一个里面。原因是它必须在入口页那一屏就能显示：
+  确认在建房/落座之前，那时 #table-main 还带着 hidden，而 [hidden] 的 display:none
+  会连同后代一起不渲染。放在 #table-main 里的后果很难查——元素自己的 hidden 是 false，
+  凡是读 el.hidden 的检查都说「可见」，而屏幕上一片空白，点击也点不到。
+-->
+<section class="scope-gate" id="scope-gate" role="dialog" aria-modal="true"
+         aria-labelledby="scope-title" hidden>
+  <div class="scope-box">
+    <h2 id="scope-title">这一桌上，什么是公开的</h2>
+    <ul class="scope-list">
+      <li>你的公开发言，同桌所有人可见。</li>
+      <li>你座位旁 AI 的公开发言，同桌所有人可见，并且会标注为 AI。</li>
+      <li>你的下注、加注、弃牌等动作，同桌所有人可见。</li>
+      <li>你的底牌只有你自己可见；只在摊牌或你自愿亮牌时才公开。</li>
+      <li>你和你的 AI 之间的私下往来不公开，也不会进入公开时间线。</li>
+      <li>你可以随时把某个玩家、某个 AI 或整个座位在你这一侧隐藏。隐藏只改变你自己看到的画面。</li>
+    </ul>
+    <p class="scope-note">
+      确认之后才落座。不确认可以直接离开，不会占用座位。
+    </p>
+    <div class="scope-actions">
+      <button type="button" class="primary" id="scope-accept">我已了解，确认落座</button>
+      <button type="button" class="ghost" id="scope-decline">先不加入</button>
+    </div>
+    <p class="scope-error" id="scope-error" role="alert" hidden></p>
+  </div>
+</section>
+
 <!-- 牌桌主屏。默认隐藏，建房或加入成功后才显示。 -->
 <main class="table" id="table-main" hidden>
-
-  <!--
-    公开范围确认。规则 1 要求逐席、进桌前、可见地确认，所以这是一个挡住整屏的
-    对话框而不是角落里的一行小字。未确认时下面的操作全部不可用。
-  -->
-  <section class="scope-gate" id="scope-gate" role="dialog" aria-modal="true"
-           aria-labelledby="scope-title" hidden>
-    <div class="scope-box">
-      <h2 id="scope-title">这一桌上，什么是公开的</h2>
-      <ul class="scope-list">
-        <li>你的公开发言，同桌所有人可见。</li>
-        <li>你座位旁 AI 的公开发言，同桌所有人可见，并且会标注为 AI。</li>
-        <li>你的下注、加注、弃牌等动作，同桌所有人可见。</li>
-        <li>你的底牌只有你自己可见；只在摊牌或你自愿亮牌时才公开。</li>
-        <li>你和你的 AI 之间的私下往来不公开，也不会进入公开时间线。</li>
-        <li>你可以随时把某个玩家、某个 AI 或整个座位在你这一侧隐藏。隐藏只改变你自己看到的画面。</li>
-      </ul>
-      <p class="scope-note">
-        确认之后才落座。不确认可以直接离开，不会占用座位。
-      </p>
-      <div class="scope-actions">
-        <button type="button" class="primary" id="scope-accept">我已了解，确认落座</button>
-        <button type="button" class="ghost" id="scope-decline">先不加入</button>
-      </div>
-      <p class="scope-error" id="scope-error" role="alert" hidden></p>
-    </div>
-  </section>
 
   <!-- 房间条：邀请码、手数、开局判定原因。 -->
   <section class="roombar" aria-label="房间状态">
