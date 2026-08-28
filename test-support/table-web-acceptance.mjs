@@ -124,14 +124,25 @@ async function newPlayer(browser, origin, name) {
   const page = await context.newPage();
   const consoleErrors = [];
   const pageErrors = [];
+  // 故意断网那一段里，浏览器自己会为每个失败请求打一条 net::ERR_FAILED。那不是缺陷，
+  // 但也不能混进「控制台错误为 0」里当没看见——两种做法都是错的：算进去会让一条正确的
+  // 测试永远红，静默丢掉则等于给自己开了一个可以塞任何错误的口子。
+  //
+  // 所以按窗口分流：断网期间的进 cutErrors 并在报告里单列，其余一律进 consoleErrors。
+  // 窗口由脚本显式打开与关闭，不按错误文本猜——按文本过滤会顺手滤掉真实的网络层缺陷。
+  const cutErrors = [];
+  const player = { name, context, page, consoleErrors, pageErrors, cutErrors, cutOpen: false };
   page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+    if (message.type() !== "error") return;
+    (player.cutOpen ? cutErrors : consoleErrors).push(message.text());
   });
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("pageerror", (error) => {
+    (player.cutOpen ? cutErrors : pageErrors).push(error.message);
+  });
   // 离桌要过一次 window.confirm。不接对话框的话点击会一直挂着。
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto(origin, { waitUntil: "domcontentloaded" });
-  return { name, context, page, consoleErrors, pageErrors };
+  return player;
 }
 
 // 从 DOM 读牌桌状态。刻意不去读 /api/view：那样验证的是协调器，而协调器已经有单元
@@ -1038,6 +1049,113 @@ async function main() {
       `viewer=${resumed.seats.find((s) => s.isViewer)?.name}`);
     ok("掉线后在保留窗内恢复，座位与身份未变");
 
+    // ---- 9b. 真实 reload：按 F5 不该丢席位 ----
+    //
+    // 与上面那个「模拟掉线」按钮是两件事。按钮走的是协调器的 disconnect/resume，页面本身
+    // 一直活着，内存里的会话令牌没丢；reload 会把整个 JS 世界扔掉重建，所以它检验的是
+    // 「浏览器还能不能说出自己是谁」。已确认用户结果要求页面中断后回到原座位
+    // （PROJECT-DECISION-LOG.md 的 SESSION-LAUNCH included 第五条）。
+    const beforeReload = await readTable(dave.page);
+    const daveSeatIdBefore = beforeReload.seats.find((s) => s.isViewer)?.seatId ?? null;
+    const daveHoleBefore = beforeReload.seats.find((s) => s.isViewer)?.hole ?? [];
+    check("reload 前 dave 确实在席且看得到自己两张底牌",
+      daveSeatIdBefore !== null && daveHoleBefore.length === 2
+      && daveHoleBefore.every((c) => c !== "?"),
+      `seat=${daveSeatIdBefore} hole=${daveHoleBefore.join(",")}`);
+
+    await dave.page.reload({ waitUntil: "domcontentloaded" });
+    const afterReload = await until("reload 后 dave 自动回到牌桌", async () => {
+      const table = await readTable(dave.page);
+      return table.entryVisible === false && table.seats.length > 0 ? table : false;
+    });
+    check("真实 reload 之后不落回入口页", afterReload.entryVisible === false);
+    check("真实 reload 之后仍是同一个 seat_id",
+      afterReload.seats.find((s) => s.isViewer)?.seatId === daveSeatIdBefore,
+      `before=${daveSeatIdBefore} after=${afterReload.seats.find((s) => s.isViewer)?.seatId}`);
+    // 底牌只在同一手内可比。刷新期间正好结算一手时换牌是对的，不是缺陷，所以先看手数。
+    // 不写成「手数变了就跳过」——那样这条断言在慢机器上会静默消失。手数没变时必须相等，
+    // 手数变了则要求仍是两张自己的牌。
+    const holeAfter = afterReload.seats.find((s) => s.isViewer)?.hole ?? [];
+    if (afterReload.handIndex === beforeReload.handIndex) {
+      check("真实 reload 之后底牌还是自己那两张（同一手内，权威没重发）",
+        JSON.stringify(holeAfter) === JSON.stringify(daveHoleBefore),
+        `hand=${afterReload.handIndex} before=${daveHoleBefore.join(",")} after=${holeAfter.join(",")}`);
+    } else {
+      check("真实 reload 跨过一次结算，底牌换成新一手自己的两张",
+        holeAfter.length === 2 && holeAfter.every((c) => c !== "?"),
+        `hand ${beforeReload.handIndex}->${afterReload.handIndex} after=${holeAfter.join(",")}`);
+    }
+    check("真实 reload 之后连接状态回到已连接",
+      afterReload.connState.includes("已连接"), `connState=${afterReload.connState}`);
+    // 同桌视角：这次刷新不该在别人画面上留下一个不消失的掉线标记。允许中途出现——
+    // pagehide 的 beacon 会先摘掉旧连接，那一瞬间确实是掉线，正确的要求是它会恢复。
+    await until("同桌看到 dave 刷新后不再是掉线", async () => {
+      const table = await readTable(alice.page);
+      return table.seats[daveIndex].tags.includes("掉线") === false;
+    });
+    ok("真实 reload 回到原座位，同桌视角也恢复");
+
+    // 令牌留存的位置本身也要钉住：不能进 URL，不能进 localStorage。
+    const tokenPlacement = await dave.page.evaluate(() => ({
+      href: location.href,
+      search: location.search,
+      hash: location.hash,
+      localStorageKeys: Object.keys(localStorage),
+      sessionStorageKeys: Object.keys(sessionStorage),
+      cookie: document.cookie,
+    }));
+    check("会话令牌不在 URL 里（不进历史、不进 Referer、不进截图）",
+      tokenPlacement.search === "" && tokenPlacement.hash === "",
+      JSON.stringify({ search: tokenPlacement.search, hash: tokenPlacement.hash }));
+    check("会话令牌不写 localStorage（关掉浏览器还在等于白留一份泄漏面）",
+      tokenPlacement.localStorageKeys.length === 0,
+      `localStorage=${JSON.stringify(tokenPlacement.localStorageKeys)}`);
+    check("会话令牌确实留在 sessionStorage（否则上面那条 reload 恢复是靠别的东西过的）",
+      tokenPlacement.sessionStorageKeys.includes("tokengame.table.session_token"),
+      `sessionStorage=${JSON.stringify(tokenPlacement.sessionStorageKeys)}`);
+    artifacts.push(await shot(dave, "09b-after-reload"));
+
+    // ---- 9c. 网络中断：不发任何通知，纯靠连接租约判掉线 ----
+    //
+    // 这一条和「点掉线按钮」的区别是整件事的要点：按钮会明确告诉服务端「我走了」，而真实
+    // 断网什么都发不出去。租约是唯一还能发现这件事的机制，所以这里把路由全掐掉，一个字节
+    // 都不让出去，然后要求同桌照样看到掉线。
+    //
+    // 用 dave 的 context 级路由拦截，而不是 page 级：拦截要覆盖这个上下文里的全部请求。
+    dave.cutOpen = true;
+    await dave.context.route("**/api/**", (route) => route.abort());
+    const netOffline = await until("断网后同桌看到 dave 掉线（无 beacon，纯租约）", async () => {
+      const table = await readTable(alice.page);
+      return table.seats[daveIndex].tags.includes("掉线") ? table : false;
+    }, { timeout: 30_000 });
+    check("网络中断在别人的画面上标出掉线，且没有任何断线通知参与",
+      netOffline.seats[daveIndex].tags.includes("掉线"));
+    artifacts.push(await shot(alice, "09c-dave-network-cut"));
+
+    await dave.context.unroute("**/api/**");
+    // 断网必须真的产生过失败请求。一条都没有说明拦截根本没生效，那上面那条「看到掉线」
+    // 就是靠别的原因过的——空断言比失败的断言更坏，因为它不会红。
+    check("故意断网确实拦下了请求（否则上面那条掉线不是断网造成的）",
+      dave.cutErrors.length > 0, `断网期间浏览器网络错误 ${dave.cutErrors.length} 条`);
+    // 网络回来后页面自己就会恢复：轮询还在跑，下一次成功的 /api/view 就是一次续租，
+    // 而权威侧 markConnected 由这条路径上的 seat.connect 触发……并不会。轮询只续租，
+    // 不重建连接。所以这里要求的是「租约到期后页面能靠 resume 回来」——它由客户端的
+    // 终态处理决定，而不是靠视图请求碰巧成功。
+    const netRecovered = await until("网络恢复后 dave 重新在线", async () => {
+      const table = await readTable(alice.page);
+      return table.seats[daveIndex].tags.includes("掉线") === false ? table : false;
+    }, { timeout: 30_000 });
+    check("网络恢复后掉线标记消失，席位没被换人",
+      netRecovered.seats[daveIndex].name === "dave",
+      `seat=${netRecovered.seats[daveIndex].name}`);
+    // 关掉窗口要在确认恢复之后：提前关会把恢复期间的错误也算进正常统计里。
+    dave.cutOpen = false;
+    ok("网络中断纯靠连接租约判掉线，恢复后回到原席");
+
+    // 真实关闭上下文那一条放在第 11 节之后（11b）：它会让一席进入保留窗，而保留窗里的
+    // 席位会影响「桌子还能不能开下一手」。放在这里等于让后面几节都在一张少人桌上跑，
+    // 那样它们即使有缺陷也可能因为「人不够所以本来就不开牌」而看不出来。
+
     // ---- 10. 暂离 ----
     const carol = players.find((p) => p.name === "carol");
     const carolIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "carol");
@@ -1100,16 +1218,53 @@ async function main() {
       stillPlayable.seats.length >= 2 && stillPlayable.globalError === null,
       `seats=${stillPlayable.seats.length} start=${stillPlayable.startReason}`);
 
+    // ---- 11b. 真实关闭上下文：连接租约兜底 ----
+    //
+    // 关掉整个 browser context 等于关掉标签页。pagehide 有机会发出一次 beacon，但那只是
+    // 加速：这里不区分「beacon 送到了」和「没送到」，两条路都必须导致掉线。9c 已经单独
+    // 证明了完全没有通知时租约照样判掉线，所以这一条要的是端到端——一个真的被关掉的窗口
+    // 不会永远占着座位。
+    //
+    // 放在这里而不是第 9 节之后：它会让一席进入保留窗，而那会改变「桌子还能不能开下一手」。
+    const bob = players.find((p) => p.name === "bob");
+    const bobIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "bob");
+    check("关闭上下文前 bob 确实在席且不是掉线状态",
+      bobIndex >= 0
+      && (await readTable(alice.page)).seats[bobIndex].tags.includes("掉线") === false,
+      `bobIndex=${bobIndex}`);
+    await bob.context.close();
+    const bobGone = await until("bob 的上下文被真的关掉后，同桌看到掉线", async () => {
+      const table = await readTable(alice.page);
+      const seat = table.seats[bobIndex];
+      return seat !== undefined && seat.tags.includes("掉线") ? table : false;
+    }, { timeout: 30_000 });
+    check("关闭浏览器上下文导致掉线（beacon 或租约，两条路都算）",
+      bobGone.seats[bobIndex].tags.includes("掉线"));
+    check("被关掉的一席进入保留窗，位子没有立刻被抹掉",
+      bobGone.seats[bobIndex].name === "bob", `seat=${bobGone.seats[bobIndex].name}`);
+    artifacts.push(await shot(alice, "11b-bob-context-closed"));
+    ok("真实关闭上下文后席位进入掉线与保留窗，不是无限在线");
+
     // ---- 12. 控制台必须干净 ----
     const consoleReport = players.map((player) => ({
       player: player.name,
       consoleErrors: player.consoleErrors,
       pageErrors: player.pageErrors,
+      // 故意断网窗口内的错误单列。不并入合计，但必须出现在证据里——否则「合计为 0」这句话
+      // 就变成了「除了我不想算的那些之外为 0」，而读证据的人看不出差别。
+      duringDeliberateNetworkCut: player.cutErrors,
     }));
     const totalConsole = consoleReport.reduce(
       (sum, entry) => sum + entry.consoleErrors.length + entry.pageErrors.length, 0);
-    check("四个上下文的控制台错误合计为 0", totalConsole === 0,
-      totalConsole === 0 ? "0" : JSON.stringify(consoleReport));
+    check("四个上下文的控制台错误合计为 0（故意断网窗口除外，单列在证据里）",
+      totalConsole === 0,
+      totalConsole === 0
+        ? `0；故意断网窗口内 ${consoleReport.reduce((s, e) => s + e.duringDeliberateNetworkCut.length, 0)} 条已单列`
+        : JSON.stringify(consoleReport));
+    // 窗口必须全部关上。留着开的窗口会把它之后的所有错误都吞掉。
+    check("所有故意断网窗口都已关闭（否则后续错误会被吞掉）",
+      players.every((player) => player.cutOpen === false),
+      JSON.stringify(players.map((p) => ({ player: p.name, cutOpen: p.cutOpen }))));
     consoleChecked = true;
 
     // ---- 13. 证据自身的可信度 ----
@@ -1138,6 +1293,7 @@ async function main() {
       player: player.name,
       consoleErrors: player.consoleErrors,
       pageErrors: player.pageErrors,
+      duringDeliberateNetworkCut: player.cutErrors,
     }));
     const totalConsole = consoleReport.reduce(
       (sum, entry) => sum + entry.consoleErrors.length + entry.pageErrors.length, 0);

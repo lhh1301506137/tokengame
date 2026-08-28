@@ -1,0 +1,134 @@
+{
+  "name": "connection-lease",
+  "note": "阶段 1 项 3 的连接租约。每条变异都是一种「页面看起来正常、掉线判定实际失效」的写法：判定不发生、判定过晚、判定发生但席位再也回不来、或者席位释放后凭据与会话留在内存里。beacon 相关的变异刻意集中在「beacon 成了唯一依据」这一类——要求里那句「不能作为唯一断线依据」正是这个意思。",
+  "mutations": [
+    {
+      "id": "lease-never-expires",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "        if (at - seen <= this.connectionLeaseMs) continue;",
+      "replacement": "        if (true) continue;",
+      "test": "test/connection-lease.test.cjs",
+      "note": "扫描永不判过期。这一版回到了改动之前的世界：关标签页、刷新、拔网线之后那一席永远是 connected，保留窗永不起算，位子永不还。"
+    },
+    {
+      "id": "lease-expires-immediately",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "        if (at - seen <= this.connectionLeaseMs) continue;",
+      "replacement": "        if (false) continue;",
+      "test": "test/connection-lease.test.cjs",
+      "note": "反方向：每次扫描把所有连接都判掉线。正在轮询的人也会被判掉线，所以「持续轮询不掉线」那条必须存在——只测「不轮询会掉线」时这一版也是绿的。"
+    },
+    {
+      "id": "lease-boundary-off-by-one",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "        if (at - seen <= this.connectionLeaseMs) continue;",
+      "replacement": "        if (at - seen <= this.connectionLeaseMs * 2) continue;",
+      "test": "test/connection-lease.test.cjs",
+      "note": "租约悄悄翻倍。判定还会发生，只是迟一倍，于是「掉线后 120 秒释放」变成「16 秒 + 120 秒」。没有一条断言盯住阈值时这种改动完全看不出来。"
+    },
+    {
+      "id": "lease-measured-from-open",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "        const seen = session.last_seen.get(connectionId) ?? session.opened_at;",
+      "replacement": "        const seen = session.opened_at;",
+      "test": "test/connection-lease.test.cjs",
+      "note": "从开会话起算而不是从最后一次续租起算。一桌人打满 8 秒之后全体被判掉线——租约变成了会话寿命上限。"
+    },
+    {
+      "id": "connect-does-not-start-lease",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    session.last_seen.set(connectionId, this.now());\n    return connectionId;\n  }",
+      "replacement": "    return connectionId;\n  }",
+      "test": "test/connection-lease.test.cjs",
+      "note": "建连接时不记时间。回落到 opened_at 之后，一个在会话开了很久之后才打开的新窗口会在第一次扫描时立刻被判掉线。"
+    },
+    {
+      "id": "touch-does-not-renew",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    if (session.connections.has(connectionId)) {\n      session.last_seen.set(connectionId, this.now());\n      return connectionId;\n    }",
+      "replacement": "    if (session.connections.has(connectionId)) {\n      return connectionId;\n    }",
+      "test": "test/connection-lease.test.cjs",
+      "note": "续租这一步空转。正常轮询的页面在一个租约周期后被判掉线，而它自己看到的牌桌一直在更新——玩家完全不知道同桌已经把自己当掉线的人。"
+    },
+    {
+      "id": "touch-ignores-swept-connection",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    return this.connect(session, connectionId);\n  }",
+      "replacement": "    return null;\n  }",
+      "test": "test/connection-lease.test.cjs",
+      "note": "这是改动前的原始行为，也是本项里最难自己发现的一处：租约摘掉连接之后，同一个页面继续成功轮询也永远续不上。断网恢复那条测试就是为它写的。"
+    },
+    {
+      "id": "touch-accepts-any-id-globally",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    return this.connect(session, connectionId);\n  }",
+      "replacement": "    for (const other of this.sessions.values()) {\n      if (other !== session && other.connections.has(connectionId)) {\n        return this.connect(other, connectionId);\n      }\n    }\n    return this.connect(session, connectionId);\n  }",
+      "test": "test/connection-lease.test.cjs",
+      "note": "按 id 全局找这个连接属于谁。连接 id 是调用方随口给的字符串，所以这一版等于让任何持有一份会话令牌的人替别人的席位续命或重连。"
+    },
+    {
+      "id": "view-does-not-touch",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    await this.touchConnection(session, options.connectionId);",
+      "replacement": "",
+      "test": "test/connection-lease.test.cjs",
+      "note": "读视图不再算续租。轮询就是唯一的心跳，去掉它等于所有人在一个租约周期后一起掉线。"
+    },
+    {
+      "id": "release-keeps-web-session",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "      this.sessions.delete(session.token);\n      this.custody.forget(session.seat_handle);",
+      "replacement": "      this.custody.forget(session.seat_handle);",
+      "test": "test/connection-lease.test.cjs",
+      "note": "席位释放后 web session 留着。一个指向不存在席位的令牌仍然能换到会话对象，而要求写的是「释放后删除 web session、custody binding 和相关凭据」。"
+    },
+    {
+      "id": "release-keeps-custody-binding",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "      this.sessions.delete(session.token);\n      this.custody.forget(session.seat_handle);",
+      "replacement": "      this.sessions.delete(session.token);",
+      "test": "test/connection-lease.test.cjs",
+      "note": "另一半：会话删了但托管绑定留着，于是那份席位凭据继续躺在协调器内存里。两条分开列是因为它们能各自失效，而任一条失效时另一条都还是绿的。"
+    },
+    {
+      "id": "release-probe-uses-public-seat-view",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "        await this.core.dispatch(\"view.hand\", this.injected(\"view.hand\", session, {}));",
+      "replacement": "        await this.core.dispatch(\"view.seat\", { seat_id: session.seat_id });",
+      "test": "test/connection-lease.test.cjs",
+      "note": "探针换成公开的 view.seat。它回答的是「这个位子还在桌上吗」而不是「本会话这份凭据还代表这一席吗」：席位被释放后仍在投影里，于是清理永远不触发。"
+    },
+    {
+      "id": "sweep-not-started-with-session",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    // 租约扫描同理，但它与有没有适配器无关。\n    this.startSweeper();",
+      "replacement": "",
+      "test": "test/connection-lease.test.cjs",
+      "note": "定时器根本不起。所有直接调 sweepConnections 的测试照样全绿，而真实部署里没有任何人会被判掉线——这条变异存在的意义就是证明那些测试自己盖不住这件事。"
+    },
+    {
+      "id": "sweep-interval-longer-than-lease",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    this.sweepIntervalMs = options.sweepIntervalMs ?? Math.max(500, Math.floor(this.connectionLeaseMs / 4));",
+      "replacement": "    this.sweepIntervalMs = options.sweepIntervalMs ?? Math.max(500, this.connectionLeaseMs * 4);",
+      "test": "test/connection-lease.test.cjs",
+      "note": "周期比租约还长。判定仍会发生，但平均迟到两个租约，掉线在画面上迟迟不出现。"
+    },
+    {
+      "id": "sweeper-not-stopped",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "  stopSweeper() {\n    if (this.sweepTimer === null) return;\n    clearInterval(this.sweepTimer);\n    this.sweepTimer = null;\n  }",
+      "replacement": "  stopSweeper() {\n    this.sweepTimer = null;\n  }",
+      "test": "test/connection-lease.test.cjs",
+      "note": "只把字段清空，不清定时器。字段变成 null 所以「停服务后 sweepTimer 为 null」照样成立，但那个 interval 还在跑，而且再起一次会多一个——unref 让它不挡进程退出，于是这件事在测试里静悄悄。变异要杀掉它得靠句柄本身，所以断言不能只看字段。"
+    },
+    {
+      "id": "beacon-is-only-evidence",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "  async sweepConnections() {",
+      "replacement": "  async sweepConnections() {\n    if (true) return { disconnected: [], cleaned: [] };",
+      "test": "test/connection-lease.test.cjs",
+      "note": "扫描整体空转，只剩 beacon 那条路。这正是要求里禁止的形态：崩溃、断电、拔网线时 beacon 根本发不出去，而这一版下那些情况一律判不出掉线。"
+    }
+  ]
+}

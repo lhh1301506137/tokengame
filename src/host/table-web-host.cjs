@@ -33,6 +33,27 @@ const { LIVELY_V1 } = require("../authority/seat-ai-store.cjs");
 const LOOPBACK_HOSTS = Object.freeze(["127.0.0.1", "::1", "localhost"]);
 const MAX_BODY_BYTES = 64 * 1024;
 
+// 连接租约。每次读视图续一次；超过这个时长没续就按掉线处理。
+//
+// 8 秒的取法：轮询间隔 700ms，所以正常情况下每 8 秒有十来次续租的机会，丢几次不会误判；
+// 而它又明显短于 120 秒保留窗，掉线判定不会把「120 秒后释放」拖成「租约 + 120 秒」。
+//
+// 为什么必须有它：在此之前 seat.disconnect 只由「模拟掉线」那个按钮触发，页面上既没有
+// pagehide 也没有 sendBeacon。真实的关标签页、刷新、拔网线，权威侧那一席都还是 connected，
+// 于是保留窗永远不起算、位子永远不还、桌子凑不齐下一手，而别人只看到一个「在线但永远
+// 不行动」的席位。beacon 之类的告别信号在崩溃、断电、拔网线时根本发不出，所以它只能是
+// 加速手段，不能是判定依据——要求里那句「不能作为唯一断线依据」说的就是这件事。
+const CONNECTION_LEASE_MS = 8_000;
+
+// 「这一席已经不在了」的错误码。三者对本层是同一件事：会话指向的席位没了，该清理。
+// 与 driveOnce 里那一组保持同一份定义——分成两份的话，加了新码只改一处会让另一处
+// 把「席位没了」当成故障抛出去。
+const SEAT_GONE_CODES = Object.freeze([
+  "seat_credential_revoked",
+  "seat_not_found",
+  "recovery_credential_rejected",
+]);
+
 // 浏览器可以发的动作。这是白名单而不是黑名单：新增一条核心命令时，默认对浏览器不可见。
 //
 // 刻意不在其中的两类，理由不同：
@@ -82,6 +103,13 @@ class TableWebHost {
     // 是 50，而一手牌里真人发言有额度（12 条/人/手），测试凑不出 51 条而不去改动产品规则。
     // 不可注入的上限等于一条只能靠读代码相信的不变量。
     this.maxDriveErrors = options.maxDriveErrors ?? 50;
+    // 连接租约。可注入是为了让「到期真的会断」这条能在注入时钟下判定；默认值本身
+    // 由 test/connection-lease.test.cjs 钉在「明显长于轮询间隔、明显短于保留窗」之间。
+    this.connectionLeaseMs = options.connectionLeaseMs ?? CONNECTION_LEASE_MS;
+    // 扫描间隔。取租约的四分之一：判定的迟到上限就是这个间隔，而扫描本身只是
+    // 遍历几个会话，密一点没有代价。
+    this.sweepIntervalMs = options.sweepIntervalMs ?? Math.max(500, Math.floor(this.connectionLeaseMs / 4));
+    this.sweepTimer = null;
     this.driveTimer = null;
     this.driving = false;
     this.driveErrors = [];
@@ -115,7 +143,10 @@ class TableWebHost {
 
   // ------------------------------------------------------------------ 视图组装
 
-  async buildView(session) {
+  async buildView(session, options = {}) {
+    // 读视图即续租。放在最前面而不是最后：视图组装过程中任何一步抛错都不该让这次
+    // 「浏览器还活着」的证据丢掉，否则一个正在报错的页面会被顺带判成掉线。
+    await this.touchConnection(session, options.connectionId);
     const seatId = session.seat_id;
     const projection = await this.core.dispatch("view.projection");
     const privateHand = (await this.core.dispatch(
@@ -211,8 +242,7 @@ class TableWebHost {
           )).intents;
         } catch (error) {
           // 席位可能已被释放或凭据已吊销。这不是驱动的错误，跳过即可。
-          if (["seat_credential_revoked", "seat_not_found", "recovery_credential_rejected"]
-            .includes(error?.code)) continue;
+          if (SEAT_GONE_CODES.includes(error?.code)) continue;
           throw error;
         }
 
@@ -281,6 +311,21 @@ class TableWebHost {
     return { started, resolved };
   }
 
+  // 连接租约的扫描表。与适配器驱动分开起，因为它必须在没有模型适配器时也运行：
+  // 一桌没有 AI 的真人牌局同样需要掉线判定，而 startDriver 在 modelAdapter 为 null 时
+  // 直接返回。合成一个表会让「没接模型的桌子永远判不了掉线」，且那件事在有模型的
+  // 测试环境里看不出来。
+  startSweeper() {
+    if (this.sweepTimer !== null) return;
+    this.sweepTimer = setInterval(() => {
+      this.sweepConnections().catch((error) => {
+        this.driveErrors.push({ at: this.now(), code: error?.code ?? "sweep_failed" });
+        if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
+      });
+    }, this.sweepIntervalMs);
+    this.sweepTimer.unref?.();
+  }
+
   startDriver() {
     if (this.driveTimer !== null || this.modelAdapter === null) return;
     this.driveTimer = setInterval(() => {
@@ -296,6 +341,12 @@ class TableWebHost {
     if (this.driveTimer === null) return;
     clearInterval(this.driveTimer);
     this.driveTimer = null;
+  }
+
+  stopSweeper() {
+    if (this.sweepTimer === null) return;
+    clearInterval(this.sweepTimer);
+    this.sweepTimer = null;
   }
 
   // ------------------------------------------------------------------ HTTP
@@ -401,6 +452,10 @@ class TableWebHost {
       // 有效连接消失」才起算。把连接 id 收成集合而不是一个字段，正是为了不把两个窗口
       // 中的一个关掉说成掉线。
       connections: new Set(),
+      // 连接 id -> 最后一次续租时刻。按连接而不是按会话记：同一玩家开两个窗口时，
+      // 关掉一个只该让那一个连接过期，另一个还在轮询就不算掉线。按会话记会把
+      // 「关掉其中一个窗口」说成掉线，而那正是 connections 做成集合要避免的事。
+      last_seen: new Map(),
       hidden: { players: [], ais: [], seats: [] },
       opened_at: this.now(),
     };
@@ -411,6 +466,8 @@ class TableWebHost {
     session.first_connection_id = await this.connect(session, token);
     // 适配器驱动只在真的有席位可驱动时才起表。没有会话时空转没有意义。
     this.startDriver();
+    // 租约扫描同理，但它与有没有适配器无关。
+    this.startSweeper();
     return session;
   }
 
@@ -423,7 +480,112 @@ class TableWebHost {
       this.injected("seat.connect", session, { connection_id: connectionId }),
     );
     session.connections.add(connectionId);
+    // 建连接即开始计租。不设的话新连接的 last_seen 是 undefined，第一次扫描就把它
+    // 当成过期——刚打开的页面立刻被判掉线。
+    session.last_seen.set(connectionId, this.now());
     return connectionId;
+  }
+
+  // 续租。任何一次带 connection_id 的认证请求都算。
+  //
+  // 刻意不新增一条专用心跳路由：浏览器每 700ms 都在读视图，那条请求本身就是最可靠的
+  // 存活证据。另发一种心跳意味着页面在后台被浏览器节流时，视图还在轮询而心跳被推迟，
+  // 于是一个正在正常使用的页面被判掉线。
+  async touchConnection(session, connectionIdValue) {
+    const connectionId = typeof connectionIdValue === "string" && connectionIdValue !== ""
+      ? connectionIdValue
+      : null;
+    if (connectionId === null) return null;
+    if (session.connections.has(connectionId)) {
+      session.last_seen.set(connectionId, this.now());
+      return connectionId;
+    }
+
+    // 不在集合里，说明这个连接先前被租约扫描摘掉了——典型情形是拔网线：页面一直在轮询，
+    // 只是有一段时间到不了这里。网络回来后必须重新建连，不能只是「忽略这个 id」。
+    //
+    // 忽略的后果不显眼但很坏：页面自己看到的是一份正常更新的牌桌（view.projection 与
+    // view.hand 都不需要连接），同桌看到的却是一个永远掉线的人，结算时被判 SIT_OUT，
+    // 保留窗走完位子被收走——而这个人全程都在正常使用。
+    //
+    // 授权面没有放宽。重建连的凭据是会话令牌，与 /api/session/resume 要的是同一份证明；
+    // 这里只是把「必须点一下才能回来」变成「轮询通了就回来」。
+    //
+    // 沿用调用方给的 id 而不是铸新的：它就是同一个标签页。铸新会让忽略返回值的客户端
+    // 每次轮询多出一个连接，那个集合没有上界；沿用则是幂等的，上界就是客户端实际用过的
+    // 不同 id 数量。
+    //
+    // 只碰 this.sessions 里的这一个会话。刻意不按 id 去全局找连接属于谁——那样一个会话
+    // 就能改另一个会话的连接集合，而 id 是调用方随口给的字符串。
+    return this.connect(session, connectionId);
+  }
+
+  // 显式断开一个连接。postDisconnect 与 beacon 都走这里。
+  async disconnect(session, connectionIdValue) {
+    const connectionId = typeof connectionIdValue === "string" && connectionIdValue !== ""
+      ? connectionIdValue
+      : session.token;
+    await this.core.dispatch(
+      "seat.disconnect",
+      this.injected("seat.disconnect", session, { connection_id: connectionId }),
+    );
+    session.connections.delete(connectionId);
+    session.last_seen.delete(connectionId);
+    return session.connections.size;
+  }
+
+  // 扫过期连接，并清理已被权威释放的席位。
+  //
+  // 两件事放在一次扫描里是因为它们的触发条件是同一条时间线：连接过期 -> 保留窗起算 ->
+  // 保留窗到期 -> 权威释放席位 -> 本层该把会话与托管绑定一起删掉。分成两个定时器只会
+  // 让「席位已经没了但会话还在」多出一个可观察的窗口。
+  async sweepConnections() {
+    const at = this.now();
+    const disconnected = [];
+    const cleaned = [];
+
+    for (const session of [...this.sessions.values()]) {
+      for (const connectionId of [...session.connections]) {
+        const seen = session.last_seen.get(connectionId) ?? session.opened_at;
+        if (at - seen <= this.connectionLeaseMs) continue;
+        try {
+          await this.disconnect(session, connectionId);
+          disconnected.push(connectionId);
+        } catch (error) {
+          // 席位已经被释放或凭据已吊销时，seat.disconnect 会被拒。那不是故障：
+          // 要断的东西已经不存在了。把连接从本层摘掉，剩下的交给下面的清理。
+          if (!SEAT_GONE_CODES.includes(error?.code)) throw error;
+          session.connections.delete(connectionId);
+          session.last_seen.delete(connectionId);
+        }
+      }
+    }
+
+    // 席位是否还在。探针用 view.hand 而不是 view.seat：view.seat 只收公开的 seat_id，
+    // 它回答的是「这个位子还在桌上吗」，而这里要问的是「本会话手里这份凭据还代表这一席
+    // 吗」。位子被释放后又被别人坐上时两者会分道扬镳——view.seat 照样成功，于是一份指向
+    // 陌生人席位的旧会话被判定为健在。view.hand 走 requireSeatCredential，凭据吊销和
+    // 席位消失都会明确报出来。
+    //
+    // 顺带的代价是它会取一次底牌，扫描因此比 view.seat 重一点。可以接受：扫描周期是租约的
+    // 四分之一，而这个探针的返回值被丢掉，不进任何面向模型或浏览器的通道。
+    for (const session of [...this.sessions.values()]) {
+      let gone = false;
+      try {
+        await this.core.dispatch("view.hand", this.injected("view.hand", session, {}));
+      } catch (error) {
+        gone = SEAT_GONE_CODES.includes(error?.code);
+        if (!gone) throw error;
+      }
+      if (!gone) continue;
+      // 释放后删 web session、custody binding 与相关凭据。留着任何一样都等于
+      // 一个指向不存在席位的令牌仍然可用，而凭据还躺在内存里。
+      this.sessions.delete(session.token);
+      this.custody.forget(session.seat_handle);
+      cleaned.push(session.seat_id);
+    }
+
+    return { disconnected, cleaned };
   }
 
   // 刷新页面后重新建连接。
@@ -436,9 +598,19 @@ class TableWebHost {
   // 是 seat-custody.cjs 里明确记下来的，不在这里偷偷补一条「让浏览器保存凭据」的后路。
   async postResume(response, body) {
     const session = this.requireSession(body.session_token);
-    // 复用同一个连接 id 时，权威侧看到的是「这个连接又回来了」；传新的则是「多了一个窗口」。
-    // 浏览器刷新属于前者，所以默认复用会话令牌本身作为连接 id。
-    const connectionId = await this.connect(session, body.connection_id ?? session.token);
+    // 不带 connection_id 时铸一个新的，不回落到会话令牌本身。
+    //
+    // 回落看起来更省事——「同一个标签页回来了」在权威侧确实是同一个连接。但会话令牌当连接
+    // id 意味着凡是持有该令牌的页面都共用一条连接：Chrome 的「复制标签页」会把
+    // sessionStorage 一起复制，于是两个页面都用同一个 id 轮询，其中任一个关掉时发出的
+    // beacon 会把另一个也断掉——而那个页面还在正常轮询，touchConnection 却因为 id 已被
+    // 移出集合而不再续租，于是它在权威侧永久显示掉线。铸新 id 让每个页面各自一条租约，
+    // 关一个只影响一个。
+    //
+    // 刷新残留的旧连接不需要在这里处理：pagehide 的 beacon 通常已经把它摘掉，没摘掉的
+    // 也会在一个租约周期内被扫描判掉。而权威按连接 Set 计数、只在集合空掉时起保留窗，
+    // 所以「新连接已建 + 旧 beacon 迟到」这种乱序不会误判掉线。
+    const connectionId = await this.connect(session, body.connection_id);
     sendJson(response, 200, {
       ok: true,
       session_token: session.token,
@@ -454,23 +626,16 @@ class TableWebHost {
   // 会话留着、连接摘掉，与权威侧「保留窗从最后一个连接消失起算」对齐。
   async postDisconnect(response, body) {
     const session = this.requireSession(body.session_token);
-    const connectionId = typeof body.connection_id === "string" && body.connection_id !== ""
-      ? body.connection_id
-      : session.token;
-    await this.core.dispatch(
-      "seat.disconnect",
-      this.injected("seat.disconnect", session, { connection_id: connectionId }),
-    );
-    session.connections.delete(connectionId);
+    const remaining = await this.disconnect(session, body.connection_id);
     sendJson(response, 200, {
       ok: true,
-      connection_count: session.connections.size,
+      connection_count: remaining,
     });
   }
 
   async postView(response, body) {
     const session = this.requireSession(body.session_token);
-    const view = await this.buildView(session);
+    const view = await this.buildView(session, { connectionId: body.connection_id });
     sendJson(response, 200, { ok: true, view });
   }
 
@@ -570,6 +735,7 @@ class TableWebHost {
 
   async stop() {
     this.stopDriver();
+    this.stopSweeper();
     await closeServer(this.server);
   }
 }
@@ -618,4 +784,9 @@ function normalizeDecision(value) {
   return { decision: "silent", failure: "adapter_unknown_decision" };
 }
 
-module.exports = { TableWebHost, BROWSER_ACTIONS, normalizeDecision };
+module.exports = {
+  TableWebHost,
+  BROWSER_ACTIONS,
+  normalizeDecision,
+  CONNECTION_LEASE_MS,
+};

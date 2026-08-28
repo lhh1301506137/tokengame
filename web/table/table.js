@@ -8,8 +8,19 @@
   就不再是真的那一桌。
 
   它也拿不到席位凭据。浏览器手上只有一个会话令牌，凭据留在本机协调器进程里（F6）。
-  所以这里没有任何 localStorage 写入：会话令牌只存在内存中，刷新页面等于新连接，
-  要恢复席位得走协调器的 /api/session/resume。
+
+  会话令牌存在 sessionStorage，不存 localStorage，也不进 URL。三者的差别正是这里要的：
+  - localStorage 跨标签页、跨会话长期留存，等于把一份能代表席位行动的东西留在磁盘上，
+    关掉浏览器再打开还在——而席位早就被释放了，留着只剩泄漏面。
+  - URL 会进浏览历史、进 Referer、进用户随手贴出去的截图，是最差的一种。
+  - sessionStorage 的生命周期恰好是「这一个标签页」：刷新保留，关标签页即清。而这正是
+    要区分的两件事——刷新是普通中断，要回到原座位；关标签页是离开，该走连接租约到期。
+
+  为什么必须留：会话令牌只存在内存时，刷新页面浏览器就再也说不出自己是谁，只能回到入口
+  等 120 秒保留窗走完，而协调器那边席位、凭据、托管绑定一样没丢。那违反已确认用户结果
+  「在宿主任务、页面或网络发生普通中断后，让玩家恢复原游戏会话、原房间和原座位」
+  （PROJECT-DECISION-LOG.md 的 TG-L2 SESSION-LAUNCH included 第五条）。存储形式本身
+  不是产品语义——同一条记录的 excluded 明确不冻结席位凭据的存储目录与 URL 形式。
 */
 
 // ---- 状态 ----
@@ -26,6 +37,33 @@ const state = {
 };
 
 const el = (id) => document.getElementById(id);
+
+// ---- 会话令牌的标签页级留存 ----
+
+const SESSION_STORAGE_KEY = "tokengame.table.session_token";
+
+// sessionStorage 在少数环境里会抛（隐私模式、被策略禁用）。抛了就退回纯内存：刷新恢复
+// 不成立，但牌桌照常能玩。用 try 包住而不是先查 typeof，因为存在与可写是两件事。
+function rememberSession(token) {
+  try {
+    if (typeof token === "string" && token !== "") {
+      sessionStorage.setItem(SESSION_STORAGE_KEY, token);
+    } else {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // 无处可存。下一次刷新会回到入口，这是降级而不是错误。
+  }
+}
+
+function recallSession() {
+  try {
+    const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return typeof token === "string" && token !== "" ? token : null;
+  } catch {
+    return null;
+  }
+}
 
 // 字素计数。String.length 会把家庭 emoji 算成 11，于是 140 上限在输入框这一侧
 // 可以被轻易绕过——权威会拒，但玩家看到的是一个没解释的失败。
@@ -145,6 +183,7 @@ function enterTable(result) {
   state.sessionToken = result.session_token;
   state.connectionId = result.connection_id ?? null;
   state.seatId = result.seat_id ?? null;
+  rememberSession(state.sessionToken);
   el("entry-view").hidden = true;
   el("table-main").hidden = false;
   if (typeof result.invite_code === "string") {
@@ -183,7 +222,13 @@ function stopPolling() {
 async function refresh() {
   if (state.sessionToken === null) return;
   try {
-    const result = await post("/api/view", { session_token: state.sessionToken });
+    // 每次轮询都带 connection_id：这一条请求同时是心跳。不另发一种心跳，理由写在
+    // table-web-host.cjs 的 touchConnection 上——两条不同节流特性的请求会让一个正常
+    // 使用中的后台标签页被判掉线。
+    const result = await post("/api/view", {
+      session_token: state.sessionToken,
+      connection_id: state.connectionId,
+    });
     state.view = result.view;
     clearError(el("global-error"));
     render(result.view);
@@ -239,6 +284,9 @@ el("scope-accept").addEventListener("click", async () => {
 // 本机会话已经没有对应的座位了，继续留在牌桌画面上只会显示一份不再更新的旧快照。
 function returnToEntry(message) {
   stopPolling();
+  // 回入口的每条路径都意味着这个令牌再也用不上了（离桌、被释放、会话失效）。留着它只会
+  // 让下一次刷新拿一个必然被拒的令牌去试恢复，然后在控制台留一条 403。
+  rememberSession(null);
   state.sessionToken = null;
   state.connectionId = null;
   state.seatId = null;
@@ -820,6 +868,38 @@ el("simulate-reconnect").addEventListener("click", async () => {
   }
 });
 
+// 关标签页 / 切走时尽力发一次断线通知。
+//
+// 这是 best effort，不是断线判定的依据。三件事都可能让它到不了：进程被杀、断网、
+// 浏览器直接丢弃 keepalive 请求。真正的判定是服务端的连接租约——不发 beacon 也会在
+// 租约到期后掉线（test/connection-lease.test.cjs 里那条「不发 beacon 也会到期断线」
+// 钉的就是这一点）。beacon 的唯一作用是把「关页面到判定掉线」从一个租约周期缩短到即时。
+//
+// 用 pagehide 而不是 unload/beforeunload：后两者在移动端和 back/forward cache 场景下
+// 经常不触发，而 pagehide 是这类清理的现行事件。visibilitychange 也不行——切个标签页就
+// 触发，那会把「看了一眼别的窗口」当成掉线。
+window.addEventListener("pagehide", () => {
+  if (state.sessionToken === null || state.disconnected) return;
+  const payload = JSON.stringify({
+    session_token: state.sessionToken,
+    connection_id: state.connectionId,
+  });
+  // sendBeacon 不保证送达也不回报结果，所以这里没有错误处理可写——没有能对失败做的事。
+  // 它不可用时退回 keepalive fetch，同样不等结果。
+  if (typeof navigator.sendBeacon === "function") {
+    navigator.sendBeacon("/api/session/disconnect", new Blob([payload], {
+      type: "application/json",
+    }));
+    return;
+  }
+  fetch("/api/session/disconnect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {});
+});
+
 // ---- 时间线 ----
 
 function bubbleNode(message, view) {
@@ -939,3 +1019,34 @@ el("copy-invite").addEventListener("click", async () => {
 });
 
 updateCounter();
+
+// ---- 启动：刷新之后先试着回到原座位 ----
+//
+// 顶层 await 在经典脚本里不可用（这个文件是 <script> 不是 module），所以用一个立即
+// 调用的 async 函数，而不是把整份逻辑塞进 DOMContentLoaded：脚本在 body 末尾，DOM
+// 已经在了。
+//
+// 恢复失败时静默回入口，不弹错误：一个刚打开的新标签页里 sessionStorage 是空的，
+// 那不是异常；一个过了保留窗的旧令牌被拒也不是玩家做错了什么。只有恢复成功才改画面。
+(async function resumeIfPossible() {
+  const token = recallSession();
+  if (token === null) return;
+  state.sessionToken = token;
+  try {
+    const result = await post("/api/session/resume", { session_token: token });
+    // 不传 connection_id，让协调器铸一个新的。理由在 table-web-host.cjs 的 postResume
+    // 上：复用会让复制出来的标签页共用一条租约，关一个断两个。
+    state.connectionId = result.connection_id ?? null;
+    state.seatId = result.seat_id ?? null;
+    el("entry-view").hidden = true;
+    el("table-main").hidden = false;
+    // 恢复路径上拿不到邀请码：它只在 room.create 的返回里出现一次。隐藏比显示一个「—」
+    // 好——后者看起来像「这桌没有邀请码」。
+    el("invite-wrap").hidden = true;
+    setConnState("connected", "已连接");
+    startPolling();
+  } catch {
+    rememberSession(null);
+    state.sessionToken = null;
+  }
+})();
