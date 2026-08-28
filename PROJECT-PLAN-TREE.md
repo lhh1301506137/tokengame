@@ -4,12 +4,14 @@
 
 ```yaml
 plan_tree:
-  status: blocked
+  status: active
   root_goal_ref: PROJECT-DECISION-LOG.md#DEC-20260827-017
   active_path:
     - TG-L0-PRODUCT
     - TG-L1-PUBLIC-AI-PLAY
     - TG-L2-PUBLIC-AI-EXCHANGE
+    - TG-L3-MULTIPLAYER-VERTICAL-SLICE
+    - TG-EU-SINGLE-STACK-WEB-TABLE
   nodes:
     - id: TG-L0-PRODUCT
       parent: none
@@ -169,20 +171,253 @@ plan_tree:
       parent: TG-L2-PLAYABLE-TABLE
       dependencies:
         - TG-L4-CODEX-HOST-INTEGRATION-PROBE
-      status: planned
-      summary: 定义并实现固定测试桌的一手完整多人牌局纵向切片，以服务端权威状态机、合法行动、结算和可观察验收为主；进入开发前先初始化 Trellis。
+      status: active
+      summary: 宿主中立临时私人牌桌 MVP 的本地完整纵向切片。原摘要写的「固定测试桌一手牌」已被 D 版合同反转为 2～4 人临时私人房、Ready 门与连续多手；旧固定桌切片的实现与四窗口验收保留为已替代历史证据。当前范围是一份共享权威内核加一套 UI，Codex 与 Claude 只能是其适配器。
+      trellis_task_ref: .trellis/tasks/08-26-multiplayer-vertical-slice/task.json
+      trellis_child_task_ref: .trellis/tasks/08-26-public-ai-table-talk/task.json
       owner_links:
-        - PROJECT-PLAN-TREE.md#当前恢复点
+        - PROJECT-DECISION-LOG.md#DEC-20260827-022
+        - PROJECT-DECISION-LOG.md#DEC-20260827-023
+        - .trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-权威范围已锁定
         - STATUS.md#project_intelligence
-  active_node: TG-L2-PUBLIC-AI-EXCHANGE
-  current_next_leaf: none
-  current_execution_unit_ref: none
+      execution_units:
+        - TG-EU-HOLDEM-ADJUDICATION
+        - TG-EU-ROOM-LIFECYCLE
+        - TG-EU-SEAT-AI-EXCHANGE
+        - TG-EU-ORCHESTRATION
+        - TG-EU-HOST-NEUTRAL-SURFACE
+        - TG-EU-SEAT-CUSTODY
+        - TG-EU-REVIEW-CLOSURE-F1-F6
+        - TG-EU-SINGLE-STACK-WEB-TABLE
+        - TG-EU-HOST-ADAPTER-CONTRACT
+        - TG-EU-CLAUDE-HOST-ADAPTER
+        - TG-EU-PROACTIVE-WAKE-SPIKE
+        - TG-EU-PLAYABILITY-GATE
+    - id: TG-EU-HOLDEM-ADJUDICATION
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies: []
+      status: completed
+      unit_kind: kernel
+      summary: 无限注德州扑克裁决：四轮下注、短额 all-in、主池与多层边池、平池奇数筹码、标准摊牌与超时。D 版合同没有反转牌局裁决本身，本单元按原样保留复用。
+      implementation_refs:
+        - src/game/holdem.cjs
+      verification:
+        - "test/holdem-engine.test.cjs：10 tests / 10 pass"
+      commits:
+        - cf1a1b7
+        - 50a3b08
+      claim_limit: 已验证扑克规则裁决，不含房间、席位、凭据或 AI 语义。
+    - id: TG-EU-ROOM-LIFECYCLE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-HOLDEM-ADJUDICATION
+      status: completed
+      unit_kind: kernel
+      summary: 临时私人房与席位归属的权威内核。实现 PLAYABLE-TABLE 规则 1～3（Ready 门与 3 秒倒计时、DISCONNECT_STRICT_V1 的 0ms 行动延长与 120 秒保留窗、VOLUNTARY_EXIT_V1 的暂离与离桌），并为 SESSION-LAUNCH 提供创建、邀请兑换与席位恢复。
+      implementation_refs:
+        - src/authority/room-store.cjs
+      verification:
+        - "test/room-store.test.cjs：32 tests / 32 pass"
+        - "test/cross-hand-stacks.test.cjs：14 tests / 14 pass"
+        - "变异规格 test-support/mutations/f1-cross-hand-stacks.json：15/15 杀死"
+      commits:
+        - 2e119b1
+        - fb77496
+        - 50a3b08
+        - 99acd63
+      claim_limit: 已验证房间与席位生命周期判定，不含任何宿主适配器或 UI。
+    - id: TG-EU-SEAT-AI-EXCHANGE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-ROOM-LIFECYCLE
+      status: completed
+      unit_kind: kernel
+      summary: SEAT_AI 权威内核，实现 PUBLIC-AI-EXCHANGE 的七条受保护规则：默认公开、事件驱动主动评估、LIVELY_V1 四层反刷屏、并发归并为唯一 dirty 上下文、同手迟到仍公开且跨街须标注、关闭降级、本地隐藏只影响渲染。字素计数用 Intl.Segmenter，不用 String.length。
+      implementation_refs:
+        - src/authority/seat-ai-store.cjs
+      verification:
+        - "test/seat-ai-store.test.cjs：32 tests / 32 pass"
+        - "test/ai-evaluation-lease.test.cjs：15 tests / 15 pass"
+        - "test/ai-intent-claim.test.cjs：33 tests / 33 pass"
+        - "test/public-scope-consent.test.cjs：10 tests / 10 pass"
+        - "变异规格 f3 14/14、f5 28/28 杀死"
+      commits:
+        - a8763c4
+        - e641312
+        - 50a3b08
+        - 684d680
+        - ffbcf51
+        - d8caeec
+      claim_limit: 已验证 AI 公开发言的权威判定与配额；不调用任何模型，模型结果由适配器回填。
+    - id: TG-EU-ORCHESTRATION
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-ROOM-LIFECYCLE
+        - TG-EU-SEAT-AI-EXCHANGE
+        - TG-EU-HOLDEM-ADJUDICATION
+      status: completed
+      unit_kind: kernel
+      summary: 编排层把三个内核咬合起来且不新增任何产品语义；官方动作幂等账绑定 hand_id、expected_revision 与 idempotency_key；到期驱动让「玩家不在场时该发生什么」按时发生，且到期判定在每个读取点自行促进，不取决于驱动跑没跑。
+      implementation_refs:
+        - src/authority/table-orchestrator.cjs
+        - src/authority/action-ledger.cjs
+        - src/authority/due-work.cjs
+      verification:
+        - "test/table-orchestrator.test.cjs：31 tests / 31 pass"
+        - "test/action-idempotency.test.cjs：18 tests / 18 pass"
+        - "test/due-work.test.cjs：15 tests / 15 pass"
+        - "test/tick-phase-independence.test.cjs：9 tests / 9 pass"
+        - "test/authority-timing-ownership.test.cjs：6 tests / 6 pass（时间比较归属注册表）"
+        - "变异规格 f2 18/18 杀死"
+      commits:
+        - fcd9447
+        - 8436f67
+        - 925a0c6
+        - 67bc316
+        - 99acd63
+        - 444607c
+        - d8caeec
+      verification_commits:
+        - 7218faa
+        - 50a3b08
+      claim_limit: 已验证事件路由与幂等；编排层不重新判定任何受保护规则。
+    - id: TG-EU-HOST-NEUTRAL-SURFACE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-ORCHESTRATION
+      status: completed
+      unit_kind: kernel
+      summary: 两个宿主适配器共用的唯一命令词表、进程外传输面、可发命令的三分类，以及核心的进程入口 npm run core。这是 L0「不由任一玩家宿主掌握牌堆、对手底牌或结算权」的落地位置：权威一旦只能进程内调用，先落地的适配器必然把核心嵌进自己进程。
+      implementation_refs:
+        - src/authority/command-surface.cjs
+        - src/authority/command-server.cjs
+        - src/authority/host-surface.cjs
+        - src/run-table-core.cjs
+      verification:
+        - "test/command-surface.test.cjs：27 tests / 27 pass"
+        - "test/command-server.test.cjs：11 tests / 11 pass"
+        - "test/host-surface.test.cjs：8 tests / 8 pass"
+        - "test/core-entry.test.cjs：7 tests / 7 pass"
+        - "test/two-process-table.test.cjs：2 tests / 2 pass（两个独立进程在同一份权威状态上打完一手牌）"
+        - "test/seat-authorization.test.cjs：17 tests / 17 pass；变异规格 f4 14/14 杀死"
+      commits:
+        - fb77496
+        - 7f851ef
+        - a2083f9
+        - fd00dce
+        - 6172ec5
+        - 2e18b94
+      verification_commits:
+        - 54854f4
+        - 6fb20b6
+        - 6bf7f30
+      claim_limit: 已实证进程外可达与宿主中立性；桥接鉴权仍是 U-TG-LOCAL-BRIDGE-AUTH，未设计完成，不得声称生产鉴权。
+    - id: TG-EU-SEAT-CUSTODY
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-HOST-NEUTRAL-SURFACE
+      status: completed
+      unit_kind: kernel
+      summary: 席位凭据的本机托管。核心继续校验凭据（权威的信任边界不削弱），但凭据只在协调器进程内存在，模型只拿到进程内存作用域的不透明句柄。句柄不可移植、不能过网、不能在别的进程恢复席位。
+      implementation_refs:
+        - src/host/seat-custody.cjs
+      verification:
+        - "test/seat-custody.test.cjs：18 tests / 18 pass，含 transcript / 错误 / 日志 / 投影四处负例泄漏扫描"
+        - "变异规格 f6 14/14 杀死"
+      commits:
+        - fb3f323
+      claim_limit: 已验证凭据不进入模型可见结果；未验证生产密钥管理或跨设备同步。
+    - id: TG-EU-REVIEW-CLOSURE-F1-F6
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-SEAT-CUSTODY
+      status: completed
+      unit_kind: review_closure
+      summary: 逐条闭合 Codex 实现复核的六项 finding，每条都有失败复现、修复与回归测试；并用变异测试作为验收标准而不是测试数量。
+      implementation_refs:
+        - docs/CODEX-IMPLEMENTATION-REVIEW-20260828.md
+        - docs/CLAUDE-REVIEW-RESPONSE-20260828.md
+        - test-support/mutate-suite.cjs
+      verification:
+        - "F1 筹码跨手存活 99acd63；F2 动作幂等 444607c；F3 逐席公开确认 684d680+ffbcf51；F4 席位授权 2e18b94+6bf7f30；F5 意图 claim 原子化 d8caeec；F6 凭据托管 fb3f323"
+        - "六个变异规格在全新克隆重跑：f1 15/15、f2 18/18、f3 14/14、f4 14/14、f5 28/28、f6 14/14，合计 103 变异 0 存活 0 未评估"
+        - "npm test 2026-08-28 实测 336/336 pass、0 fail，工作树与全新克隆各一次"
+      commits:
+        - 675a7d3
+        - 3081d01
+      claim_limit: >-
+        更正一处历史假绿：此前 F3/F4 的 14/14 由 `grep -E "^not ok"` 判定，而 Node 默认 reporter
+        不输出 TAP，判定从未真正生效。驱动在 675a7d3 修好后重跑才是真值。
+    - id: TG-EU-SINGLE-STACK-WEB-TABLE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-REVIEW-CLOSURE-F1-F6
+      status: planned
+      unit_kind: product_loop
+      summary: 把 web/ 从旧探针栈切到同一宿主中立内核，形成单栈产品闭环：建房与邀请码加入、逐席公开范围确认、Ready 与倒计时、私有底牌与公共牌、底池与当前行动者、合法按钮与下注滑杆、筹码跨手存活、玩家与所属 AI 相邻且气泡可区分、THINKING/DEGRADED/OFFLINE/OFF/迟到标注、逐查看者本地隐藏、掉线与 120 秒恢复、暂离与离桌。UI 不直接读取权威原始事件或秘密。
+      implementation_refs:
+        - web/app.js
+        - web/index.html
+        - web/styles.css
+      current_state: web/app.js 仍连旧探针栈的 /api/table/* 与 EventStore；新内核没有任何 UI。
+      acceptance_intent:
+        - 用确定性 fake 宿主/模型适配器做自动化产品测试，不用假模型结果冒充真实宿主能力
+        - 2～4 个隔离浏览器上下文验证，控制台错误必须为 0
+      claim_limit: 未开始。不得因内核测试通过而声称产品闭环已完成。
+    - id: TG-EU-HOST-ADAPTER-CONTRACT
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-SINGLE-STACK-WEB-TABLE
+      status: planned
+      unit_kind: contract
+      summary: 先定义两个宿主共享的 HostAdapter 合同，再实现任一侧适配器；不把 Claude 特例写进核心。合同的可发命令分类已由 host-surface.cjs 划出雏形，但适配器侧契约尚未成文。
+      implementation_refs: []
+      claim_limit: 未开始。
+    - id: TG-EU-CLAUDE-HOST-ADAPTER
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-HOST-ADAPTER-CONTRACT
+      status: blocked
+      unit_kind: host_adapter
+      summary: Claude 侧宿主适配器。按用户指令暂缓：当前会话在终端 Claude Code 内，没有 Claude Desktop / Cowork 界面，跑不了实机门禁，先写会积累一堆无法验证的代码。
+      blocking_reason: 本环境无法执行真实桌面探针；实机 Gate 5 保留为明确未验证，只提供可执行清单。
+      claim_limit: 未开始且不得声称 Claude Cowork 已通过任何门禁。
+    - id: TG-EU-PROACTIVE-WAKE-SPIKE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies: []
+      status: blocked
+      unit_kind: capability_spike
+      summary: SAME_VISIBLE_TASK_SPIKE_V1。在固定记录的宿主版本上验证内嵌组件收到权威事件后无需玩家点击即可恰好启动一次当前任务 follow-up，以及缺少该能力时可被稳定检测。
+      owner_links:
+        - .trellis/tasks/08-26-public-ai-table-talk/research/codex-visible-task-proactive-turn-boundary.md
+        - .trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md
+      blocking_reason: 需要真实宿主实机环境；本环境不具备。
+      claim_limit: 未执行。Codex 与 Claude 两侧的无点击主动唤醒均未验证，不得由自动化测试或源码推断代替。
+    - id: TG-EU-PLAYABILITY-GATE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies:
+        - TG-EU-SINGLE-STACK-WEB-TABLE
+        - TG-EU-PROACTIVE-WAKE-SPIKE
+      status: blocked
+      unit_kind: acceptance_gate
+      summary: PLAYABILITY_GATE_V1 两层——自动化全门禁（动态私人房、四个独立 binding、至少 10 手、故障矩阵、隐私金丝雀）与一次四真人 45 分钟试玩签字。
+      owner_links:
+        - .trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-权威验收
+        - .trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md
+      blocking_reason: 依赖单栈产品闭环与尖峰结论；两者均未完成。
+      claim_limit: 两层均未执行。自动化层不能顶替真人层签字，模拟席或一人多窗口不能计入真人签字。
+  active_node: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+  current_next_leaf: TG-EU-SINGLE-STACK-WEB-TABLE
+  current_execution_unit_ref: PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-L2-PLAYABLE-TABLE@SC-TG-L2-PLAYABLE-TABLE-20260827-D
-    first_invalid_or_unverified_node: TG-L2-PUBLIC-AI-EXCHANGE@SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D-implementation-and-evidence-revalidation
+    earliest_trustworthy_node_or_checkpoint: TG-EU-REVIEW-CLOSURE-F1-F6@3081d01
+    first_invalid_or_unverified_node: TG-EU-SINGLE-STACK-WEB-TABLE
+    boundary_meaning: >-
+      内核七个执行单元有实现、自动化测试与变异测试证据，止于此。产品闭环、共享适配器合同、
+      Claude 适配器、无点击主动唤醒与可玩性门禁均无证据，不得按已通过对待。
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: project_intelligence_refresh_affected_model
+  next_owner: primary_ai_execute_TG-EU-SINGLE-STACK-WEB-TABLE
 
 semantic_baseline:
   required: yes
@@ -257,13 +492,19 @@ semantic_baseline:
       verified_at: 2026-08-27
   blocking_paths: []
   unaffected_confirmed_paths: []
-  last_checked: 2026-08-27
-  next_action: refresh_project_intelligence_before_implementation
+  last_checked: 2026-08-28
+  next_action: implement_confirmed_semantics_no_semantic_change_pending
 ```
 
 ## 当前恢复点
 
-宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、三个当前 MVP L2，以及可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌、被动问答章程及其旧规则保留为已替代历史。语义门禁已经闭合，但既有 Codex 桥接、牌桌和气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主、座位恢复或事件驱动主动唤醒已经交付。下一恢复点是先刷新受影响 Project Intelligence，再重验实现与宿主证据。
+宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、三个当前 MVP L2，以及可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌、被动问答章程及其旧规则保留为已替代历史。语义门禁已经闭合，且本轮不存在待确认的语义变更。
+
+Project Intelligence 刷新门禁已通过（`STATUS.md#project_intelligence`，`freshness: current`）。`TG-L3-MULTIPLAYER-VERTICAL-SLICE` 现在展开为 12 个执行单元：七个内核单元已完成并有实现、自动化测试与变异测试证据（`npm test` 2026-08-28 实测 336/336，六个变异规格合计 103 变异 0 存活），五个单元没有证据。
+
+下一恢复点是 `TG-EU-SINGLE-STACK-WEB-TABLE`：`web/app.js` 仍连旧探针栈的 `/api/table/*`，新内核至今没有任何 UI，所以「内核测试全绿」与「产品闭环成立」之间还隔着一整个单元。这一单元完成前不得声称 MVP 可玩。
+
+明确保留为未验证、不得按已通过对待：`TG-EU-HOST-ADAPTER-CONTRACT`（共享合同未成文）、`TG-EU-CLAUDE-HOST-ADAPTER`（按用户指令暂缓，本环境无 Claude Desktop / Cowork 界面，跑不了实机门禁）、`TG-EU-PROACTIVE-WAKE-SPIKE`（`SAME_VISIBLE_TASK_SPIKE_V1` 未执行，两个宿主的无点击主动唤醒都未验证）、`TG-EU-PLAYABILITY-GATE`（自动化层与四真人试玩层均未执行）。既有 Codex 桥接与旧牌桌气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主能力、跨宿主私人房或事件驱动主动唤醒已经交付。
 
 ## 本地探针执行结论
 
