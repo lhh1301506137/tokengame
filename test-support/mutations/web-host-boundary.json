@@ -1,0 +1,130 @@
+{
+  "name": "浏览器协调器边界：凭据托管、命令白名单、按查看者过滤",
+  "test": "test/table-web-host.test.cjs",
+  "notes": [
+    "这一层的每个洞都不会让功能变坏，只会让边界消失，所以它比内核更需要变异检查：",
+    "少一次过滤，牌照样发、注照样下，只是对手底牌顺路进了浏览器。",
+    "",
+    "四类承重点：",
+    "1. 命令白名单 —— 浏览器能不能以自己 AI 的名义发言、能不能读原始事件。",
+    "2. 按查看者过滤 —— 底牌与本地隐藏是不是真的逐人算的。",
+    "3. 泄漏扫描 —— 视图与动作返回两处出口都得扫。",
+    "4. 字素计数 —— UI 侧上限提示不能退回 String.length。",
+    "",
+    "键名用 find/replace，与 f3/f4/f6 一致。"
+  ],
+  "mutations": [
+    {
+      "id": "WEB-01-命令白名单形同虚设",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (!BROWSER_ACTIONS.includes(command)) {",
+      "replace": "    if (false) {",
+      "why": "浏览器可以直接发任意命令，包括 ai.start / ai.resolve。玩家于是能手打一句话，以自己座位 AI 的名义发布——公开交流规则第 4 条要求 AI 发言必须可与玩家区分，冒名发布把这条规则整个抹掉。"
+    },
+    {
+      "id": "WEB-02-白名单放进 ai.resolve",
+      "file": "src/host/table-web-host.cjs",
+      "find": "  \"ai.set_mode\",\n  \"ai.hide_local\",",
+      "replace": "  \"ai.set_mode\",\n  \"ai.hide_local\",\n  \"ai.resolve\",",
+      "why": "只多放一条最危险的。清单是白名单形态，所以真实的退化不是「检查失效」而是「有人往里加一行」——WEB-01 挡不住这种，得单独有一条。"
+    },
+    {
+      "id": "WEB-03-白名单放进原始事件读取",
+      "file": "src/host/table-web-host.cjs",
+      "find": "  \"ai.set_mode\",\n  \"ai.hide_local\",",
+      "replace": "  \"ai.set_mode\",\n  \"ai.hide_local\",\n  \"view.room_events\",",
+      "why": "浏览器能取原始房间事件流。原始事件里没有本地隐藏，规则 7 的「隐藏只影响本地渲染」于是可以被前端绕过——直接读事件就看见被隐藏的发言。"
+    },
+    {
+      "id": "WEB-04-会话未知回显已知令牌",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      throw new CoreError(\"web_session_unknown\", 403);",
+      "replace": "      throw new CoreError(\"web_session_unknown\", 403, { known: [...this.sessions.keys()] });",
+      "why": "错误 details 回显全部会话令牌。令牌就是会话凭证，回显等于把别人的牌桌身份直接交出去。"
+    },
+    {
+      "id": "WEB-05-底牌按公共投影发，人人可见",
+      "file": "src/host/table-view-model.cjs",
+      "find": "    const holeCards = handSeat?.hole_cards ?? null;",
+      "replace": "    const holeCards = handSeat?.hole_cards ?? seat.hole_cards ?? null;",
+      "why": "私密视图缺席时回退到房间投影上的席位对象。看起来是「更宽容的兜底」，实际是把所有人的底牌都发给每个查看者——只要投影哪天带上了这个字段。这类兜底正是发牌泄漏最常见的来源。"
+    },
+    {
+      "id": "WEB-06-本地隐藏改成全局生效",
+      "file": "src/host/table-web-host.cjs",
+      "find": "  localHiddenFor(session) {\n    return {\n      players: [...session.hidden.players],",
+      "replace": "  localHiddenFor(session) {\n    const players = [];\n    for (const other of this.sessions.values()) players.push(...other.hidden.players);\n    return {\n      players,",
+      "why": "把所有会话的隐藏合并成一份。A 隐藏某人后 B 那边也看不见了——这从「本地隐藏」变成了「审查」，而规则 7 明确只允许影响本地渲染。"
+    },
+    {
+      "id": "WEB-07-隐藏条目从时间线删除",
+      "file": "src/host/table-view-model.cjs",
+      "find": "      hidden: event.locally_hidden_for_viewer === true,",
+      "replace": "      hidden: false,",
+      "why": "隐藏标记恒为 false。UI 于是照常渲染被隐藏的发言，本地隐藏彻底失效——而权威侧仍然如实标记着，看日志会以为功能是好的。"
+    },
+    {
+      "id": "WEB-08-视图出口不扫泄漏",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.custody.assertNoLeak(JSON.stringify(view), \"web_view\");",
+      "replace": "",
+      "why": "视图这条出口不再扫凭据。视图是唯一每秒都往浏览器发的东西，它漏一次就等于一直在漏。"
+    },
+    {
+      "id": "WEB-09-动作返回不扫泄漏",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.custody.assertNoLeak(JSON.stringify(sanitized), \"web_action_result\");",
+      "replace": "",
+      "why": "动作返回这条出口不再扫。与 WEB-08 互为对照：净化只摘已知字段名，恢复凭据若以未知键名回来，只有扫描抓得到。"
+    },
+    {
+      "id": "WEB-10-隐藏先记后发",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (command === \"ai.hide_local\") {\n      this.recordHidden(session, params);\n    }",
+      "replace": "",
+      "why": "本进程不再镜像隐藏列表。权威只在消息上给 locally_hidden_for_viewer，不提供「列出某查看者的隐藏项」的命令，所以从没发言过的玩家被隐藏后，席位上那个标记会永远画不出来。"
+    },
+    {
+      "id": "WEB-11-字素计数退回 String.length",
+      "file": "src/host/table-view-model.cjs",
+      "find": "  let count = 0;\n  for (const _ of segmenter.segment(text)) count += 1;\n  return count;",
+      "replace": "  return text.length;",
+      "why": "UI 侧计数退回 UTF-16 长度。家庭 emoji 长度 11 但只算 1 个字素，于是输入框会在第 13 个 emoji 就报「超长」，而权威其实还能收 127 个——反向也成立：某些序列会让 UI 放过权威要拒的文本。"
+    },
+    {
+      "id": "WEB-12-手内筹码显示账本值",
+      "file": "src/host/table-view-model.cjs",
+      "find": "      stack: handSeat === null ? seat.stack : handSeat.stack,",
+      "replace": "      stack: seat.stack,",
+      "why": "手内一律显示房间账本上的筹码。账本要到 HAND_COMPLETED 之后才结算，于是玩家下注后筹码数字不动——「我下了注但钱没少」会让人以为下注没生效而重复下注。"
+    },
+    {
+      "id": "WEB-13-协调器对外监听",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (!LOOPBACK_HOSTS.includes(host)) {",
+      "replace": "    if (false) {",
+      "why": "协调器可以绑到 0.0.0.0。这个进程持有每个已连接玩家的恢复凭据，对外监听等于把整桌人的身份挂到局域网上，而 U-TG-LOCAL-BRIDGE-AUTH 至今没有认证方案。"
+    },
+    {
+      "id": "WEB-14-结构自检报告带值",
+      "file": "src/host/table-view-model.cjs",
+      "find": "      error.details = { path: `${path}.${key}`, key };",
+      "replace": "      error.details = { path: `${path}.${key}`, key, value: item };",
+      "why": "自检报错时把命中的值写进消息。报错文本会进日志和错误上报，于是「防泄漏检查」自己成了第二个泄漏点。"
+    },
+    {
+      "id": "WEB-15-模型失败把回合悬住",
+      "file": "src/host/table-web-host.cjs",
+      "find": "            decision = { decision: \"silent\", failure: error?.message ?? \"adapter_failed\" };",
+      "replace": "            continue;",
+      "why": "适配器抛错时直接跳过，不回填。在途回合一直占着 active_turn，该席在整个评估租约期内不可能有第二次发言机会——表现为「这个座位的 AI 从某一刻起再也不说话了」，且没有任何错误。"
+    },
+    {
+      "id": "WEB-16-未附适配器时谎称已附",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      modelAdapter: this.modelAdapter === null ? null : {",
+      "replace": "      modelAdapter: {",
+      "why": "没有适配器时也上报 attached。UI 于是把「本机根本没有模型」画成「AI 选择了沉默」，这正是 Codex 要求里「不得声称已通过无点击主动唤醒」所指的那种冒充。"
+    }
+  ]
+}
