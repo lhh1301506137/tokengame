@@ -138,7 +138,23 @@ function buildSeats({
 }) {
   const hand = pickHandSource(publicHand, privateHand);
   const byPlayer = handSeatByPlayer(hand);
-  const seats = roomState?.seats ?? [];
+  // 上游形状不对时降级，不抛。
+  //
+  // 本模块在协调器的请求路径上，而且是权威与浏览器之间唯一的翻译层：它抛错就是
+  // /api/view 回 500。浏览器的轮询会继续，但每一拍都 500，于是页面永远停在最后一帧
+  // 成功的画面上——牌桌看起来还在，只是不动了，而画面上没有任何东西说明发生了什么。
+  // 一张空桌子是能看出问题的，一张不动的旧桌子看起来是真的。
+  //
+  // 逐条过滤而不是整份丢弃：一条坏数据不该让另外几个真实席位从画面上消失，而那些人
+  // 正在这张桌上打牌。缺 seat_id 的条目丢掉——后续每一步（气泡归属、下标映射、
+  // 本地隐藏）都以它为键，留着它只会把问题推到更远的地方再炸。
+  //
+  // 边界：这里检查的是入参形状，不是把函数体包进 try。上游 getter 自己抛错要原样传出去，
+  // 那是真实故障，吞掉它会让一次故障表现为一张空桌子。
+  const rawSeats = Array.isArray(roomState?.seats) ? roomState.seats : [];
+  const seats = rawSeats.filter(
+    (seat) => seat !== null && typeof seat === "object" && typeof seat.seat_id === "string",
+  );
 
   return seats.map((seat, index) => {
     const isViewer = seat.seat_id === viewerSeatId;
@@ -235,7 +251,10 @@ function buildSeats({
 // 不改变配额」，也要求「聊天时间线、事件日志和回放仍保留原消息」——直接从数组里删掉会让
 // UI 无法显示「此处有 1 条被你隐藏的发言」，而那正是「只影响渲染」与「审查」的区别。
 function buildMessages(timeline, seatIndexById) {
-  return (timeline ?? []).map((event) => {
+  // 同 buildSeats：形状不对就降级。时间线里混进一条 null 会让整页停更，而丢掉那一条
+  // 只是少显示一句话——时间线本来就允许「此处有 1 条被你隐藏的发言」这种不完整。
+  const events = Array.isArray(timeline) ? timeline : [];
+  return events.filter((event) => event !== null && typeof event === "object").map((event) => {
     const p = event.payload ?? {};
     const speakerType = SPEAKER_TYPES.includes(p.speaker_type) ? p.speaker_type : null;
     return {
