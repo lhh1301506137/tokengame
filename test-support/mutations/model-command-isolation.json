@@ -45,10 +45,10 @@
     {
       "id": "seat-id-leaked-back-to-model",
       "file": "src/host/model-command-surface.cjs",
-      "needle": "        const { seat_id: _seatId, ...visible } = intent;\n        intents.push(visible);",
+      "needle": "        const { seat_id: _seatId, claim_token: _claimToken, ...visible } = intent;\n        intents.push(visible);",
       "replacement": "        intents.push(intent);",
       "test": "test/model-command-isolation.test.cjs",
-      "note": "把 seat_id 还给模型。它不是秘密，但模型手上有它就会试着回传——而回传会被拒，于是模型开始猜自己哪里做错了。"
+      "note": "把 seat_id 还给模型。它不是秘密，但模型手上有它就会试着回传——而回传会被拒，于是模型开始猜自己哪里做错了。 查找串于 2026-08-28 随 F5 世代围栏改写（同一行现在也摘 claim_token）；这条变异把两者一起还给模型，claim_token 单独那条见 intent-claim-fencing.json。"
     },
     {
       "id": "turn-id-mapping-kept-after-resolve",

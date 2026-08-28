@@ -218,7 +218,7 @@ test("F3 延伸：未确认的席位，其 AI 也不得发布 TABLE_PUBLIC", () 
   const owner = ctx.seats.findIndex((seat) => seat.seat_id === intent.seat_id);
   const auth = ctx.auth(owner);
 
-  const started = ctx.s.dispatch("ai.start", { ...auth, intent_id: intent.intent_id });
+  const started = ctx.s.dispatch("ai.start", { ...auth, intent_id: intent.intent_id, claim_token: intent.claim_token });
   assert.throws(
     () => ctx.s.dispatch("ai.resolve", {
       ...auth,
@@ -259,7 +259,7 @@ test("F3 要求 1：AI 结算路径的房间事实由权威注入，宿主传的
   assert.ok(intent !== undefined, "开局应当唤醒席位 AI，否则这条用例证不到东西");
   const owner = ctx.seats.findIndex((seat) => seat.seat_id === intent.seat_id);
   const auth = ctx.auth(owner);
-  const started = ctx.s.dispatch("ai.start", { ...auth, intent_id: intent.intent_id });
+  const started = ctx.s.dispatch("ai.start", { ...auth, intent_id: intent.intent_id, claim_token: intent.claim_token });
 
   // 冲突的前提得先成立：假值必须真的不等于真值，否则「权威赢」和「宿主赢」结果一样，
   // 这条用例就退化成一个永远绿的空壳。
@@ -301,7 +301,7 @@ test("F3 延伸：未确认的席位仍能把在途回合结算为 silent，回�
   const intent = ctx.s.dispatch("ai.take_intents", ctx.auth(0)).intents[0];
   const owner = ctx.seats.findIndex((seat) => seat.seat_id === intent.seat_id);
   const auth = ctx.auth(owner);
-  const started = ctx.s.dispatch("ai.start", { ...auth, intent_id: intent.intent_id });
+  const started = ctx.s.dispatch("ai.start", { ...auth, intent_id: intent.intent_id, claim_token: intent.claim_token });
   const resolved = ctx.s.dispatch("ai.resolve", {
     ...auth,
     turn_id: started.started.turn_id,

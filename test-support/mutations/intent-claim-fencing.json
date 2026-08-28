@@ -1,0 +1,84 @@
+{
+  "name": "intent-claim-fencing",
+  "note": "F5 世代围栏：旧 claimant 在重新领取之后不能启动计算。每条变异都是一种「租约看起来还在工作，但被顶掉的一方仍能抢回工作项」的写法。",
+  "excluded": [
+    {
+      "id": "token-not-rotated-on-reclaim",
+      "why": "等价变异，不是测试缺口。把 claimIntents 里的铸造改成「只在 claim_token 为 null 时铸」跑出来是 SURVIVED：工作项只有在 releaseExpiredIntentClaims 里才会重新变得可领，而那里已经换过代了；释放时铸的那个令牌又没有任何出口能观察到（intentSnapshot 只在铸造之后或全新工作项上调用）。删掉的是两处铸造的重叠，不是行为。无条件铸保留在源码里并注明理由：不让围栏依赖「只有释放那条路会清租约」。留在这里以免下次复核把它当成漏掉的一条。"
+    }
+  ],
+  "mutations": [
+    {
+      "id": "no-token-on-claim",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "      item.claim_token = `claim-${this.idFactory()}`;\n      claimed.push(this.intentSnapshot(item));",
+      "replacement": "      claimed.push(this.intentSnapshot(item));",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "领取时不铸令牌。第一次领取后 claim_token 仍为 null，于是围栏对这个工作项永久失效。"
+    },
+    {
+      "id": "token-not-rotated-on-release",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "      item.claim_token = `claim-${this.idFactory()}`;\n      released.push(this.record(\"SEAT_AI_INTENT_CLAIM_RELEASED\", {",
+      "replacement": "      released.push(this.record(\"SEAT_AI_INTENT_CLAIM_RELEASED\", {",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "过期释放时不换代。无人接手的情况下，过期的 claimant 仍能拿旧令牌开工——租约退化成建议。"
+    },
+    {
+      "id": "fence-gate-removed",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "    if (item.claim_token !== null && input.claimToken !== item.claim_token) {",
+      "replacement": "    if (false) {",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "闸门整条拿掉。令牌照旧铸造、照旧出现在快照里，看起来一切正常。"
+    },
+    {
+      "id": "fence-allows-missing-token",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "    if (item.claim_token !== null && input.claimToken !== item.claim_token) {",
+      "replacement": "    if (item.claim_token !== null && input.claimToken !== undefined && input.claimToken !== item.claim_token) {",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "不出示令牌就放行。围栏于是只挡住老实人——旧 claimant 省掉那个字段即可绕过。"
+    },
+    {
+      "id": "token-echoed-in-error",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "        claim_count: item.claim_count,\n      });\n    }\n    // 同上：租约过期的回合不该再挡住新回合",
+      "replacement": "        claim_count: item.claim_count,\n        expected_claim_token: item.claim_token,\n      });\n    }\n    // 同上：租约过期的回合不该再挡住新回合",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "错误详情回显正确令牌，于是这里成了一个取令牌的接口：拒绝一次就能拿到当代令牌。"
+    },
+    {
+      "id": "fence-before-seat-mismatch",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "    if (item.seat_id !== seat.seat_id) {",
+      "replacement": "    if (item.claim_token !== null && input.claimToken !== item.claim_token) {\n      throw new ProbeError(\"intent_claim_superseded\", 409, { intent_id: intentId });\n    }\n    if (item.seat_id !== seat.seat_id) {",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "围栏抢在跨席检查之前。要求 5 点名的跨席用例于是拿到一个更含糊的错误码，宿主分不清「我拿错了席位」和「我被顶掉了」。"
+    },
+    {
+      "id": "token-required-on-unclaimed-item",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "    if (item.claim_token !== null && input.claimToken !== item.claim_token) {",
+      "replacement": "    if (input.claimToken !== item.claim_token) {",
+      "test": "test/intent-claim-fencing.test.cjs",
+      "note": "对从未领取的工作项也要求令牌。notifyDomainEvent 直接开工那条正当路径被切断——少一次往返的代价换来一条没人要的严格。"
+    },
+    {
+      "id": "model-surface-forwards-claim-token",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "        const { seat_id: _seatId, claim_token: _claimToken, ...visible } = intent;",
+      "replacement": "        const { seat_id: _seatId, ...visible } = intent;",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "把领取令牌一起交给模型。它是本宿主的领取凭证，多一条搬运路径就多一处可能被改坏、被忘掉、被上下文截断的地方。"
+    },
+    {
+      "id": "web-driver-drops-claim-token",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "              ...(intent.claim_token === undefined ? {} : { claim_token: intent.claim_token }),",
+      "replacement": "",
+      "test": "test/table-web-host.test.cjs",
+      "note": "web 驱动不带令牌回去。它自己就成了那个「旧 claimant」：领走、卡住、被接手、回来还能抢。"
+    }
+  ]
+}

@@ -63,8 +63,12 @@ class ModelCommandSurface {
     }
     this.custody = options.custody;
     this.request = options.request;
-    // intent_id -> handle，以及 turn_id -> handle。同一张表，键空间由权威保证不撞
-    // （intent- / turn- 前缀）。
+    // 权威发的 id -> { handle, claimToken }。intent_id 与 turn_id 共用一张表，键空间由
+    // 权威保证不撞（intent- / turn- 前缀）。
+    //
+    // claimToken 记在这里而不是给模型：世代围栏是「这个宿主进程还持有领取权吗」的凭证，
+    // 与模型无关。给了模型只是多一个它必须原样搬回来的字段，而搬运途中它可能改、可能忘、
+    // 可能连同上下文一起被截断。
     this.issued = new Map();
   }
 
@@ -72,27 +76,27 @@ class ModelCommandSurface {
     return MODEL_COMMANDS;
   }
 
-  // 权威发的 id 记到句柄上。模型下一步只出示这个 id，席位身份由本层补。
-  track(id, handle) {
+  // 权威发的 id 记到句柄与领取令牌上。模型下一步只出示这个 id，其余由本层补。
+  track(id, handle, claimToken = null) {
     if (typeof id !== "string" || id === "") return;
     if (this.issued.size >= MAX_TRACKED_IDS) {
       const oldest = this.issued.keys().next();
       if (!oldest.done) this.issued.delete(oldest.value);
     }
-    this.issued.set(id, handle);
+    this.issued.set(id, { handle, claimToken });
   }
 
-  handleFor(id, field) {
+  issuedFor(id, field) {
     if (typeof id !== "string" || id === "") {
       throw new ModelSurfaceError("invalid_field", { field });
     }
-    const handle = this.issued.get(id);
-    if (handle === undefined) {
+    const entry = this.issued.get(id);
+    if (entry === undefined) {
       // 不回落到「只绑了一席就用那一席」。猜对了是运气，多席时是替错的人行动，
       // 与 seat-custody.cjs 拒绝猜席位是同一条理由。
       throw new ModelSurfaceError("unknown_authority_id", { field });
     }
-    return handle;
+    return entry;
   }
 
   assertNoIdentityParams(command, params) {
@@ -138,10 +142,11 @@ class ModelCommandSurface {
         continue;
       }
       for (const intent of result.body?.result?.intents ?? []) {
-        this.track(intent.intent_id, handle);
+        this.track(intent.intent_id, handle, intent.claim_token ?? null);
         // seat_id 是公开字段（公开投影里就有），但模型不需要它，留着只会诱使模型回传。
-        // 摘掉它意味着模型手上除了 intent_id 没有别的可出示。
-        const { seat_id: _seatId, ...visible } = intent;
+        // claim_token 更进一步：它是本宿主的领取凭证，交给模型只会多一条搬运路径。
+        // 摘掉两者之后，模型手上除了 intent_id 没有别的可出示。
+        const { seat_id: _seatId, claim_token: _claimToken, ...visible } = intent;
         intents.push(visible);
       }
     }
@@ -159,12 +164,17 @@ class ModelCommandSurface {
   }
 
   async start(params) {
-    const handle = this.handleFor(params.intent_id, "intent_id");
-    const injected = this.custody.inject("ai.start", { ...params, seat_handle: handle });
+    const { handle, claimToken } = this.issuedFor(params.intent_id, "intent_id");
+    // 领取令牌由本层补，与席位身份同理。模型没见过它，所以也不可能改坏它。
+    const injected = this.custody.inject("ai.start", {
+      ...params,
+      seat_handle: handle,
+      ...(claimToken === null ? {} : { claim_token: claimToken }),
+    });
     const result = await this.request("ai.start", injected);
     if (result.ok) {
       const turnId = result.body?.result?.started?.turn_id;
-      this.track(turnId, handle);
+      this.track(turnId, handle, null);
       // 意图已经变成回合，这个 intent_id 不会再用。
       this.issued.delete(params.intent_id);
     }
@@ -172,7 +182,7 @@ class ModelCommandSurface {
   }
 
   async resolve(params) {
-    const handle = this.handleFor(params.turn_id, "turn_id");
+    const { handle } = this.issuedFor(params.turn_id, "turn_id");
     const injected = this.custody.inject("ai.resolve", { ...params, seat_handle: handle });
     const result = await this.request("ai.resolve", injected);
     // 成功与否都摘掉：回合已经交出去了，重放同一个 turn_id 该由权威判定，

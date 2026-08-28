@@ -487,7 +487,9 @@ test("规则4：同席不得并发两个模型回合", () => {
 test("规则4：思考期内多事件合并为一个最新上下文，不排队逐条调用", () => {
   const t = table(["seat-1"]);
   const [first] = t.store.notifyDomainEvent({ type: "BET", eventId: "evt-1", payload: { n: 1 } });
-  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: first.intent_id });
+  const started = t.store.startEvaluation({
+    seatId: "seat-1", intentId: first.intent_id, claimToken: first.claim_token,
+  });
 
   const [second] = t.store.notifyDomainEvent({ type: "RAISE", eventId: "evt-2", payload: { n: 2 } });
   const [third] = t.store.notifyDomainEvent({
@@ -518,6 +520,7 @@ test("规则4：思考期内多事件合并为一个最新上下文，不排队�
   const resumed = t.store.startEvaluation({
     seatId: "seat-1",
     intentId: resumedIntent.intent_id,
+    claimToken: resumedIntent.claim_token,
   });
   assert.equal(resumed.payload.source_event_id, "evt-3");
   assert.equal(t.store.seatState("seat-1").has_pending_context, false);

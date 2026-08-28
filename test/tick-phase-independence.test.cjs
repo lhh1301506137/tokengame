@@ -208,7 +208,9 @@ function claimAfterLease({ reclaimFirst }) {
   if (work === undefined) return "no_work_available";
   if (work.context.source_event_id !== "event-2") return `wrong_context: ${work.context.source_event_id}`;
   try {
-    return t.store.startEvaluation({ seatId: "seat-1", intentId: work.intent_id }).type;
+    return t.store.startEvaluation({
+      seatId: "seat-1", intentId: work.intent_id, claimToken: work.claim_token,
+    }).type;
   } catch (error) {
     return error.code ?? "unexpected";
   }

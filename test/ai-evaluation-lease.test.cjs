@@ -312,7 +312,7 @@ test("驱动：到期驱动自己走这一步，没有任何宿主参与", () =>
   }).evaluations;
   const mine = intents.find((intent) => intent.seat_id === seatId && intent.accepted === true);
   assert.notEqual(mine, undefined, "该席应被唤醒");
-  ctx.orchestrator.startEvaluation({ seatId, intentId: mine.intent_id });
+  ctx.orchestrator.startEvaluation({ seatId, intentId: mine.intent_id, claimToken: mine.claim_token });
   assert.notEqual(ctx.orchestrator.ai.seatState(seatId).active_turn_id, null);
 
   // 租约未到期：驱动看得见这个回合，但不该动它。
@@ -338,7 +338,7 @@ test("驱动：回收排在开新手之前，新手不会带着幽灵回合开�
     ...chatBinding(),
   }).evaluations;
   const mine = intents.find((intent) => intent.seat_id === seatId && intent.accepted === true);
-  ctx.orchestrator.startEvaluation({ seatId, intentId: mine.intent_id });
+  ctx.orchestrator.startEvaluation({ seatId, intentId: mine.intent_id, claimToken: mine.claim_token });
 
   for (const seat of ctx.seats) {
     ctx.orchestrator.setReady({ seatId: seat.seat_id, ready: true });
@@ -481,6 +481,8 @@ test("回收后该席重新可领可起，卡住的回合不再挡路", () => {
   const [resumed] = t.store.claimIntents({ seatId: "seat-1" });
   assert.ok(resumed !== undefined, "回收后没有活可领，这一席被永久静音了");
   assert.equal(resumed.context.source_event_id, "evt-x");
-  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: resumed.intent_id });
+  const started = t.store.startEvaluation({
+    seatId: "seat-1", intentId: resumed.intent_id, claimToken: resumed.claim_token,
+  });
   assert.equal(started.type, "SEAT_AI_EVALUATION_STARTED");
 });

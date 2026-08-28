@@ -200,6 +200,7 @@ test("分权：模型只凭权威发的 id 就能跑完 AI 回路，全程不持
               intents: [{
                 intent_id: `intent-for-${params.seat_id}`,
                 seat_id: params.seat_id,
+                claim_token: `claim-for-${params.seat_id}`,
                 context: { source_event_id: "evt-1" },
               }],
             },
@@ -221,6 +222,9 @@ test("分权：模型只凭权威发的 id 就能跑完 AI 回路，全程不持
   assert.equal(intents[0].seat_id, undefined, "intent 里回了 seat_id，模型就会拿它回传");
   assert.equal(intents[0].seat_handle, undefined);
   assert.equal(intents[0].intent_id, "intent-for-s-1");
+  // 领取令牌同理：它是本宿主的领取凭证，模型没有理由持有它。多一条搬运路径就多一处
+  // 会被改坏、被忘掉、被上下文截断的地方，而它一旦丢了，本宿主就成了被围栏挡掉的那个。
+  assert.equal(intents[0].claim_token, undefined, "claim_token 交给了模型");
 
   const started = await surface.call("ai.start", { intent_id: intents[0].intent_id });
   const turnId = started.body.result.started.turn_id;
@@ -236,6 +240,10 @@ test("分权：模型只凭权威发的 id 就能跑完 AI 回路，全程不持
     assert.equal(call.params.recovery_credential, "cred-1", `${call.command} 没补上凭据`);
     assert.equal(call.params.seat_handle, undefined, `${call.command} 把句柄发给了核心`);
   }
+  // 令牌从模型面摘掉，但必须由本层补回核心：摘掉不等于丢掉。丢了的表现是
+  // intent_claim_superseded——本宿主明明是正当持有者，却被自己的围栏挡在门外。
+  const startCall = sent.find((call) => call.command === "ai.start");
+  assert.equal(startCall.params.claim_token, "claim-for-s-1", "ai.start 没把领取令牌补回核心");
 });
 
 test("分权：模型伪造 intent_id / turn_id 时拿不到任何席位", async () => {

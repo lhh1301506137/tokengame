@@ -66,6 +66,19 @@ function resolveVia(store, input) {
   return store.resolveEvaluation({ ...input, roomBindingId: ROOM, tableRulesVersion: RULES });
 }
 
+// 拿一份领来的意图去起回合。世代围栏要求出示当代令牌（见 test/intent-claim-fencing.test.cjs），
+// 而本文件关心的是丢失窗口与活性，不是围栏本身，所以这里把「用这一份的令牌」固定下来。
+//
+// 刻意不给 claimToken 留默认值：哪一代的令牌该出示，在有两个 claimant 的用例里是要点，
+// 让它跟着某一份快照走比让调用方省略它更难写错。
+function startWith(target, intent, seatId = intent.seat_id) {
+  return target.startEvaluation({
+    seatId,
+    intentId: intent.intent_id,
+    claimToken: intent.claim_token,
+  });
+}
+
 // 真编排层 + 真到期驱动。要求 4 的后半句是「不要求宿主轮询席位内部状态来恢复活性」，
 // 这件事只能在这一层证明：上面那些直驱测试都是由测试代码调 promotePendingContexts，
 // 而「测试代码手动再调一次」正是 Codex 点名的旧测试缺陷。这里唯一被允许在崩溃与恢复
@@ -171,7 +184,10 @@ test("claim 后崩溃：领走但没起回合，权威侧仍有可回收工作�
 
   const [again] = t.store.claimIntents({ seatId: "seat-1" });
   assert.equal(again.intent_id, created.intent_id, "同一份工作必须重新领得到");
-  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: again.intent_id });
+  // 领取过的工作项要出示当代令牌（世代围栏，见 test/intent-claim-fencing.test.cjs）。
+  const started = t.store.startEvaluation({
+    seatId: "seat-1", intentId: again.intent_id, claimToken: again.claim_token,
+  });
   assert.equal(started.type, "SEAT_AI_EVALUATION_STARTED");
   assert.equal(started.payload.source_event_id, "evt-1", "起来的必须还是那次唤醒");
 });
@@ -253,8 +269,9 @@ test("冷却到期自动跟进：冷却内到达的最新上下文自己变成�
   const [work] = t.store.claimIntents({ seatId: "seat-1" });
   assert.equal(work.context.source_event_id, "evt-2");
   assert.equal(
-    t.store.startEvaluation({ seatId: "seat-1", intentId: work.intent_id }).payload
-      .source_event_id,
+    t.store.startEvaluation({
+      seatId: "seat-1", intentId: work.intent_id, claimToken: work.claim_token,
+    }).payload.source_event_id,
     "evt-2",
   );
 });
@@ -498,7 +515,13 @@ test("迟到回填：工作项被后续事件就地更新，宿主凭 context_re
   );
 
   // 用旧 id 起回合起来的是**最新**上下文：权威保存事实，适配器拿的只是只读快照。
-  const startedWith = t.store.startEvaluation({ seatId: "seat-1", intentId: held.intent_id });
+  //
+  // 令牌用 fresh 那一份而不是 held 那一份。本条钉的是「intent_id 稳定、上下文换新」，
+  // 不是「旧 claimant 还能开工」——后者已由世代围栏禁止，见
+  // test/intent-claim-fencing.test.cjs。两件事共用一个 id，所以要分清出示的是哪一代。
+  const startedWith = t.store.startEvaluation({
+    seatId: "seat-1", intentId: held.intent_id, claimToken: fresh.claim_token,
+  });
   assert.equal(startedWith.payload.source_event_id, "evt-2");
 });
 
@@ -536,18 +559,26 @@ test("重复 claim：同一份工作项只能起一个回合，后到的那个�
   const intent = wake(t.store, "evt-1");
 
   // 两个宿主先后领到同一个 id（第二次是租约过期后接手的）。
-  t.store.claimIntents({ seatId: "seat-1" });
+  const [first] = t.store.claimIntents({ seatId: "seat-1" });
   t.advance(INTENT_CLAIM_LEASE_MS + 1);
-  t.store.claimIntents({ seatId: "seat-1" });
+  const [second] = t.store.claimIntents({ seatId: "seat-1" });
 
-  const started = t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id });
+  // 接手的那一方起回合。第一方的令牌已经作废（世代围栏），所以这里必须用 second 的。
+  const started = t.store.startEvaluation({
+    seatId: "seat-1", intentId: intent.intent_id, claimToken: second.claim_token,
+  });
   assert.equal(typeof started.payload.turn_id, "string");
   // 起过就消费掉了。不然两个宿主各起一个回合，同一个来源事件被说两遍，规则 2 失效。
+  // 消费之后连令牌对得上的那一方也起不来——工作项已经不在队列里。
   assert.throws(
-    () => t.store.startEvaluation({ seatId: "seat-1", intentId: intent.intent_id }),
+    () => t.store.startEvaluation({
+      seatId: "seat-1", intentId: intent.intent_id, claimToken: second.claim_token,
+    }),
     probe("intent_not_found"),
     "同一个 intent 起了两个回合：一个来源事件被说两遍",
   );
+  // 被顶掉的第一方拿到的是另一个码。混成同一个码时它只会以为自己调错了，然后无限重试。
+  assert.notEqual(first.claim_token, second.claim_token);
 });
 
 test("重复 claim：租约未到期时第二次 claim 拿不到，仍在等待中不算可领", () => {
@@ -677,9 +708,11 @@ test("真驱动：适配器死在 claim 与 ai.start 之间，一次 tick 就把
   const again = ctx.o.takeIntents({ seatId: target.seat_id });
   assert.equal(again.length, 1, "释放之后必须能被接手");
   assert.equal(again[0].intent_id, target.intent_id);
+  // 令牌取接手方那一份：死掉那个适配器的令牌已经作废（世代围栏）。
   assert.equal(
-    typeof ctx.o.startEvaluation({ seatId: target.seat_id, intentId: target.intent_id }).payload
-      .turn_id,
+    typeof ctx.o.startEvaluation({
+      seatId: target.seat_id, intentId: target.intent_id, claimToken: again[0].claim_token,
+    }).payload.turn_id,
     "string",
     "接手之后必须真能起回合",
   );
@@ -689,7 +722,7 @@ test("真驱动：冷却内到达的最新上下文，靠 tick 自己变成可�
   const ctx = orchestrated();
   begin(ctx);
   const [first] = ctx.o.takeIntents();
-  const started = ctx.o.startEvaluation({ seatId: first.seat_id, intentId: first.intent_id });
+  const started = startWith(ctx.o, first);
   ctx.o.resolveEvaluation({
     seatId: first.seat_id,
     turnId: started.payload.turn_id,
@@ -718,7 +751,7 @@ test("真驱动：适配器死在回合里，一次 tick 之后这一席重新�
   const ctx = orchestrated();
   begin(ctx);
   const [first] = ctx.o.takeIntents();
-  ctx.o.startEvaluation({ seatId: first.seat_id, intentId: first.intent_id });
+  startWith(ctx.o, first);
 
   // 思考中来一个新事件：合并进 pending。然后适配器死掉，再也不会 resolve。
   ctx.advance(1_000);
@@ -750,8 +783,7 @@ test("真驱动：适配器死在回合里，一次 tick 之后这一席重新�
   const work = ctx.o.takeIntents({ seatId: first.seat_id });
   assert.equal(work.length, 1, "一次 tick 之后这一席必须重新有活可领");
   assert.equal(
-    typeof ctx.o.startEvaluation({ seatId: first.seat_id, intentId: work[0].intent_id }).payload
-      .turn_id,
+    typeof startWith(ctx.o, work[0], first.seat_id).payload.turn_id,
     "string",
     "领到的活必须真能起回合",
   );
@@ -764,7 +796,7 @@ test("真驱动：促进排在开新手之前，上一手的活不会被开手�
   // 先起一个回合并结掉，把冷却计时点在这一手里。
   const [first] = ctx.o.takeIntents();
   const seatId = first.seat_id;
-  const started = ctx.o.startEvaluation({ seatId, intentId: first.intent_id });
+  const started = startWith(ctx.o, first, seatId);
   ctx.o.resolveEvaluation({
     seatId,
     turnId: started.payload.turn_id,
@@ -809,7 +841,7 @@ test("真驱动：恢复活性期间宿主没有读过任何席位内部状态",
   const ctx = orchestrated();
   begin(ctx);
   const [first] = ctx.o.takeIntents();
-  const started = ctx.o.startEvaluation({ seatId: first.seat_id, intentId: first.intent_id });
+  const started = startWith(ctx.o, first);
   ctx.o.resolveEvaluation({
     seatId: first.seat_id,
     turnId: started.payload.turn_id,
@@ -869,12 +901,12 @@ test("跨席 claim：真编排层上，B 席拿 A 席的工作项照样被拒", 
   const [one, two] = intents;
 
   assert.throws(
-    () => ctx.o.startEvaluation({ seatId: two.seat_id, intentId: one.intent_id }),
+    () => startWith(ctx.o, one, two.seat_id),
     probe("intent_seat_mismatch"),
   );
   // 各自用自己的那份则正常。
   assert.equal(
-    typeof ctx.o.startEvaluation({ seatId: one.seat_id, intentId: one.intent_id }).payload.turn_id,
+    typeof startWith(ctx.o, one).payload.turn_id,
     "string",
   );
 });

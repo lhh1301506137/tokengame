@@ -425,6 +425,10 @@ class SeatAiStore {
       claimed_at: null,
       claim_deadline_at: null,
       claim_count: 0,
+      // 世代围栏。null 表示这个工作项从未被领取过——此时 startEvaluation 不要求令牌，
+      // 因为 notifyDomainEvent 的返回本身就是一份可用快照，直接开工是一条正当路径
+      // （少一次往返）。一旦被领取过，令牌就非 null，世代从此开始有意义。
+      claim_token: null,
       superseded_count: 0,
     };
     this.workItems.set(item.intent_id, item);
@@ -454,6 +458,9 @@ class SeatAiStore {
       seat_id: item.seat_id,
       accepted: true,
       context: clone(item.context),
+      // 只在被领取过之后带令牌。未领取的快照带 null 会诱使调用方把 null 传回来，
+      // 而那正是「不出示令牌」——干脆不出现这个键。
+      ...(item.claim_token === null ? {} : { claim_token: item.claim_token }),
     };
   }
 
@@ -469,6 +476,10 @@ class SeatAiStore {
       if (item.claim_deadline_at === null || at < item.claim_deadline_at) continue;
       item.claimed_at = null;
       item.claim_deadline_at = null;
+      // 释放即换代。不等到有人重新领取才换：租约过期本身就说明这个 claimant 不再被授权，
+      // 放过它意味着租约只是建议。换了之后它手里那个令牌对不上，而它重新领一次就能拿到
+      // 新的——挡的是世代，不是这个意图。
+      item.claim_token = `claim-${this.idFactory()}`;
       released.push(this.record("SEAT_AI_INTENT_CLAIM_RELEASED", {
         intent_id: item.intent_id,
         seat_id: item.seat_id,
@@ -497,6 +508,15 @@ class SeatAiStore {
       item.claimed_at = at;
       item.claim_deadline_at = at + this.intentClaimLeaseMs;
       item.claim_count += 1;
+      // 每次领取铸一个新令牌。用令牌而不是拿 claim_count 当世代号：计数猜得到（claim_count
+      // 就在事件里，加一即可冒充下一世代），令牌猜不到。本机信任边界不高，但两者成本一样。
+      //
+      // 无条件铸，而不是「只在 claim_token 为 null 时铸」。就当前调用图而言两者等价：
+      // 工作项只有在 releaseExpiredIntentClaims 里才会重新变得可领，而那里已经换过代了。
+      // 变异 token-not-rotated-on-reclaim 因此杀不掉——它删掉的是这层重叠，不是行为。
+      // 保留无条件铸是为了不让围栏依赖「只有释放那条路会清租约」：将来若有人加一条
+      // 显式放弃领取的命令并直接清掉 claim_deadline_at，漏掉换代不会有任何测试变红。
+      item.claim_token = `claim-${this.idFactory()}`;
       claimed.push(this.intentSnapshot(item));
     }
     return claimed;
@@ -702,6 +722,26 @@ class SeatAiStore {
       throw new ProbeError("intent_seat_mismatch", 403, {
         intent_id: intentId,
         seat_id: seat.seat_id,
+      });
+    }
+    // 世代围栏（F5 补强）。
+    //
+    // 挡的时序：A 领走意图 X，卡住；30 秒租约到期，权威释放；B 领走同一个 X——这正是租约
+    // 存在的目的；然后 A 醒过来，拿它记得的 intent_id 启动，成功，工作项被消费；B 再来
+    // 只拿到 intent_not_found。租约把活交给了 B，A 把它抢回去了，而 B 看到的错误码与
+    // 「我调错了」是同一个，它无从知道自己被顶掉。
+    //
+    // 令牌只在被领取过之后要求。从未领取的工作项（claim_token 为 null）允许直接启动：
+    // notifyDomainEvent 的返回本身就是可用快照，那是一条少一次往返的正当路径。
+    //
+    // 位置在跨席检查之后：intent_seat_mismatch 是要求 5 点名的用例，它的错误码不该被
+    // 围栏改写成一个更含糊的「世代不对」。
+    if (item.claim_token !== null && input.claimToken !== item.claim_token) {
+      // details 里不回显正确令牌，否则这里就成了一个取令牌的接口。
+      throw new ProbeError("intent_claim_superseded", 409, {
+        intent_id: intentId,
+        seat_id: seat.seat_id,
+        claim_count: item.claim_count,
       });
     }
     // 同上：租约过期的回合不该再挡住新回合，而这不能等驱动来清。

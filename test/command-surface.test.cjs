@@ -291,6 +291,8 @@ test("AI：意图取走后由适配器回填，命令面自己不产生话术", 
     seat_id: intent.seat_id,
     recovery_credential: holder.credential,
     intent_id: intent.intent_id,
+    // 世代围栏：领取过的工作项要出示当代令牌。
+    claim_token: intent.claim_token,
   });
   assert.equal(typeof started.started.turn_id, "string");
 
@@ -333,6 +335,7 @@ test("AI：ai.start 只把 seatId 与 intentId 递进核心，不透传适配器
       seat_id: intents[0].seat_id,
       recovery_credential: holder.credential,
       intent_id: intents[0].intent_id,
+      claim_token: intents[0].claim_token,
       // 适配器伪造一份上下文一起递过来。
       context: { source_event_id: "evt-forged", hand_index: 999 },
     });
@@ -341,11 +344,15 @@ test("AI：ai.start 只把 seatId 与 intentId 递进核心，不透传适配器
   }
 
   assert.equal(seen.length, 1);
+  // claimToken 是第三个合法键：它由权威在领取时铸造，宿主只是原样带回（世代围栏）。
+  // 与 context 的区别正是本条要钉的那一点——context 是适配器自己编的，令牌不是。
   assert.deepEqual(
     Object.keys(seen[0]).sort(),
-    ["intentId", "seatId"],
+    ["claimToken", "intentId", "seatId"],
     `命令面把额外的键递进了核心: ${JSON.stringify(seen[0])}`,
   );
+  // 伪造的上下文一个字节都没进去。
+  assert.equal(seen[0].context, undefined, "适配器自带的 context 被透传了");
 });
 
 test("AI：本地隐藏不写权威事件", () => {
@@ -576,6 +583,7 @@ test("授权：ai.resolve 不得让别人以某席 AI 的名义公开发言", ()
     seat_id: victim.seat_id,
     recovery_credential: victim.credential,
     intent_id: work.intent_id,
+    claim_token: work.claim_token,
   });
   const turnId = started.started.turn_id;
 

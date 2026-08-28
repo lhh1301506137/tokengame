@@ -273,8 +273,14 @@ class CommandSurface {
       // 以前这里透传适配器回传的 p.context。source_event_id 是「这句公开话术因何而起」的
       // 唯一审计依据，让被审计方填等于没有审计：宿主可以把任何一句话挂到任何一个事件上，
       // 也可以挂到一个根本没发生过的事件上。现在上下文只从权威队列里取。
+      // claim_token 透传：世代围栏由权威判定，命令面只负责把它带到。
+      // 不在这里补默认值——补了就等于替一个没出示令牌的调用方冒充当前世代。
       "ai.start": (p) => ({
-        started: o.startEvaluation({ seatId: p.seat_id, intentId: p.intent_id }).payload,
+        started: o.startEvaluation({
+          seatId: p.seat_id,
+          intentId: p.intent_id,
+          claimToken: p.claim_token,
+        }).payload,
       }),
 
       "ai.resolve": (p) => ({

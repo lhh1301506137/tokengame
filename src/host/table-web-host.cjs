@@ -214,9 +214,14 @@ class TableWebHost {
         }
 
         for (const intent of claimed) {
+          // claim_token 原样带回（F5 世代围栏）。不带的话本驱动就是那个「旧 claimant」：
+          // 领走之后自己卡了 30 秒，租约到期被别人接手，回来还能把工作项抢走。
           const turn = (await this.core.dispatch(
             "ai.start",
-            this.injected("ai.start", session, { intent_id: intent.intent_id }),
+            this.injected("ai.start", session, {
+              intent_id: intent.intent_id,
+              ...(intent.claim_token === undefined ? {} : { claim_token: intent.claim_token }),
+            }),
           )).started;
           started += 1;
 
