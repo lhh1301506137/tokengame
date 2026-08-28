@@ -27,10 +27,33 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const resolver = require("./playwright-resolve.cjs");
 // 判定式与摘要行住在 .cjs 里，这样 node --test 也能加载它们。见那个文件的顶注。
-const { buildResult, summarize, redactDetail } = require("./acceptance-result.cjs");
+const {
+  buildResult, summarize, redactDetail,
+  chipConservation, degradationVerdict, handCoverage,
+} = require("./acceptance-result.cjs");
 
 const artifactDir = path.resolve(process.argv[2] ?? "artifacts/table-web-acceptance");
 fs.mkdirSync(artifactDir, { recursive: true });
+// 开跑前先把上一次的判定文件删掉。
+//
+// 这不是清理癖。finally 里写 result.json 覆盖上一次，但进程如果在 finally 之前就死了
+// （路由回调里的未处理拒绝就能做到，而那一类拒绝逃得过 main 的 catch），目录里留下的
+// 就是上一次那份。上一次恰好通过的话，一次崩掉的运行在证据目录里长得和通过一模一样。
+// 这和 negctl6 那次「中止却写出 passed:true」是同一类缺陷，只是这次的载体是陈旧文件。
+const resultPath = path.join(artifactDir, "result.json");
+fs.rmSync(resultPath, { force: true });
+// 未处理的拒绝要发出声音并且让退出码非零。
+//
+// main 的 try/catch 只盖得住主流程。Playwright 的路由回调是另一条链：unroute 之后
+// 还在飞的那一次 fulfill 会抛「Route is already handled」，那条拒绝不经过 main，
+// finally 不跑、判定文件不写。至少要保证退出码不是 0，否则调用方读到的就是通过。
+process.on("unhandledRejection", (reason) => {
+  const message = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+  process.stderr.write(`\n未处理的拒绝，本次运行不算通过：\n${message}\n`);
+  fs.rmSync(resultPath, { force: true });
+  process.exitCode = 1;
+  process.exit(1);
+});
 
 const PLAYERS = ["alice", "bob", "carol", "dave"];
 const steps = [];
@@ -442,6 +465,11 @@ async function playHand(players, handIndex, preferences = [], hooks = {}) {
     taken.push(await takeAction(holder, preference));
 
     const after = await readTable(holder.player.page);
+    // 每个动作之后给一次观察机会。onNewStreet 不够用：只在公共牌增加时才触发，而
+    // 一手全下打在翻牌前收掉的话公共牌一张都不发，那一手里发生的事就全看不见。
+    if (typeof hooks.onAction === "function") {
+      await hooks.onAction(after, holder.player, taken[taken.length - 1]);
+    }
     if (after.street !== null && after.street !== "—") streets.add(after.street);
     if (after.board.length > maxBoard) {
       maxBoard = after.board.length;
@@ -490,6 +518,9 @@ async function main() {
   let finalHandIndex = 0;
   // 中止原因。finally 里要拿它做判定，所以只能声明在 try 之外。
   let aborted = null;
+  // 路由回调里吞下的错误。回调不能往外抛（抛出去是未处理的拒绝，会绕过 main 的 catch
+  // 把进程打死），但吞掉就必须留痕并且判——只吞不判等于给自己开一个静默失败的口子。
+  const routeErrors = [];
 
   try {
     // ---- 1. 建房、邀请码加入、逐席公开范围确认 ----
@@ -613,14 +644,21 @@ async function main() {
     ];
     for (const item of reconfirmCases) {
       await alice.context.route("**/api/view", async (route) => {
-        const response = await route.fetch();
-        const body = await response.json();
-        for (const seat of body.view?.seats ?? []) {
-          if (seat.is_viewer !== true) continue;
-          seat.public_scope_confirmed = item.confirmed;
-          seat.public_scope_reconfirm_reason = item.reason;
+        // 同 8d：unroute 之后还在飞的 fulfill 会抛，而路由回调里的抛出是未处理的拒绝。
+        try {
+          const response = await route.fetch();
+          const body = await response.json();
+          for (const seat of body.view?.seats ?? []) {
+            if (seat.is_viewer !== true) continue;
+            seat.public_scope_confirmed = item.confirmed;
+            seat.public_scope_reconfirm_reason = item.reason;
+          }
+          await route.fulfill({ response, json: body });
+        } catch (error) {
+          if (!String(error?.message ?? error).includes("already handled")) {
+            routeErrors.push(String(error?.message ?? error));
+          }
         }
-        await route.fulfill({ response, json: body });
       });
       const shown = await until(`${item.reason} 让同意门重新出现`, async () => {
         const table = await readTable(alice.page);
@@ -1389,6 +1427,287 @@ async function main() {
         `winner=${winner.name} revision=${staleOutcome.panel_revision}`);
     }
 
+    // ---- 8c. 连续打到第 10 手以上：多人局、全下与边池、单挑 ----
+    //
+    // 前面几节各自钉一条不变量，但都只在头两三手里。跨十手要暴露的是另一类问题：
+    // 累积的状态错误。筹码结转、按钮位轮转、边池归属、手序号，这些在第二手上对，
+    // 在第八手上不一定还对——而对局本来就要连着打很多手。
+    //
+    // 放在这里而不是最后：第 10 / 11 节会让人暂离与离桌，那之后桌上凑不出多人局。
+    const HAND_TARGET = 10;
+    const startHand = (await readTable(alice.page)).handIndex;
+    const stacksBefore = (await readTable(alice.page)).seats.map((s) => s.stack);
+    const totalBefore = stacksBefore.reduce((sum, value) => sum + value, 0);
+    let allInSeen = false;
+    let allInTagSeen = false;
+    let headsUpSeen = false;
+    let multiwaySeen = false;
+    const handsPlayed = [];
+    const conservationSamples = [];
+
+    for (let guard = 0; guard < HAND_TARGET + 6; guard += 1) {
+      const before = await readTable(alice.page);
+      const current = before.handIndex;
+      if (current > HAND_TARGET) break;
+
+      // 偏好是「按行动顺序消费」的队列，不是按席位下标——playHand 对每一个行动者
+      // shift 一项。所以这里写的是这一手前几个动作长什么样，而不是谁做什么。
+      //
+      // 每三手换一种形状，好让不同的对局都出现，而不是十手都打成同一种：
+      // 全下一次（走全下按钮与全下标记）、两弃两跟一次（多人变单挑）、全程过牌一次。
+      // 用 all_in 而不是大额 raise——raise 会被 max_to 夹住，夹住之后这一手只是普通
+      // 加注，而断言仍写着「全下」。
+      //
+      // 全下这一手刻意让其余人全弃，不让人跟。跟注的全下会按牌力把一席打到 0，而筹码
+      // 归零的席位进 sit out 且再也进不了下一手（test/cross-hand-stacks.test.cjs 的两条
+      // F1）。破产的是谁取决于发牌，而第 9 到 11 节各自依赖 dave / carol / bob 还在牌里：
+      // 一次运行里 dave 破产，第 9 节就在「reload 前 dave 看得到自己两张底牌」上红了，
+      // 而那不是缺陷，是我这一节把下游的前置条件打掉了。
+      // 有人跟的全下摊牌另放在第 14 节，那时后面已经没有依赖它的东西了。
+      const shape = current % 3;
+      const preferences = shape === 0
+        ? [["all_in"], ["fold"], ["fold"], ["fold"]]
+        : shape === 1
+          ? [["fold"], ["fold"], ["check", "call"], ["check", "call"]]
+          : [["check", "call"], ["check", "call"], ["check", "call"], ["check", "call"]];
+
+      // 整手之内是否出现过全下标记：只在手末读的话读不到——结算之后标记已经不在了。
+      // 用 onAction 而不是 onNewStreet：全下常常把一手打在翻牌前就收掉，那一手一张
+      // 公共牌都不发，onNewStreet 一次都不触发。第一版就是这么漏掉的。
+      // 这一手里还在争池的最少家数。判据是「还在这手牌里且没弃牌」，从 DOM 读：
+      // 底牌位有牌就是在这手牌里（别人画两张暗牌，src/../table.js:536 的 in_hand 分支），
+      // 弃牌另有 dataset.folded。
+      //
+      // 第一版数的是「有多少个不同的人动过手」，那让单挑变成了发牌运气：两弃两跟的一手里
+      // 四个人都动过，于是被算成多人局，而摊牌其实只有两家。上一次运行凑巧出现过一次
+      // 两人都动的手所以判通过，下一次就红了——一条看牌运气的断言比没有断言更糟，
+      // 它会教人重跑到绿。这样数则是由弃牌偏好定死的：两弃必然剩两家。
+      let minContenders = Number.POSITIVE_INFINITY;
+      const observe = (table) => {
+        if (table.seats.some((s) => s.tags.includes("全下"))) allInTagSeen = true;
+        const live = table.seats.filter((s) => s.hole.length > 0 && !s.folded).length;
+        if (live >= 2 && live < minContenders) minContenders = live;
+      };
+      const played = await playHand(players, current, preferences, { onAction: observe });
+      // 逐动作扫一遍，比看标记可靠：动作是玩家真的点下去的。
+      if (played.taken.some((a) => a.action === "all_in")) allInSeen = true;
+      const contenders = Number.isFinite(minContenders) ? minContenders : null;
+      handsPlayed.push({
+        hand: current, shape, actions: played.taken.length,
+        streets: played.streets, board: played.maxBoard, contenders,
+      });
+      if (contenders === 2) headsUpSeen = true;
+      if (contenders !== null && contenders >= 3) multiwaySeen = true;
+
+      const after = await readTable(alice.page);
+      // 每一手都查筹码守恒。放在循环里而不是循环后：第 8 手上出现的偏差，循环后那一次
+      // 检查只会告诉你「总额不对」，读不出是哪一手开始不对的。
+      //
+      // 判据是双边界，不是等式。等式在这里必然误报，原因是 #pot-total 与 #chips 的语义
+      // 按阶段切换（src/host/table-view-model.cjs:180-192、holdem.cjs:782）：
+      //   手内   —— stack 是引擎值（已扣下注），pot 是争夺中的池，两者相加守恒。
+      //   结算后 —— stack 是账本值（赢的已经进账），而 pot 仍显示 settlement.total_pot。
+      //             此时相加是把池算了两遍，第一版写成等式就在第 7 手上炸了（800+3=803）。
+      // 而 DOM 里读不到 in_hand，所以从画面上分不清当前是哪个阶段。双边界两个阶段都成立，
+      // 并且仍然能同时抓住凭空产生（上界）与凭空消失（下界）。
+      const conserved = chipConservation({
+        seatStacks: after.seats.map((s) => s.stack),
+        pot: after.pot,
+        startingTotal: totalBefore,
+      });
+      conservationSamples.push({ hand: current, seats: conserved.total, pot: conserved.pot });
+      check(`第 ${current} 手之后筹码没有凭空产生（席位合计不超过起始总额）`,
+        !conserved.created,
+        `席位合计 ${conserved.total}，起始总额 ${totalBefore}`);
+      check(`第 ${current} 手之后筹码没有凭空消失（席位加池不少于起始总额）`,
+        !conserved.destroyed,
+        `席位合计 ${conserved.total} + 池 ${conserved.pot} = ${conserved.total + conserved.pot}`
+          + `，起始总额 ${totalBefore}`);
+
+      const live = after.seats.filter((s) => Number.isFinite(s.stack) && s.stack > 0).length;
+      if (live < 2) {
+        ok(`桌上有筹码的席位剩 ${live} 家，按名单开不出下一手`,
+          `停在第 ${current} 手`);
+        break;
+      }
+      // 等手序号真的往前走，再进下一轮。playHand 是在「找不到行动者」时退出的，而那既可能
+      // 是这一手收完了，也可能是下一手还没开出来——全弃牌收尾时还要过一次自愿亮牌窗口。
+      // 第一版在这里立刻读手序号，读到没动就判失败，而那一手其实已经结算完了，只是下一手
+      // 还没开始。所以这里等，等不到才算真的卡住。
+      let advanced = true;
+      try {
+        await until(`第 ${current} 手之后开出下一手`, async () =>
+          (await readTable(alice.page)).handIndex > current, { timeout: 40_000 });
+      } catch {
+        advanced = false;
+      }
+      if (!advanced) {
+        bad(`第 ${current} 手之后 40 秒内没有开出下一手`,
+          `已走动作 ${played.taken.length} 个，街道 ${JSON.stringify(played.streets)}`
+            + `，有筹码的席位 ${live} 家`);
+        break;
+      }
+    }
+
+    const reached = (await readTable(alice.page)).handIndex;
+    check(`从第 ${startHand} 手连续打到第 ${HAND_TARGET} 手以上`, reached > HAND_TARGET,
+      `实际到第 ${reached} 手，逐手记录：${JSON.stringify(handsPlayed)}`);
+    // 覆盖判定走 handCoverage：判据本身要能被单元测试碰到，否则「这一段覆盖了单挑与
+    // 全下」只是一句写在浏览器脚本里、没人验过的话。
+    const coverage = handCoverage(handsPlayed, {
+      target: HAND_TARGET, headsUp: headsUpSeen, multiway: multiwaySeen,
+      allInAction: allInSeen, allInTag: allInTagSeen,
+    });
+    check("这一段真的覆盖到单挑、多人局、全下与翻牌，不只是跑完没报错",
+      coverage.ok,
+      coverage.ok
+        ? `到第 ${coverage.reached} 手，${coverage.hands} 手记录，${coverage.withFlop} 手见到翻牌`
+        : `未覆盖：${coverage.reasons.join("；")}`);
+
+    // 边池：浏览器这一层证不了。投影只给 pot_total（src/host/table-view-model.cjs:456），
+    // 引擎算出来的 pots 分层根本没进 tokengame.table-view.v1，所以 DOM 里没有边池可读。
+    // 分层本身由 test/holdem-engine.test.cjs「三个不同深度的 all-in 形成主池和两层边池」
+    // 与 test/cross-hand-stacks.test.cjs「all-in 与边池结算后的 stack 跨手延续」在单元层
+    // 钉住。这里如实记为覆盖缺口，不写成一条读 undefined 的断言——那种断言永远为真。
+    ok("边池分层在浏览器层不可观测（投影只含 pot_total），已记为覆盖缺口",
+      "分层由 holdem-engine 与 cross-hand-stacks 两个单元测试覆盖");
+
+    const stacksAfter = (await readTable(alice.page)).seats.map((s) => s.stack);
+    check("十手之后筹码分布确实变了，不是每手都回到原样",
+      JSON.stringify(stacksAfter) !== JSON.stringify(stacksBefore),
+      `前 ${JSON.stringify(stacksBefore)} 后 ${JSON.stringify(stacksAfter)}`
+        + `，逐手守恒采样 ${JSON.stringify(conservationSamples)}`);
+    artifacts.push(await shot(alice, "8c-after-ten-hands"));
+
+    // ---- 8d. 畸形模型输出：浏览器里的有界降级 ----
+    //
+    // 单元层已经覆盖了投影降级（test/view-model-degradation.test.cjs）与模型输出降级
+    // （test/model-output-degradation.test.cjs），但那两层都在进程内。这一节要的是
+    // 浏览器里那一跳：/api/view 回一份畸形投影时，页面必须退化而不是停在上一帧。
+    //
+    // 停在上一帧是最坏的表现：牌桌看起来还在，只是不动了，而画面上没有任何东西说明
+    // 发生了什么。一张空桌子能看出问题，一张不动的旧桌子看起来是真的。
+    const malformedShapes = [
+      { label: "seats 不是数组", mutate: (view) => { view.seats = "nope"; } },
+      { label: "seats 里混进 null", mutate: (view) => { view.seats = [null, ...view.seats]; } },
+      { label: "timeline 不是数组", mutate: (view) => { view.timeline = 42; } },
+      { label: "hand 整个缺失", mutate: (view) => { delete view.hand; } },
+      { label: "整份投影是 null", mutate: null },
+    ];
+    // 这一段里的失败请求与解析错误是故意造出来的，浏览器会各自打一条 console error。
+    // 开窗口把它们分流到 expectedFailures，而不是过滤错误文本——按文本过滤会顺手滤掉
+    // 真实缺陷。
+    // carol 在第 11 节才用 players.find 取出来，这里不能直接用那个名字（TDZ）。
+    // 用同一份 players 自己取一份局部引用。
+    const projectionViewer = players.find((p) => p.name === "carol");
+    projectionViewer.expectFailures = true;
+    const shapeBefore = await readTable(projectionViewer.page);
+    const shapeReport = [];
+    for (const shape of malformedShapes) {
+      // 送达计数。没有它这一节可能什么都没测到：路由没命中，或者改错了层（投影嵌在
+      // body.view 里，不在顶层），页面收到的就是一份完好的投影，于是「页面没停死」
+      // 恒为真、整组断言全绿。第一版正是只有断言没有计数。
+      let delivered = 0;
+      await projectionViewer.context.route("**/api/view", async (route) => {
+        // 整个回调包一层 try：unroute 之后还在飞的那一次 fulfill 会抛
+        // 「Route is already handled」，而路由回调抛出的错误不经过 main 的 catch，
+        // 它是一条未处理的拒绝，会在 finally 之前把进程打死、判定文件写不出来。
+        try {
+          const response = await route.fetch();
+          if (shape.mutate === null) {
+            delivered += 1;
+            await route.fulfill({ response, json: null });
+            return;
+          }
+          let body;
+          try {
+            body = await response.json();
+          } catch {
+            await route.fulfill({ response });
+            return;
+          }
+          if (body.view === undefined || body.view === null) {
+            await route.fulfill({ response });
+            return;
+          }
+          shape.mutate(body.view);
+          delivered += 1;
+          await route.fulfill({ response, json: body });
+        } catch (error) {
+          // 已经被处理过的路由无事可做。其余错误也不能从这里抛——抛出去就是未处理的
+          // 拒绝。落在 routeErrors 里，由下面一条断言判。
+          if (!String(error?.message ?? error).includes("already handled")) {
+            routeErrors.push(String(error?.message ?? error));
+          }
+        }
+      });
+      // 等够两个轮询周期，确保至少一次畸形响应真的到过页面。
+      await sleep(1600);
+      check(`畸形投影（${shape.label}）真的送到了页面`, delivered > 0,
+        `改写并送达 ${delivered} 次`);
+      // 判据不是「画面正常」——畸形投影下画面本来就该退化。判据是页面还活着：
+      // 还能被读到、还在轮询、没有把整页卡死在一个抛出的渲染函数里。
+      let during = null;
+      try {
+        during = await readTable(projectionViewer.page);
+      } catch (error) {
+        during = null;
+      }
+      check(`畸形投影（${shape.label}）没有让页面整体停死`,
+        during !== null && typeof during.handIndex === "number",
+        during === null ? "DOM 读不出来了" : `读到手序号 ${during.handIndex}`);
+      // 还必须仍然是牌桌，而不是被打回入口页——被打回入口页等于把玩家踢出了牌桌，
+      // 而这只是一次坏响应。
+      check(`畸形投影（${shape.label}）没有把玩家打回入口页`,
+        during !== null && during.entryVisible === false,
+        `entryVisible=${during?.entryVisible ?? "（读不到）"}`);
+      // 页面对每一种畸形的反应如实记下来，不预设哪一种。产品有两条正当的降级路：
+      // render 抛错 -> refresh 的 catch -> #global-error 显示出来；或者字段本来就带
+      // 可选链与默认值 -> 静默退到合理值。两条都对，但「五种畸形全都静默」不对——
+      // 那意味着任何坏投影都只表现为一张不动的旧牌桌。下面单列一条钉这件事。
+      shapeReport.push({
+        shape: shape.label, delivered,
+        banner: during?.globalError ?? null,
+        hand: during?.handIndex ?? null,
+        seats: during?.seats.length ?? null,
+      });
+      await projectionViewer.context.unroute("**/api/view");
+      // 坏响应过去之后必须自己恢复。恢复靠的是下一次正常轮询，不需要玩家刷新——
+      // 需要刷新才能回来的话，一次网络抖动就等于把人赶下桌。
+      const recovered = await until(`恢复正常投影后页面自己回来（${shape.label}）`,
+        async () => {
+          const table = await readTable(projectionViewer.page);
+          return table.seats.length === shapeBefore.seats.length ? table : false;
+        }, { timeout: 20_000 });
+      check(`畸形投影（${shape.label}）过去之后页面自己恢复，不需要刷新`,
+        recovered.seats.length === shapeBefore.seats.length
+          && recovered.entryVisible === false,
+        `席位数 ${recovered.seats.length}，畸形前 ${shapeBefore.seats.length}`);
+    }
+    // 至少一种畸形必须在画面上说出来。全部静默的话，坏投影的唯一表现就是一张不动的
+    // 旧牌桌——玩家看不出发生了什么，而那比一张空桌子更糟：空桌子能看出问题，
+    // 不动的旧桌子看起来是真的。
+    const degradation = degradationVerdict(shapeReport);
+    check("每一种畸形都真的送到了页面，且不是全部静默降级",
+      degradation.ok,
+      degradation.ok
+        ? `${degradation.delivered}/${degradation.shapes} 种送达；`
+          + `报错的 ${JSON.stringify(degradation.withBanner)}；`
+          + `静默的 ${JSON.stringify(degradation.silent)}`
+        : degradation.reasons.join("；"));
+    ok("逐种畸形的实际反应", JSON.stringify(shapeReport));
+    // 报错之后必须自己把提示收掉。不收的话玩家被一条永久的错误条挡着，
+    // 而牌桌其实已经好了。
+    const bannerCleared = await until("恢复正常投影后错误提示自己收起", async () =>
+      (await readTable(projectionViewer.page)).globalError === null, { timeout: 20_000 })
+      .then(() => true).catch(() => false);
+    check("坏投影过去之后错误提示自己收起，不需要刷新", bannerCleared,
+      `globalError=${JSON.stringify((await readTable(projectionViewer.page)).globalError)}`);
+    projectionViewer.expectFailures = false;
+    check("畸形投影全过去之后，这一席看到的席位数与畸形前一致",
+      (await readTable(projectionViewer.page)).seats.length === shapeBefore.seats.length);
+    artifacts.push(await shot(projectionViewer, "8d-after-malformed-projections"));
+
     // ---- 9. 掉线与 120 秒保留窗内恢复 ----
     const dave = players.find((p) => p.name === "dave");
     const daveIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "dave");
@@ -1526,6 +1845,105 @@ async function main() {
     dave.expectFailures = false;
     ok("网络中断纯靠连接租约判掉线，恢复后回到原席");
 
+    // ---- 9d. 有人跟的全下摊牌，以及筹码归零之后 ----
+    //
+    // 第 8c 节的全下刻意没人跟，理由写在那里：跟注的全下会按牌力把一席打到 0，而破产
+    // 的是谁取决于发牌，那会把下游几节的前置条件打掉。这一节把那条路补上。
+    //
+    // 谁承担破产风险是选定的，不是碰运气：
+    //   全下方 = alice / bob / dave 里筹码最少的一席。最少的一席全下，跟注方覆盖得住，
+    //            所以只有全下方自己可能归零。
+    //   跟注方 = 筹码最多的一席。它跟一个比自己小的全下，不可能被打到 0。
+    //   carol  = 一律弃牌。第 10 节要她「排定本手后暂离」，一个已经在 sit out 里的席位
+    //            走不出那条断言，所以她不承担任何风险。
+    const seatsNow = (await readTable(alice.page)).seats
+      .filter((s) => Number.isFinite(s.stack) && s.stack > 0);
+    const riskable = seatsNow
+      .filter((s) => s.name !== "carol")
+      .sort((a, b) => a.stack - b.stack);
+    const richest = [...seatsNow].sort((a, b) => b.stack - a.stack)[0];
+    const allInName = riskable[0]?.name ?? null;
+    const callerName = richest?.name === allInName ? riskable[1]?.name ?? null : richest?.name ?? null;
+    check("能选出全下方与跟注方，且两者不是同一席",
+      allInName !== null && callerName !== null && allInName !== callerName,
+      `全下方=${allInName} 跟注方=${callerName}，`
+        + `筹码 ${JSON.stringify(seatsNow.map((s) => ({ name: s.name, stack: s.stack })))}`);
+
+    const showdownHand = (await readTable(alice.page)).handIndex;
+    const totalBeforeShowdown = seatsNow.reduce((sum, s) => sum + s.stack, 0);
+    let allInPlaced = false;
+    let callPlaced = false;
+    let tagOnScreen = false;
+    const showdownActions = [];
+    for (let guard = 0; guard < 40; guard += 1) {
+      if ((await readTable(alice.page)).handIndex > showdownHand) break;
+      let holder;
+      try {
+        holder = await findActor(players, `全下摊牌（第 ${showdownHand} 手）`);
+      } catch {
+        break;
+      }
+      if ((await readTable(holder.player.page)).handIndex > showdownHand) break;
+      const who = holder.player.name;
+      // 只在轮到指定的那一席时才下指定的动作。takeAction 只从权威给的按钮里选，
+      // 所以「想让谁全下」永远不会变成替他构造一个权威没给的动作。
+      const want = who === allInName && !allInPlaced
+        ? ["all_in"]
+        : who === callerName
+          ? ["call", "check"]
+          : ["fold", "check"];
+      const acted = await takeAction(holder, want);
+      showdownActions.push(acted);
+      if (acted.action === "all_in" && who === allInName) allInPlaced = true;
+      if (acted.action === "call" && who === callerName && allInPlaced) callPlaced = true;
+      const seen = await readTable(holder.player.page);
+      if (seen.seats.some((s) => s.tags.includes("全下"))) tagOnScreen = true;
+      await sleep(300);
+    }
+    check("指定的一席真的全下了，另一席真的跟了——这一手是有人跟的全下",
+      allInPlaced && callPlaced,
+      `全下=${allInPlaced} 跟注=${callPlaced}，动作 ${JSON.stringify(showdownActions)}`);
+    check("全下标记在这一手里画到了屏幕上", tagOnScreen);
+
+    const settled = await until("全下摊牌收尾", async () => {
+      const table = await readTable(alice.page);
+      return table.handIndex > showdownHand || table.street === "—" ? table : false;
+    }, { timeout: 40_000 });
+    // 摊牌之后筹码只在桌内搬动。这里能用等式：读的是手间的账本值，池已经分完。
+    const totalAfterShowdown = settled.seats
+      .filter((s) => Number.isFinite(s.stack))
+      .reduce((sum, s) => sum + s.stack, 0);
+    check("有人跟的全下结算后，桌上筹码总额与摊牌前一致",
+      totalAfterShowdown === totalBeforeShowdown,
+      `摊牌前 ${totalBeforeShowdown} 摊牌后 ${totalAfterShowdown}，`
+        + `逐席 ${JSON.stringify(settled.seats.map((s) => ({ name: s.name, stack: s.stack })))}`);
+    // 有人归零就顺带验一条 F1：归零的席位不能带着 0 筹码被塞进下一手。
+    const busted = settled.seats.filter((s) => s.stack === 0);
+    if (busted.length === 0) {
+      ok("这一手没有人归零（全下方赢了或平分），破产路径本轮未走到",
+        `全下方=${allInName}`);
+    } else {
+      const bustedNames = busted.map((s) => s.name);
+      const nextHand = await until("归零之后仍能开出下一手", async () => {
+        const table = await readTable(alice.page);
+        return table.handIndex > showdownHand ? table : false;
+      }, { timeout: 40_000 }).catch(() => null);
+      if (nextHand === null) {
+        ok("归零之后桌上不足两家有筹码，按名单没开下一手（这是正确收尾）",
+          `归零 ${JSON.stringify(bustedNames)}`);
+      } else {
+        const stillIn = nextHand.seats
+          .filter((s) => bustedNames.includes(s.name) && s.hole.length > 0);
+        check("筹码归零的席位没有带着 0 筹码进下一手",
+          stillIn.length === 0,
+          `归零 ${JSON.stringify(bustedNames)}，`
+            + `下一手仍在牌里的 ${JSON.stringify(stillIn.map((s) => s.name))}`);
+      }
+      ok("有人跟的全下把一席打到 0，破产路径在浏览器层真的走过",
+        `归零 ${JSON.stringify(bustedNames)}`);
+    }
+    artifacts.push(await shot(alice, "9d-called-all-in-showdown"));
+
     // 真实关闭上下文那一条放在第 11 节之后（11b）：它会让一席进入保留窗，而保留窗里的
     // 席位会影响「桌子还能不能开下一手」。放在这里等于让后面几节都在一张少人桌上跑，
     // 那样它们即使有缺陷也可能因为「人不够所以本来就不开牌」而看不出来。
@@ -1659,6 +2077,11 @@ async function main() {
     }
     check("截图与当时的页面状态一致（没有陈旧图像）", stale.length === 0,
       stale.length === 0 ? `${artifacts.length} 张已交叉核对` : stale.join("；"));
+    // 路由回调吞下的错误在这里结账。「已经被处理过的路由」不算（unroute 的正常竞态），
+    // 其余任何一条都说明改写投影这几节里有一次没按预期跑，而那会让那几节的断言变成
+    // 在正常投影下成立——恒真而不是通过。
+    check("投影改写的路由回调没有吞下任何意外错误", routeErrors.length === 0,
+      routeErrors.length === 0 ? "0 条" : JSON.stringify(routeErrors));
 
     finalHandIndex = (await readTable(alice.page)).handIndex;
   } catch (error) {

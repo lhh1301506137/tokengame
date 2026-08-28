@@ -85,4 +85,96 @@ function summarize({ steps, failures, totalConsole, finalHandIndex, aborted = nu
   return `${line} 运行在此中止：${aborted.message ?? String(aborted)}`;
 }
 
-module.exports = { buildResult, summarize, redactDetail, CREDENTIAL_KEYS };
+// ---- 多手对局的判定式 ----
+//
+// 这几个函数从浏览器脚本里抽出来，不是为了复用——只有一个调用点。是为了让它们能被
+// node --test 和变异驱动碰到：.mjs 里的逻辑单元测试装不进来，而一条装不进来的判定式
+// 等于没有测试。前一轮的「中止却判通过」就是这么漏过去的。
+
+// 筹码守恒：双边界而不是等式。
+//
+// 等式在这里必然误报，因为 #chips 与 #pot-total 的语义按阶段切换
+// （src/host/table-view-model.cjs:180-192、src/game/holdem.cjs:782）：
+//   手内   —— stack 是引擎值（下注已扣），pot 是争夺中的池，相加守恒。
+//   结算后 —— stack 是账本值（赢的已进账），pot 仍是 settlement.total_pot，
+//             相加等于把池算两遍。
+// DOM 里读不到 in_hand，所以画面上分不清阶段。上界抓凭空产生，下界抓凭空消失，
+// 两个阶段都成立。
+function chipConservation({ seatStacks, pot, startingTotal }) {
+  const stacks = Array.isArray(seatStacks) ? seatStacks : [];
+  const total = stacks.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+  const inPlay = Number.isFinite(pot) ? pot : 0;
+  return {
+    total,
+    pot: inPlay,
+    startingTotal,
+    // 席位合计超过起始总额：筹码凭空产生了。任何阶段都不允许。
+    created: total > startingTotal,
+    // 席位合计加池仍不足起始总额：筹码凭空消失了。
+    destroyed: total + inPlay < startingTotal,
+    get ok() { return !this.created && !this.destroyed; },
+  };
+}
+
+// 畸形投影下的降级判定。
+//
+// 两条正当的降级路：render 抛错 -> refresh 的 catch -> #global-error 显示出来；
+// 或者字段本来带可选链与默认值 -> 静默退到合理值。单看一种畸形，两条都对。
+// 不对的是「每一种都静默」——那时坏投影的唯一表现是一张不动的旧牌桌，而那比一张
+// 空桌子更糟：空桌子能看出问题，不动的旧桌子看起来是真的。
+function degradationVerdict(shapeReport) {
+  const shapes = Array.isArray(shapeReport) ? shapeReport : [];
+  const undelivered = shapes.filter((r) => !(Number.isFinite(r.delivered) && r.delivered > 0));
+  const withBanner = shapes.filter((r) => typeof r.banner === "string" && r.banner !== "");
+  const reasons = [];
+  // 没送达的必须先说。一次都没送到的话，后面所有「页面还活着」都是在正常投影下成立的，
+  // 那是恒真而不是通过。
+  if (shapes.length === 0) reasons.push("一种畸形都没跑");
+  if (undelivered.length > 0) {
+    reasons.push(`有 ${undelivered.length} 种畸形没有真的送到页面：`
+      + undelivered.map((r) => r.shape).join("、"));
+  }
+  if (shapes.length > 0 && withBanner.length === 0) {
+    reasons.push("每一种畸形都静默降级，画面上没有任何提示");
+  }
+  return {
+    shapes: shapes.length,
+    delivered: shapes.filter((r) => Number.isFinite(r.delivered) && r.delivered > 0).length,
+    withBanner: withBanner.map((r) => r.shape),
+    silent: shapes.filter((r) => r.banner === null || r.banner === "").map((r) => r.shape),
+    reasons,
+    ok: reasons.length === 0,
+  };
+}
+
+// 多手对局覆盖到了什么。
+//
+// 判据是「这一段真的走过这些形状」，而不是「跑完没报错」。跑完没报错的一段可能十手
+// 全是过牌到河牌——那样单挑、全下、边池一条都没碰到，而断言仍然全绿。
+function handCoverage(handsPlayed, { target, headsUp, multiway, allInAction, allInTag }) {
+  const hands = Array.isArray(handsPlayed) ? handsPlayed : [];
+  const reasons = [];
+  const reached = hands.length === 0 ? 0 : Math.max(...hands.map((h) => h.hand ?? 0));
+  if (hands.length === 0) reasons.push("一手都没记录");
+  if (reached < target) reasons.push(`只打到第 ${reached} 手，目标第 ${target} 手`);
+  if (!headsUp) reasons.push("没有出现过单挑（两家争池）");
+  if (!multiway) reasons.push("没有出现过多人局（三家以上争池）");
+  // 动作与画面标记两样都要。只看动作，等于只证明「点下去了」；只看标记，等于承认
+  // 一次没点也可能算过——第一版只挂在 onNewStreet 上，而全下常把一手打在翻牌前收掉，
+  // 那一手一张公共牌都不发，钩子一次都不触发。
+  if (!allInAction) reasons.push("没有任何一手真的点下全下");
+  if (!allInTag) reasons.push("画面上一次都没出现过「全下」标记");
+  if (!hands.some((h) => (h.board ?? 0) >= 3)) reasons.push("一次都没发出翻牌");
+  return {
+    reached,
+    hands: hands.length,
+    withFlop: hands.filter((h) => (h.board ?? 0) >= 3).length,
+    reasons,
+    ok: reasons.length === 0,
+  };
+}
+
+module.exports = {
+  buildResult, summarize, redactDetail, CREDENTIAL_KEYS,
+  chipConservation, degradationVerdict, handCoverage,
+};

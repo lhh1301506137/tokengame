@@ -1,0 +1,304 @@
+{
+  "name": "多手对局与畸形降级的判定式",
+  "note": "判定式从 test-support/table-web-acceptance.mjs 抽到 .cjs，才能被 node --test 与变异驱动碰到。.mjs 里的逻辑单元测试装不进来，而装不进来的判定式等于没有测试。",
+  "test": "test/multi-hand-verdict.test.cjs",
+  "mutations": [
+    {
+      "id": "conservation-upper-bound-adds-pot",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "created: total > startingTotal,",
+      "replace": "created: total + inPlay > startingTotal,",
+      "note": "第一版的等式式上界。结算后 pot 仍是 settlement.total_pot，相加等于把池算两遍，真实运行的第 7 手（800+3=803）就是这么被误判的。"
+    },
+    {
+      "id": "conservation-upper-bound-never-fires",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "created: total > startingTotal,",
+      "replace": "created: false,",
+      "note": "上界恒不触发，凭空产生的筹码就再也抓不到。"
+    },
+    {
+      "id": "conservation-lower-bound-never-fires",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "destroyed: total + inPlay < startingTotal,",
+      "replace": "destroyed: false,",
+      "note": "下界恒不触发，凭空消失的筹码就再也抓不到。"
+    },
+    {
+      "id": "conservation-lower-bound-drops-pot",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "destroyed: total + inPlay < startingTotal,",
+      "replace": "destroyed: total < startingTotal,",
+      "note": "下界不加池，手内的正常读数（797 < 800）就会被判成凭空消失。"
+    },
+    {
+      "id": "conservation-nan-stack-counts-as-starting",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "sum + (Number.isFinite(value) ? value : 0), 0);",
+      "replace": "sum + (Number.isFinite(value) ? value : 200), 0);",
+      "note": "读不出的席位按起始值补，一个读不出筹码的页面于是通过。"
+    },
+    {
+      "id": "conservation-non-array-stacks-throws",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const stacks = Array.isArray(seatStacks) ? seatStacks : [];",
+      "replace": "const stacks = seatStacks;",
+      "note": "seatStacks 不是数组时直接用，读页面失败会变成抛错而不是判失败。"
+    },
+    {
+      "id": "conservation-nan-pot-stays-nan",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const inPlay = Number.isFinite(pot) ? pot : 0;\n  return {\n    total,",
+      "replace": "const inPlay = pot;\n  return {\n    total,",
+      "note": "pot 是 NaN 时不归零，两个边界都因 NaN 比较为假而同时不触发。"
+    },
+    {
+      "id": "degradation-skips-delivery-check",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (undelivered.length > 0) {\n    reasons.push(`有 ${undelivered.length} 种畸形没有真的送到页面：`\n      + undelivered.map((r) => r.shape).join(\"、\"));\n  }\n",
+      "replace": "",
+      "note": "不查送达次数。路由没命中或改错层时，「页面没停死」恒为真，整节变成恒真。"
+    },
+    {
+      "id": "degradation-delivery-reason-omits-shape",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "reasons.push(`有 ${undelivered.length} 种畸形没有真的送到页面：`\n      + undelivered.map((r) => r.shape).join(\"、\"));",
+      "replace": "reasons.push(\"有畸形没有真的送到页面\");",
+      "note": "理由不点名是哪一种没送达，复核的人读不出该去查什么。"
+    },
+    {
+      "id": "degradation-accepts-string-delivered",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const undelivered = shapes.filter((r) => !(Number.isFinite(r.delivered) && r.delivered > 0));",
+      "replace": "const undelivered = shapes.filter((r) => !(r.delivered > 0));",
+      "note": "delivered 用宽松判断，字符串 \"2\" 也算送达——而计数器写成字符串意味着计数根本没在跑。"
+    },
+    {
+      "id": "degradation-allows-all-silent",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (shapes.length > 0 && withBanner.length === 0) {\n    reasons.push(\"每一种畸形都静默降级，画面上没有任何提示\");\n  }\n",
+      "replace": "",
+      "note": "允许每一种畸形都静默。坏投影的唯一表现变成一张不动的旧牌桌。"
+    },
+    {
+      "id": "degradation-empty-report-passes",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "if (shapes.length === 0) reasons.push(\"一种畸形都没跑\");",
+      "replace": "",
+      "note": "一种畸形都没跑也算通过。整节被跳过时报告仍然全绿。"
+    },
+    {
+      "id": "degradation-empty-banner-counts-as-shown",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const withBanner = shapes.filter((r) => typeof r.banner === \"string\" && r.banner !== \"\");",
+      "replace": "const withBanner = shapes.filter((r) => typeof r.banner === \"string\");",
+      "note": "空串算作有提示。一条空的错误条等于没有提示，而判定会说有。"
+    },
+    {
+      "id": "degradation-non-array-report-throws",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const shapes = Array.isArray(shapeReport) ? shapeReport : [];",
+      "replace": "const shapes = shapeReport;",
+      "note": "shapeReport 不是数组时直接用，判定抛错而不是判失败。"
+    },
+    {
+      "id": "coverage-ignores-allin-tag",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (!allInTag) reasons.push(\"画面上一次都没出现过「全下」标记\");\n",
+      "replace": "",
+      "note": "全下只看动作不看画面标记。第一版把标记观察挂在 onNewStreet 上，而全下常把一手打在翻牌前收掉，钩子一次都不触发。"
+    },
+    {
+      "id": "coverage-ignores-allin-action",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (!allInAction) reasons.push(\"没有任何一手真的点下全下\");\n",
+      "replace": "",
+      "note": "全下只看画面标记不看动作，等于承认一次没点也可能算过。"
+    },
+    {
+      "id": "coverage-ignores-multiway",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (!multiway) reasons.push(\"没有出现过多人局（三家以上争池）\");\n",
+      "replace": "",
+      "note": "不要求多人局。十手全打成单挑也算覆盖，而边池与多人边界一条都没碰到。"
+    },
+    {
+      "id": "coverage-ignores-headsup",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (!headsUp) reasons.push(\"没有出现过单挑（两家争池）\");\n",
+      "replace": "",
+      "note": "不要求单挑。收尾时的两家边界就没走过。"
+    },
+    {
+      "id": "coverage-ignores-flop",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  if (!hands.some((h) => (h.board ?? 0) >= 3)) reasons.push(\"一次都没发出翻牌\");\n",
+      "replace": "",
+      "note": "不要求发出翻牌。十手全在翻牌前收掉也算覆盖，公共牌渲染一次都没被看到。"
+    },
+    {
+      "id": "coverage-reached-uses-count-not-index",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const reached = hands.length === 0 ? 0 : Math.max(...hands.map((h) => h.hand ?? 0));",
+      "replace": "const reached = hands.length;",
+      "note": "用记录条数当作打到第几手。从第 3 手起算的八手记录会被读成「只打到第 8 手」。"
+    },
+    {
+      "id": "coverage-target-uses-loose-compare",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "if (reached < target) reasons.push(",
+      "replace": "if (reached < target - 1) reasons.push(",
+      "note": "目标手数用 <= 比较，差一手也算达标。"
+    },
+    {
+      "id": "coverage-empty-hands-passes",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "if (hands.length === 0) reasons.push(\"一手都没记录\");",
+      "replace": "",
+      "note": "一手都没记录也算通过。整节被跳过时覆盖判定仍然全绿。"
+    },
+    {
+      "id": "coverage-non-array-throws",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "const hands = Array.isArray(handsPlayed) ? handsPlayed : [];",
+      "replace": "const hands = handsPlayed;",
+      "note": "handsPlayed 不是数组时直接用，判定抛错而不是判失败。"
+    },
+    {
+      "id": "coverage-ok-ignores-reasons",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    reasons,\n    ok: reasons.length === 0,\n  };\n}\n\nmodule.exports = {",
+      "replace": "    reasons,\n    ok: true,\n  };\n}\n\nmodule.exports = {",
+      "note": "ok 与 reasons 脱钩。报告会同时写着「通过」和一串未覆盖理由。"
+    },
+    {
+      "id": "mjs-drops-verdict-imports",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "  chipConservation, degradationVerdict, handCoverage,\n} = require(\"./acceptance-result.cjs\");",
+      "replace": "} = require(\"./acceptance-result.cjs\");",
+      "note": "浏览器脚本不再引入这三个判定式，抽出来的逻辑变成没人跑的代码。"
+    },
+    {
+      "id": "mjs-mutates-top-level-not-view",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "shape.mutate(body.view);",
+      "replace": "shape.mutate(body);",
+      "note": "改写顶层而不是 body.view。页面收到完好投影，整节变成「正常投影下页面正常」。"
+    },
+    {
+      "id": "mjs-drops-delivery-counter",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "      let delivered = 0;\n",
+      "replace": "      const delivered = 1;\n",
+      "note": "去掉送达计数。这一节能否证明什么全靠它。"
+    },
+    {
+      "id": "mjs-allin-tag-back-on-new-street",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "playHand(players, current, preferences, { onAction: observe })",
+      "replace": "playHand(players, current, preferences, { onNewStreet: observe })",
+      "note": "把全下标记的观察挂回 onNewStreet。翻牌前收掉的全下手一次都不触发。"
+    },
+    {
+      "id": "mjs-playhand-drops-onaction-hook",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "    if (typeof hooks.onAction === \"function\") {",
+      "replace": "    if (false) {",
+      "note": "playHand 不再调用 onAction，每个动作之后的观察机会消失。"
+    },
+    {
+      "id": "mjs-next-hand-check-impatient",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "        await until(`第 ${current} 手之后开出下一手`, async () =>\n          (await readTable(alice.page)).handIndex > current, { timeout: 40_000 });",
+      "replace": "        if ((await readTable(alice.page)).handIndex <= current) throw new Error(\"未推进\");",
+      "note": "不等下一手开出就读手序号判失败。真实运行的第 7 手就是这么被误判的——那一手其实已经结算完，只是全弃牌收尾还要过一次自愿亮牌窗口。"
+    },
+    {
+      "id": "mjs-keeps-stale-result-json",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "fs.rmSync(resultPath, { force: true });\n// 未处理的拒绝要发出声音",
+      "replace": "// 未处理的拒绝要发出声音",
+      "note": "开跑前不删上一次的判定文件。进程在 finally 之前死掉时（路由回调里的未处理拒绝就能做到），目录里留下的是上一次那份；上一次恰好通过的话，一次崩掉的运行在证据目录里长得和通过一模一样。真实的第 7 轮运行就是这么崩的。"
+    },
+    {
+      "id": "mjs-unhandled-rejection-exits-zero",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "  process.exitCode = 1;\n  process.exit(1);",
+      "replace": "  process.exitCode = 0;",
+      "note": "未处理的拒绝不改退出码。调用方读到 0 就是通过，而这次运行连判定文件都没写出来。"
+    },
+    {
+      "id": "mjs-unhandled-rejection-keeps-result",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "  fs.rmSync(resultPath, { force: true });\n  process.exitCode = 1;",
+      "replace": "  process.exitCode = 1;",
+      "note": "未处理的拒绝不删判定文件，陈旧的通过留在原地。"
+    },
+    {
+      "id": "mjs-unhandled-rejection-silent",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "  process.stderr.write(`\\n未处理的拒绝，本次运行不算通过：\\n${message}\\n`);",
+      "replace": "  void message;",
+      "note": "未处理的拒绝不写原因，只剩一个没有解释的非零退出。"
+    },
+    {
+      "id": "mjs-route-errors-not-asserted",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "    check(\"投影改写的路由回调没有吞下任何意外错误\", routeErrors.length === 0,\n      routeErrors.length === 0 ? \"0 条\" : JSON.stringify(routeErrors));",
+      "replace": "",
+      "note": "路由回调吞下的错误不再结账。只吞不判等于给自己开一个静默失败的口子：改写投影那几节会在正常投影下成立，恒真而不是通过。"
+    },
+    {
+      "id": "mjs-route-errors-swallow-everything",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "        } catch (error) {\n          // 已经被处理过的路由无事可做。其余错误也不能从这里抛——抛出去就是未处理的\n          // 拒绝。落在 routeErrors 里，由下面一条断言判。\n          if (!String(error?.message ?? error).includes(\"already handled\")) {\n            routeErrors.push(String(error?.message ?? error));\n          }",
+      "replace": "        } catch (error) {\n          void error;",
+      "note": "把「已经被处理过的路由」以外的错误也一并吞掉不记。"
+    },
+    {
+      "id": "mjs-allin-risk-includes-carol",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": ".filter((s) => s.name !== \"carol\")",
+      "replace": ".filter((s) => s.name !== \"\")",
+      "note": "全下方不再排除 carol。carol 破产就走不出第 10 节「排定本手后暂离」那条断言，而破产的是谁取决于发牌——一条看牌运气的断言比没有断言更糟。"
+    },
+    {
+      "id": "mjs-allin-player-takes-largest-stack",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "const riskable = seatsNow\n      .filter((s) => s.name !== \"carol\")\n      .sort((a, b) => a.stack - b.stack);",
+      "replace": "const riskable = seatsNow\n      .filter((s) => s.name !== \"carol\")\n      .sort((a, b) => b.stack - a.stack);",
+      "note": "全下方改取筹码最多的一席。那样跟注方覆盖不住，跟注方也可能被打到 0，破产风险不再落在选定的那一席上。"
+    },
+    {
+      "id": "mjs-8c-allin-gets-called",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "[[\"all_in\"], [\"fold\"], [\"fold\"], [\"fold\"]]",
+      "replace": "[[\"all_in\"], [\"call\", \"all_in\"], [\"fold\"], [\"fold\"]]",
+      "note": "第 8c 节的全下改成有人跟。跟注的全下会按牌力把一席打到 0，而第 9 到 11 节各自依赖 dave / carol / bob 还在牌里。"
+    },
+    {
+      "id": "mjs-showdown-conservation-uses-bounds",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "totalAfterShowdown === totalBeforeShowdown",
+      "replace": "totalAfterShowdown <= totalBeforeShowdown",
+      "note": "摊牌后的总额改成单边界。手间读的是账本值、池已分完，等式本来成立；放宽成不等式就抓不到结算少付或多付。"
+    },
+    {
+      "id": "mjs-busted-seat-check-ignores-hole",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "bustedNames.includes(s.name) && s.hole.length > 0",
+      "replace": "bustedNames.includes(s.name) && false",
+      "note": "不看底牌位就判「没进下一手」。一个仍在牌里的归零席位于是通过——底牌位有牌正是「他还在这手牌里」在画面上的唯一表现。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "browser-only-degradation-paths",
+      "note": "五种畸形投影下页面实际怎么反应（报错条 vs 静默退默认值）只有真实浏览器能证实。变异驱动跑的是 node --test，装不进 web/table/table.js（经典脚本）。这一节的实测结果记在 docs/ACCEPTANCE-EVIDENCE.md 的多手对局一节。"
+    },
+    {
+      "id": "side-pot-layering-in-browser",
+      "note": "边池分层在浏览器层不可观测：投影只含 pot_total，引擎算出的 pots 没进 tokengame.table-view.v1。分层由 test/holdem-engine.test.cjs 与 test/cross-hand-stacks.test.cjs 在单元层覆盖，这里不造一条读 undefined 的断言。已列为待裁决项。"
+    }
+  ]
+}
