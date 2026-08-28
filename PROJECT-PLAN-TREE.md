@@ -352,18 +352,52 @@ plan_tree:
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:
         - TG-EU-REVIEW-CLOSURE-F1-F6
-      status: planned
+      status: completed
       unit_kind: product_loop
       summary: 把 web/ 从旧探针栈切到同一宿主中立内核，形成单栈产品闭环：建房与邀请码加入、逐席公开范围确认、Ready 与倒计时、私有底牌与公共牌、底池与当前行动者、合法按钮与下注滑杆、筹码跨手存活、玩家与所属 AI 相邻且气泡可区分、THINKING/DEGRADED/OFFLINE/OFF/迟到标注、逐查看者本地隐藏、掉线与 120 秒恢复、暂离与离桌。UI 不直接读取权威原始事件或秘密。
       implementation_refs:
-        - web/app.js
-        - web/index.html
-        - web/styles.css
-      current_state: web/app.js 仍连旧探针栈的 /api/table/* 与 EventStore；新内核没有任何 UI。
+        - web/table/index.html
+        - web/table/table.css
+        - web/table/table.js
+        - src/host/table-web-host.cjs
+        - src/host/table-view-model.cjs
+        - src/host/core-client.cjs
+        - src/run-table-web.cjs
+      current_state: >-
+        新 UI 在 web/table/，只认 /api/view 的 tokengame.table-view.v1 契约，经协调器连同一份权威内核，
+        入口是 npm run web。旧探针栈 web/app.js 与 npm run authority / table 原样保留为已替代历史证据，
+        不再是产品路径——两套牌桌不并行维护，新 UI 不读旧 /api/table/*。
+      verification:
+        - "test/table-web-host.test.cjs：15 tests / 15 pass"
+        - "变异规格 test-support/mutations/web-host-boundary.json：16/16 杀死，0 存活 0 未评估"
+        - "浏览器验收 test-support/table-web-acceptance.mjs：80 条断言全过，控制台错误 0，四个隔离 Chromium 上下文，连续打到第 3 手"
+        - "npm test 2026-08-28 实测 351/351 pass、0 fail；全新克隆一次、工作树一次"
+        - "浏览器验收在全新克隆连跑三次、工作树连跑四次，均 80/80"
+      commits:
+        - 8ad8cac
+        - bfaaea5
+        - d1bf428
+        - e029491
+        - eb8ce9a
+        - 62cfdae
+        - 550d719
+        - b11528a
+        - eef01e9
       acceptance_intent:
         - 用确定性 fake 宿主/模型适配器做自动化产品测试，不用假模型结果冒充真实宿主能力
         - 2～4 个隔离浏览器上下文验证，控制台错误必须为 0
-      claim_limit: 未开始。不得因内核测试通过而声称产品闭环已完成。
+      acceptance_result: >-
+        两条都已满足。适配器是 test-support/scripted-model-adapter.cjs，simulated:true 硬编码不可覆盖，
+        视图显示为「（模拟）」，所以每张截图都自证不是真实宿主能力。
+      defects_found_by_browser: >-
+        三个缺陷是浏览器验收发现的，351 个单元测试与代码复核都没发现：[hidden] 被类选择器上的 display
+        盖掉导致三个元素带 hidden 仍占布局（其中 scope-gate 是全屏遮罩，吃掉后续所有点击）；离桌后轮询
+        不停，每 700ms 一条 403；公共牌从未被观察过——74 条断言全绿而 board 一直是 0。另有一处竞争在
+        全新克隆才暴露：只等建房者一页就读四页，其余三页差一个 tick 读到空桌，同时暴露五条断言在空数据
+        上空过（含全场最严的跨上下文泄漏检查，只搜了 24 次里的 6 次）。
+      claim_limit: >-
+        已验证本地单栈产品闭环与四上下文隔离。不含真实宿主适配器、无点击主动唤醒、真人试玩签字、
+        生产鉴权与远程部署；桥接鉴权仍是 U-TG-LOCAL-BRIDGE-AUTH，未设计完成。
     - id: TG-EU-HOST-ADAPTER-CONTRACT
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:
@@ -404,20 +438,25 @@ plan_tree:
       owner_links:
         - .trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-权威验收
         - .trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md
-      blocking_reason: 依赖单栈产品闭环与尖峰结论；两者均未完成。
+      blocking_reason: >-
+        单栈产品闭环已完成（TG-EU-SINGLE-STACK-WEB-TABLE），但 TG-EU-PROACTIVE-WAKE-SPIKE 未执行，
+        且本门禁自身的两层都还没跑：自动化层要求至少 10 手与故障矩阵、隐私金丝雀，现有浏览器验收只打到
+        第 3 手；真人层要四个真人 45 分钟试玩签字。
       claim_limit: 两层均未执行。自动化层不能顶替真人层签字，模拟席或一人多窗口不能计入真人签字。
   active_node: TG-L3-MULTIPLAYER-VERTICAL-SLICE
-  current_next_leaf: TG-EU-SINGLE-STACK-WEB-TABLE
-  current_execution_unit_ref: PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE
+  current_next_leaf: TG-EU-HOST-ADAPTER-CONTRACT
+  current_execution_unit_ref: PROJECT-PLAN-TREE.md#TG-EU-HOST-ADAPTER-CONTRACT
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-EU-REVIEW-CLOSURE-F1-F6@3081d01
-    first_invalid_or_unverified_node: TG-EU-SINGLE-STACK-WEB-TABLE
+    earliest_trustworthy_node_or_checkpoint: TG-EU-SINGLE-STACK-WEB-TABLE@eef01e9
+    first_invalid_or_unverified_node: TG-EU-HOST-ADAPTER-CONTRACT
     boundary_meaning: >-
-      内核七个执行单元有实现、自动化测试与变异测试证据，止于此。产品闭环、共享适配器合同、
-      Claude 适配器、无点击主动唤醒与可玩性门禁均无证据，不得按已通过对待。
+      八个执行单元有实现、自动化测试与变异测试证据，产品闭环另有四上下文浏览器验收，止于此。
+      共享适配器合同、Claude 适配器、无点击主动唤醒与可玩性门禁均无证据，不得按已通过对待。
+      特别地：浏览器验收用的是 simulated 模型适配器，它证明 UI 到权威这条链路，不证明任何
+      真实宿主能力。
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: primary_ai_execute_TG-EU-SINGLE-STACK-WEB-TABLE
+  next_owner: primary_ai_execute_TG-EU-HOST-ADAPTER-CONTRACT
 
 semantic_baseline:
   required: yes
@@ -500,9 +539,13 @@ semantic_baseline:
 
 宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、三个当前 MVP L2，以及可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌、被动问答章程及其旧规则保留为已替代历史。语义门禁已经闭合，且本轮不存在待确认的语义变更。
 
-Project Intelligence 刷新门禁已通过（`STATUS.md#project_intelligence`，`freshness: current`）。`TG-L3-MULTIPLAYER-VERTICAL-SLICE` 现在展开为 12 个执行单元：七个内核单元已完成并有实现、自动化测试与变异测试证据（`npm test` 2026-08-28 实测 336/336，六个变异规格合计 103 变异 0 存活），五个单元没有证据。
+Project Intelligence 刷新门禁已通过（`STATUS.md#project_intelligence`，`freshness: current`）。`TG-L3-MULTIPLAYER-VERTICAL-SLICE` 现在展开为 12 个执行单元：七个内核单元加一个产品闭环单元已完成并有实现、自动化测试与变异测试证据（`npm test` 2026-08-28 实测 351/351，七个变异规格合计 119 变异 0 存活），四个单元没有证据。
 
-下一恢复点是 `TG-EU-SINGLE-STACK-WEB-TABLE`：`web/app.js` 仍连旧探针栈的 `/api/table/*`，新内核至今没有任何 UI，所以「内核测试全绿」与「产品闭环成立」之间还隔着一整个单元。这一单元完成前不得声称 MVP 可玩。
+`TG-EU-SINGLE-STACK-WEB-TABLE` 已完成：新 UI 在 `web/table/`，经协调器连同一份宿主中立内核，入口 `npm run web`；四个隔离 Chromium 上下文的 80 条断言全过、控制台错误 0、连续打到第 3 手。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为已替代历史证据，不再是产品路径。
+
+下一恢复点是 `TG-EU-HOST-ADAPTER-CONTRACT`：先把两个宿主共享的 HostAdapter 合同写成文，再实现任一侧适配器，不把 Claude 特例写进核心。
+
+产品闭环成立不等于 MVP 可玩已通过：`TG-EU-PLAYABILITY-GATE` 的两层都还没跑（自动化层要求至少 10 手、故障矩阵与隐私金丝雀，现有验收只到第 3 手；真人层要四个真人 45 分钟签字），而浏览器验收用的是 `simulated: true` 的脚本适配器。它证明 UI 到权威这条链路，不证明任何真实宿主能力。
 
 明确保留为未验证、不得按已通过对待：`TG-EU-HOST-ADAPTER-CONTRACT`（共享合同未成文）、`TG-EU-CLAUDE-HOST-ADAPTER`（按用户指令暂缓，本环境无 Claude Desktop / Cowork 界面，跑不了实机门禁）、`TG-EU-PROACTIVE-WAKE-SPIKE`（`SAME_VISIBLE_TASK_SPIKE_V1` 未执行，两个宿主的无点击主动唤醒都未验证）、`TG-EU-PLAYABILITY-GATE`（自动化层与四真人试玩层均未执行）。既有 Codex 桥接与旧牌桌气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主能力、跨宿主私人房或事件驱动主动唤醒已经交付。
 

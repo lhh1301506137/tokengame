@@ -321,3 +321,48 @@ seat_ai_bubble_acceptance:
       - artifacts/four-player-smoke/ai-answer-narrow.png
   requires_user_acceptance: yes
 ```
+
+## 2026-08-28：宿主中立单栈牌桌产品闭环复核
+
+- 复核范围：`TG-EU-SINGLE-STACK-WEB-TABLE`。把 UI 从旧探针栈切到同一份宿主中立权威内核，形成一套栈的本地产品闭环。不改动已确认的 L0–L2 与七条公开交流规则，不改动牌局裁决。
+- 单栈判定：新 UI 在 `web/table/`，只认 `/api/view` 的 `tokengame.table-view.v1` 契约，经 `src/host/table-web-host.cjs` 协调器连内核，入口 `npm run web`。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为已替代历史证据，不再是产品路径，两套牌桌不并行维护。
+- 权威边界：UI 不读权威原始事件，也拿不到任何秘密。浏览器手里只有会话令牌，席位凭据留在协调器进程内存里，不经浏览器往返；视图与动作两个出口都做凭据形状键与自由文本的双向泄漏扫描，扫到即 500，按本进程缺陷处理。合法按钮由权威给的 `legal_actions` 生成，页面不自己推断合法性。
+- 自动化：`npm test` 实测 351/351 pass、0 fail，全新克隆一次、工作树一次。`test/table-web-host.test.cjs` 15/15。变异规格 `test-support/mutations/web-host-boundary.json` 16 条全杀、0 存活 0 未评估。项目仍未配置 lint、TypeScript 或 typecheck，未把不存在的检查写成通过。
+- 浏览器验收：`test-support/table-web-acceptance.mjs` 四个隔离 Chromium context，80 条断言全过，控制台错误 0，连续打到第 3 手。全新克隆连跑三次、工作树连跑四次同结果。所有动作都通过 Web UI 与正常玩家接口完成，没有特权客户端，也没有直接往内核发命令的后门。
+- 底牌隔离三重覆盖：自己两张明牌、别人三席各两张暗牌、每人底牌拿去另外三人整页 `body.innerHTML` 搜索 24 次 0 命中。第三重刻意放在任何摊牌之前——摊牌后别人的底牌本该出现在我的页面上，那时再搜会把正确行为报成泄漏。
+- 浏览器发现而 351 个单元测试与代码复核都没发现的缺陷四个，每个都先复现为失败再修：`[hidden]` 被类选择器上的 `display` 盖掉（三个元素受影响，其中 `scope-gate` 是全屏遮罩，吃掉后续所有点击，症状只是「点不动我准备好了」）；离桌后轮询不停每 700ms 一条 403；公共牌从未被观察过（74 条断言全绿而 `board` 一直是 0）；只等建房者一页就读四页导致的读页竞争。
+- 第四条同时暴露五条断言在空数据上空过：三页一张牌都没渲染时，`every()` 与 `Set` 去重让「只看到别人的暗牌」「八张底牌互不相同」「没有任何一方的底牌出现在别人的整页 DOM 里」照样通过，最后那条只搜了 24 次里的 6 次。去掉逐页等待、只留断言加固后，同一缺陷从 3 条失败变成 8 条，加固承重得到确认。断言在无数据时通过比没有这条断言更糟，它把缺口报成绿色。
+- 承重性反向验证：把 `[hidden]` 规则与离桌收摊改回原样各跑一次，确认断言真的会失败。其中一处得到否定结论——离桌处的 `returnToEntry` 改回后两条命名断言仍通过，只有控制台错误那条抓住了它；真正承重的是 `refresh()` 里的终态会话码守卫，调用点那处是双保险。这一条如实记下，不写成两处都承重。
+- 证据自审：每张截图附页面状态指纹并两两交叉核对，状态不同而字节相同即判失败。`result.json` 无条件落盘，包括脚本中途抛错的情况——先前一次异常终止只留下「通过 77，失败 3」一行而没有失败项，诊断只能靠重跑。
+- 模型适配器边界：`test-support/scripted-model-adapter.cjs` 按查表返回固定文本，不推理、不访问模型，`simulated: true` 硬编码不可覆盖，视图显示「（模拟）」，每张截图都自证不是真实宿主能力。本节证据不构成真实宿主无点击主动唤醒已通过的证据；Codex 当前任务与 Claude Cowork 两侧的主动唤醒均未验证。
+- 计划树：已修改。`TG-EU-SINGLE-STACK-WEB-TABLE` 由 `planned` 改为 `completed` 并补齐实现引用、验证、提交与边界；可靠边界前移到 `TG-EU-SINGLE-STACK-WEB-TABLE@eef01e9`；下一叶改为 `TG-EU-HOST-ADAPTER-CONTRACT`；`TG-EU-PLAYABILITY-GATE` 的阻塞原因改为只剩尖峰与门禁自身两层。新 SHA256 为 `336B7709DFBFABDB93F6C4B8D5CFB22EDF8865999E4B56DCEF38455EB9C83DC0`（`Get-FileHash`、Python `hashlib`、Node `crypto` 三者一致）。
+- 边界：本节不证明真实宿主适配器、无点击主动唤醒、四真人试玩签字、`PLAYABILITY_GATE_V1` 自动化层（要求至少 10 手与故障矩阵、隐私金丝雀，本次只到第 3 手）、生产鉴权或远程部署。本机桥接鉴权仍是未闭合未知项 `U-TG-LOCAL-BRIDGE-AUTH`，不属本单元设计范围。
+- 裁决：`APPROVE_WITH_NOTES`。本地单栈产品闭环已成立并有可独立重跑的证据；产品闭环成立不等于 MVP 可玩已通过，可玩性门禁两层都还没跑。
+
+```yaml
+single_stack_web_table_acceptance:
+  acceptance_label: ai_generated_acceptance
+  result: pass_with_notes
+  evidence:
+    unit_and_integration: npm_test_351_of_351
+    web_host_tests: 15_of_15
+    mutation_spec: web_host_boundary_16_killed_0_survived
+    browser_contexts: [alice, bob, carol, dave]
+    assertions: 80_of_80
+    console_errors: 0
+    hands_played: 3
+    hole_card_cross_search: 24_searches_0_hits
+    clean_clone_runs: 3
+    worktree_runs: 4
+    model_adapter: scripted_simulated_true
+    artifacts:
+      - artifacts/table-web-acceptance/result.json
+      - artifacts/table-web-acceptance/
+  not_proven:
+    - real_host_adapter
+    - clickless_proactive_wake
+    - playability_gate_automated_layer
+    - four_human_playtest_signoff
+    - production_auth_or_remote_deployment
+  requires_user_acceptance: yes
+```
