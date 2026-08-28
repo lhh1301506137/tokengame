@@ -1,0 +1,60 @@
+{
+  "name": "voluntary-reveal",
+  "note": "阶段 1 项 4 的自愿亮牌可见性。原缺陷是一处恒假的判断：can_reveal 判 settlement.payouts，而权威从来不产出这个字段，于是按钮从未出现过一次。恒假与恒真是同一类问题，所以这些变异里既有「判成恒真」也有「换成另一个恒假的字段」——两个方向都必须有测试能红。",
+  "mutations": [
+    {
+      "id": "can-reveal-always-true",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    can_reveal: hand?.status === \"complete\"\n      && hand?.finish_reason === \"all_others_folded\"\n      && Array.isArray(hand?.settlement?.winner_ids)\n      && viewerSeat !== null\n      && hand.settlement.winner_ids.includes(viewerSeat.player_id),",
+      "replacement": "    can_reveal: true,",
+      "test": "test/voluntary-reveal.test.cjs",
+      "note": "判成恒真。只断言「赢家看得到按钮」时这一版是绿的，所以必须同时断言输家看不到——三个输家各拿到一个点了就 403 的按钮。"
+    },
+    {
+      "id": "can-reveal-nonexistent-field",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "      && Array.isArray(hand?.settlement?.winner_ids)\n      && viewerSeat !== null\n      && hand.settlement.winner_ids.includes(viewerSeat.player_id),",
+      "replacement": "      && hand?.settlement?.payouts?.some?.(\n        (payout) => payout.player_id === viewerSeat?.player_id,\n      ) === true,",
+      "test": "test/voluntary-reveal.test.cjs",
+      "note": "这就是原缺陷本身。payouts 不存在，所以整条判断恒为假，按钮永不出现——而这一版下没有任何东西报错，功能只是静静地不存在。"
+    },
+    {
+      "id": "can-reveal-ignores-winner",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "      && hand.settlement.winner_ids.includes(viewerSeat.player_id),",
+      "replacement": "      && hand.settlement.winner_ids.length > 0,",
+      "test": "test/voluntary-reveal.test.cjs",
+      "note": "不看查看者是谁，只看有没有赢家。全桌都拿到按钮，而权威只让赢家亮——UI 与许可分叉的典型形态。"
+    },
+    {
+      "id": "can-reveal-matches-seat-id",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "      && hand.settlement.winner_ids.includes(viewerSeat.player_id),",
+      "replacement": "      && hand.settlement.winner_ids.includes(viewerSeat.seat_id),",
+      "test": "test/voluntary-reveal.test.cjs",
+      "note": "拿 seat_id 去比 winner_ids。winner_ids 装的是 player_id，两者不同名，于是又变成恒假——同一个缺陷换了个写法。"
+    },
+    {
+      "id": "can-reveal-any-finish-reason",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "      && hand?.finish_reason === \"all_others_folded\"",
+      "replacement": "",
+      "test": "test/voluntary-reveal.test.cjs",
+      "note": "去掉收尾原因这一道。摊牌收尾时牌本来就已经亮了，按钮出现只会让人点一次拿到 voluntary_reveal_not_available。"
+    },
+    {
+      "id": "can-reveal-empty-winner-list",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "      && Array.isArray(hand?.settlement?.winner_ids)",
+      "replacement": "      && hand?.settlement !== null",
+      "test": "test/voluntary-reveal.test.cjs",
+      "note": "不检查 winner_ids 是不是数组就直接 includes。settlement 存在而 winner_ids 缺失时抛 TypeError，整份视图 500——投影层的一条空引用会让整个牌桌白屏，而它只在这一种收尾下发生。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "can-reveal-during-active-hand",
+      "why": "等价变异，不是测试缺口。把 status === \"complete\" 换成 hand !== null 跑出来是 SURVIVED：finishReason 在 holdem.cjs 里只有两处赋值（showdown 与 all_others_folded），两处都与 status = \"complete\" 同时发生，所以不存在 active + all_others_folded 的状态，后一道闸门已经把进行中的牌局全部挡住。测试里那条「牌局进行中谁都不能亮牌」照样存在并且有意义——它钉住的是行为，只是这一处冗余无法单独被观察到。保留 status 那一道是因为它挡的是最坏的一种失败：谁要是将来为了做一个「正在收摊」的过场而提前设上 finishReason，can_reveal 就会在牌局进行中变真，而那等于把底牌交给还在跟注的对手。有这道闸门，那件事需要同时改两个字段。"
+    }
+  ]
+}

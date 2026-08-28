@@ -267,11 +267,30 @@ function buildActionPanel({ privateHand, viewerSeat, limits }) {
     action_deadline_at: hand?.action_deadline_at ?? null,
     // 自愿亮牌只在权威裁定 all_others_folded 且查看者是赢家时可用。UI 不自己判断
     // 「是不是只剩我一个」——那要复制一遍弃牌统计，而复制的判断会和权威分叉。
+    //
+    // 判的是 settlement.winner_ids，与引擎 revealCards 里那道把关读的是同一个字段。
+    // 在此之前这里判的是 settlement.payouts，而权威从来不产出这个字段——整个代码库里
+    // payouts 只出现在这一行。于是 can_reveal 恒为假，按钮从未出现过一次，这个功能有
+    // 代码、有权威支持、有按钮，却从来没有成功过。
+    //
+    // 恒假的判断和恒真的断言是同一类东西：都读不出真实状态，都不会红。它还顺带掩护了
+    // 客户端那一处缺三个字段的缺陷——按钮永不出现，那条路径就永远不会被走到。所以
+    // test/voluntary-reveal.test.cjs 里有一条逐席比对「UI 说行不行」与「权威说行不行」，
+    // 而不是只断言赢家那一侧为真：只测真的那一侧时，把判断写成恒真也能过。
+    //
+    // status 这一道就当前引擎而言是冗余的：finishReason 只在两处赋值，两处都与
+    // status = "complete" 同时发生，所以不存在 active + all_others_folded 的状态。变异
+    // can-reveal-during-active-hand（把它换成 hand !== null）因此杀不掉，理由记在
+    // test-support/mutations/voluntary-reveal.json 的 excluded 里。
+    //
+    // 保留它是因为这条冗余挡的是最坏的一种失败：谁要是将来为了做一个「正在收摊」的过场
+    // 而提前设上 finishReason，can_reveal 就会在牌局进行中变真，而那等于把自己的底牌交给
+    // 还在跟注的对手。这道闸门让那件事需要同时改两个字段才会发生。
     can_reveal: hand?.status === "complete"
       && hand?.finish_reason === "all_others_folded"
-      && hand?.settlement?.payouts?.some?.(
-        (payout) => payout.player_id === viewerSeat?.player_id,
-      ) === true,
+      && Array.isArray(hand?.settlement?.winner_ids)
+      && viewerSeat !== null
+      && hand.settlement.winner_ids.includes(viewerSeat.player_id),
     max_text_graphemes: limits?.max_text_graphemes ?? null,
   };
 }

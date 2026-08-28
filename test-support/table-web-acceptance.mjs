@@ -124,20 +124,25 @@ async function newPlayer(browser, origin, name) {
   const page = await context.newPage();
   const consoleErrors = [];
   const pageErrors = [];
-  // 故意断网那一段里，浏览器自己会为每个失败请求打一条 net::ERR_FAILED。那不是缺陷，
-  // 但也不能混进「控制台错误为 0」里当没看见——两种做法都是错的：算进去会让一条正确的
-  // 测试永远红，静默丢掉则等于给自己开了一个可以塞任何错误的口子。
+  // 有几段是故意让请求失败的：掐掉路由模拟断网，或者拿陈旧的版本号去撞 409。浏览器会
+  // 为每个失败请求自己打一条 console error。那不是缺陷，但也不能混进「控制台错误为 0」
+  // 里当没看见——两种做法都是错的：算进去会让一条正确的测试永远红，静默丢掉则等于给
+  // 自己开了一个可以塞任何错误的口子。
   //
-  // 所以按窗口分流：断网期间的进 cutErrors 并在报告里单列，其余一律进 consoleErrors。
-  // 窗口由脚本显式打开与关闭，不按错误文本猜——按文本过滤会顺手滤掉真实的网络层缺陷。
-  const cutErrors = [];
-  const player = { name, context, page, consoleErrors, pageErrors, cutErrors, cutOpen: false };
+  // 所以按窗口分流：窗口内的进 expectedFailures 并在报告里单列，其余一律进 consoleErrors。
+  // 窗口由脚本显式打开与关闭，不按错误文本猜——按文本过滤会顺手滤掉真实的缺陷，而且
+  // 「409」这种文本恰好也是真实幂等缺陷的样子。
+  const expectedFailures = [];
+  const player = {
+    name, context, page, consoleErrors, pageErrors, expectedFailures,
+    expectFailures: false,
+  };
   page.on("console", (message) => {
     if (message.type() !== "error") return;
-    (player.cutOpen ? cutErrors : consoleErrors).push(message.text());
+    (player.expectFailures ? expectedFailures : consoleErrors).push(message.text());
   });
   page.on("pageerror", (error) => {
-    (player.cutOpen ? cutErrors : pageErrors).push(error.message);
+    (player.expectFailures ? expectedFailures : pageErrors).push(error.message);
   });
   // 离桌要过一次 window.confirm。不接对话框的话点击会一直挂着。
   page.on("dialog", (dialog) => dialog.accept());
@@ -1016,6 +1021,177 @@ async function main() {
     });
     ok("本地隐藏可逆，撤销后画面完全恢复",
       `seat=${restored.seats[bobSeatIndex].name}`);
+
+    // ---- 8b. 自愿亮牌：成功、重复、陈旧版本号 ----
+    //
+    // 规则 4：只有 all_others_folded 的赢家可自愿亮牌。之前这个按钮从来没有成功过一次——
+    // 客户端只发 hand_id，而核心要 hand_id + expected_revision + idempotency_key 三样，
+    // 于是每一次点击都以 invalid_field 被拒。它不显眼是因为亮牌只在「其余人全弃牌、你是
+    // 赢家」时才出现，而自动化里没有任何一步点过它。
+    //
+    // 打一手全弃牌局面出来。三个人弃牌之后只剩一个，权威把这一手判为 all_others_folded。
+    //
+    // 刻意不用 playHand：它要等到手序号变化才返回，而手间展示窗只有 3 秒——等它返回时
+    // 亮牌窗口已经关了，can_reveal 变回 false，权威那边也换了 hand_id。这里显式弃三次，
+    // 弃完立刻进窗口。
+    //
+    // 窗口只有 3 秒是产品语义（room-store 的 interHandEndsAt，与首手 Ready 倒计时同为
+    // 3 秒），不是这里能改的东西。所以下面这一整段要快：identify -> click -> 读对手视角
+    // -> 重复点 -> 三条 HTTP 探针，全部走完在几百毫秒量级。
+    const revealHandIndex = (await readTable(alice.page)).handIndex;
+    let folded = 0;
+    for (let guard = 0; guard < 12 && folded < 3; guard += 1) {
+      let holder;
+      try {
+        holder = await findActor(players, `亮牌前第 ${folded + 1} 次弃牌`);
+      } catch {
+        break; // 没有人该行动了，这一手已经收尾。
+      }
+      // 点击前重读。findActor 的快照会被行动超时的自动结算作废：权威到期会替人 check
+      // 或 fold，于是那份「谁有哪些按钮」的记录指向的已经是上一个行动者。直接照它点，
+      // 结果是等一个已经消失的按钮等到超时——脚本挂在这里，而牌桌本身没有任何问题。
+      const fresh = await readTable(holder.player.page);
+      if (fresh.handIndex > revealHandIndex) break;
+      const available = fresh.myActions.map((a) => a.action);
+      if (available.length === 0) continue;
+      const pick = available.includes("fold") ? "fold" : available[0];
+      await holder.player.page.click(`#action-buttons button[data-action="${pick}"]`);
+      if (pick === "fold") folded += 1;
+      await sleep(200);
+    }
+    check("亮牌前确实弃到只剩一个人（三次弃牌都落下去了）", folded === 3,
+      `实际弃牌 ${folded} 次`);
+
+    // 并行、在页面内轮询，把往返次数压到最低。串行读四个页面在 3 秒窗口里太慢。
+    const revealHolders = await until("全弃牌收尾后出现可亮牌的赢家", async () => {
+      const flags = await Promise.all(players.map((p) => p.page.evaluate(() =>
+        document.getElementById("reveal-btn")?.hidden === false)));
+      const holders = players.filter((_, index) => flags[index]);
+      return holders.length > 0 ? holders : false;
+    }, { timeout: 8_000, interval: 120 });
+    check("全弃牌收尾后恰好一个人可以自愿亮牌（赢家），其余人都不行",
+      revealHolders.length === 1,
+      `可亮牌的人=${JSON.stringify(revealHolders.map((p) => p.name))}`);
+
+    if (revealHolders.length === 1) {
+      const winner = revealHolders[0];
+      const others = players.filter((p) => p.name !== winner.name);
+      // 席位下标在页面内直接按名字找，省一次整表读取。
+      const seatHoleOf = (page, name) => page.evaluate((who) => {
+        const seat = [...document.querySelectorAll("#seats > li.seat")]
+          .find((li) => li.querySelector(".seat-name")?.textContent?.trim() === who);
+        return [...(seat?.querySelectorAll(".seat-hole .card-face") ?? [])]
+          .map((c) => c.textContent.trim());
+      }, name);
+
+      // 亮牌前：别人看到的必须是暗牌。没有这一条，「亮牌后能看到」就可能是因为一直看得到。
+      const beforeReveal = await Promise.all(others.map(async (p) => ({
+        viewer: p.name,
+        hole: await seatHoleOf(p.page, winner.name),
+      })));
+      check("亮牌前对手看到的是暗牌",
+        beforeReveal.length > 0
+        && beforeReveal.every((entry) => entry.hole.length === 2
+          && entry.hole.every((card) => card === "?")),
+        JSON.stringify(beforeReveal));
+
+      await winner.page.click("#reveal-btn");
+      const revealedFor = await until("亮牌后对手看到赢家的两张底牌", async () => {
+        const seen = await Promise.all(others.map(async (p) => ({
+          viewer: p.name,
+          hole: await seatHoleOf(p.page, winner.name),
+        })));
+        return seen.every((entry) => entry.hole.length === 2
+          && entry.hole.every((card) => card !== "?")) ? seen : false;
+      }, { timeout: 6_000, interval: 120 });
+      check("自愿亮牌成功，同桌都看到那两张牌", true, JSON.stringify(revealedFor));
+      check("亮出来的是同一副牌，不是每人看到一份不同的",
+        new Set(revealedFor.map((entry) => entry.hole.join(","))).size === 1,
+        JSON.stringify(revealedFor));
+      artifacts.push(await shot(others[0], "08b-voluntary-reveal-seen-by-others"));
+
+      // 重复：再点一次不得报错，也不得把牌变成别的。
+      await winner.page.click("#reveal-btn");
+      await sleep(250);
+      const secondClickError = await winner.page.evaluate(() =>
+        (document.getElementById("global-error")?.hidden === false
+          ? document.getElementById("global-error").textContent.trim() : null));
+      check("再点一次亮牌不产生错误（重放被识别，不是一条玩家看不懂的失败）",
+        secondClickError === null, `globalError=${JSON.stringify(secondClickError)}`);
+      const stillSame = await Promise.all(others.map(async (p) =>
+        (await seatHoleOf(p.page, winner.name)).join(",")));
+      check("重复亮牌后牌面不变",
+        new Set([...stillSame, revealedFor[0].hole.join(",")]).size === 1,
+        JSON.stringify(stillSame));
+
+      // 陈旧版本号：直接打同一条 HTTP 出口，带一个过期的 expected_revision。
+      // 这一步刻意绕过按钮——按钮永远拿当前投影，构造不出陈旧请求。绕过的是 UI 而不是
+      // 权威：走的还是浏览器里那条 /api/action，凭据仍在协调器侧注入。
+      // 下面两条探针故意要 409。浏览器会为每个非 2xx 的 fetch 自己打一条 console error，
+      // 那不是缺陷，但也不能悄悄不算——所以进故意失败窗口，单列在证据里。
+      winner.expectFailures = true;
+      const staleOutcome = await winner.page.evaluate(async () => {
+        const token = sessionStorage.getItem("tokengame.table.session_token");
+        const view = await (await fetch("/api/view", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ session_token: token }),
+        })).json();
+        const panel = view.view.action_panel;
+        const send = async (params) => {
+          const response = await fetch("/api/action", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ session_token: token, command: "hand.reveal", params }),
+          });
+          return { status: response.status, body: await response.json() };
+        };
+        // 按钮用的键。上面两次点击已经把它提交进账本了，所以它是「已存在的键」。
+        const buttonKey = `reveal:${panel.hand_id}:${panel.expected_revision}`;
+        return {
+          panel_revision: panel.expected_revision,
+          // 新键 + 陈旧版本号。三道门的顺序是 hand_id -> 幂等账 -> revision，新键在账上
+          // 查不到东西，所以这一条会一直走到第三道门。
+          staleWithFreshKey: await send({
+            hand_id: panel.hand_id,
+            expected_revision: panel.expected_revision - 1,
+            idempotency_key: `reveal-stale-fresh-${panel.hand_id}`,
+          }),
+          // 已存在的键 + 换掉的版本号。这一条在第二道门就被拦下，所以它测的是另一件事。
+          existingKeyDifferentRevision: await send({
+            hand_id: panel.hand_id,
+            expected_revision: panel.expected_revision - 1,
+            idempotency_key: buttonKey,
+          }),
+          // 已存在的键 + 同一个版本号：这才是真正的重发，必须回原结果而不是报错。
+          trueReplay: await send({
+            hand_id: panel.hand_id,
+            expected_revision: panel.expected_revision,
+            idempotency_key: buttonKey,
+          }),
+        };
+      });
+      check("新键带陈旧 expected_revision 被确定性拒绝",
+        staleOutcome.staleWithFreshKey.body?.code === "revision_conflict",
+        JSON.stringify(staleOutcome.staleWithFreshKey));
+      // 拒的理由必须不同：前一条是「你的状态过期了，刷新再来」，这一条是「你用同一个键
+      // 做了另一件事」。两者混成一个码时，客户端分不清该刷新还是该换键。
+      check("已用过的幂等键换掉版本号被拒为键冲突，而不是当成同一个请求重放",
+        staleOutcome.existingKeyDifferentRevision.body?.code === "idempotency_key_conflict",
+        JSON.stringify(staleOutcome.existingKeyDifferentRevision));
+      check("同键同版本号的重发回到原结果（丢响应后的重试不该失败）",
+        staleOutcome.trueReplay.body?.ok === true
+        && staleOutcome.trueReplay.body?.result?.replay === true,
+        JSON.stringify(staleOutcome.trueReplay));
+      // 两条 409 探针必须真的产生过失败请求，否则「被拒」这件事没有发生在浏览器里。
+      check("两条故意失败的探针确实撞出了失败请求",
+        winner.expectedFailures.length >= 2,
+        `窗口内 ${winner.expectedFailures.length} 条：${JSON.stringify(winner.expectedFailures)}`);
+      winner.expectFailures = false;
+      ok("自愿亮牌的成功、重复与陈旧版本号三条路径都走过",
+        `winner=${winner.name} revision=${staleOutcome.panel_revision}`);
+    }
+
     // ---- 9. 掉线与 120 秒保留窗内恢复 ----
     const dave = players.find((p) => p.name === "dave");
     const daveIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "dave");
@@ -1122,7 +1298,7 @@ async function main() {
     // 都不让出去，然后要求同桌照样看到掉线。
     //
     // 用 dave 的 context 级路由拦截，而不是 page 级：拦截要覆盖这个上下文里的全部请求。
-    dave.cutOpen = true;
+    dave.expectFailures = true;
     await dave.context.route("**/api/**", (route) => route.abort());
     const netOffline = await until("断网后同桌看到 dave 掉线（无 beacon，纯租约）", async () => {
       const table = await readTable(alice.page);
@@ -1136,7 +1312,8 @@ async function main() {
     // 断网必须真的产生过失败请求。一条都没有说明拦截根本没生效，那上面那条「看到掉线」
     // 就是靠别的原因过的——空断言比失败的断言更坏，因为它不会红。
     check("故意断网确实拦下了请求（否则上面那条掉线不是断网造成的）",
-      dave.cutErrors.length > 0, `断网期间浏览器网络错误 ${dave.cutErrors.length} 条`);
+      dave.expectedFailures.length > 0,
+      `断网期间浏览器网络错误 ${dave.expectedFailures.length} 条`);
     // 网络回来后页面自己就会恢复：轮询还在跑，下一次成功的 /api/view 就是一次续租，
     // 而权威侧 markConnected 由这条路径上的 seat.connect 触发……并不会。轮询只续租，
     // 不重建连接。所以这里要求的是「租约到期后页面能靠 resume 回来」——它由客户端的
@@ -1149,7 +1326,7 @@ async function main() {
       netRecovered.seats[daveIndex].name === "dave",
       `seat=${netRecovered.seats[daveIndex].name}`);
     // 关掉窗口要在确认恢复之后：提前关会把恢复期间的错误也算进正常统计里。
-    dave.cutOpen = false;
+    dave.expectFailures = false;
     ok("网络中断纯靠连接租约判掉线，恢复后回到原席");
 
     // 真实关闭上下文那一条放在第 11 节之后（11b）：它会让一席进入保留窗，而保留窗里的
@@ -1252,19 +1429,21 @@ async function main() {
       pageErrors: player.pageErrors,
       // 故意断网窗口内的错误单列。不并入合计，但必须出现在证据里——否则「合计为 0」这句话
       // 就变成了「除了我不想算的那些之外为 0」，而读证据的人看不出差别。
-      duringDeliberateNetworkCut: player.cutErrors,
+      duringDeliberateFailure: player.expectedFailures,
     }));
     const totalConsole = consoleReport.reduce(
       (sum, entry) => sum + entry.consoleErrors.length + entry.pageErrors.length, 0);
-    check("四个上下文的控制台错误合计为 0（故意断网窗口除外，单列在证据里）",
+    const expectedTotal = consoleReport.reduce(
+      (sum, entry) => sum + entry.duringDeliberateFailure.length, 0);
+    check("四个上下文的控制台错误合计为 0（故意制造失败的窗口除外，单列在证据里）",
       totalConsole === 0,
       totalConsole === 0
-        ? `0；故意断网窗口内 ${consoleReport.reduce((s, e) => s + e.duringDeliberateNetworkCut.length, 0)} 条已单列`
+        ? `0；故意失败窗口内 ${expectedTotal} 条已单列`
         : JSON.stringify(consoleReport));
     // 窗口必须全部关上。留着开的窗口会把它之后的所有错误都吞掉。
-    check("所有故意断网窗口都已关闭（否则后续错误会被吞掉）",
-      players.every((player) => player.cutOpen === false),
-      JSON.stringify(players.map((p) => ({ player: p.name, cutOpen: p.cutOpen }))));
+    check("所有故意失败窗口都已关闭（否则后续错误会被吞掉）",
+      players.every((player) => player.expectFailures === false),
+      JSON.stringify(players.map((p) => ({ player: p.name, expectFailures: p.expectFailures }))));
     consoleChecked = true;
 
     // ---- 13. 证据自身的可信度 ----
@@ -1293,7 +1472,7 @@ async function main() {
       player: player.name,
       consoleErrors: player.consoleErrors,
       pageErrors: player.pageErrors,
-      duringDeliberateNetworkCut: player.cutErrors,
+      duringDeliberateFailure: player.expectedFailures,
     }));
     const totalConsole = consoleReport.reduce(
       (sum, entry) => sum + entry.consoleErrors.length + entry.pageErrors.length, 0);

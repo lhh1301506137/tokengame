@@ -817,9 +817,25 @@ wireControl("ai-toggle", () => {
   return act("ai.set_mode", { mode: me?.ai.mode === "OFF" ? "ON" : "OFF" });
 });
 
+// 自愿亮牌与下注走同一套绑定：hand_id + expected_revision + idempotency_key。
+//
+// 在此之前这里只发 hand_id，于是核心以 invalid_field 拒绝每一次点击——这个按钮从来没有
+// 成功过一次。它不显眼是因为亮牌只在「其余人全弃牌、你是赢家」时才出现，而自动化里没有
+// 任何一步点过它。
+//
+// 幂等键取 hand_id + expected_revision，不掺时间戳或随机数：那两样会让每一次重发都变成
+// 一个新请求，于是丢响应后的重试撞上引擎那道「你已经亮过了」，玩家看到一条自己无法理解
+// 的失败，而牌其实已经亮了。同一个逻辑请求必须始终产生同一个键。
+//
+// 不带 action/amount 那类字段，因为亮牌没有参数。指纹里仍有 expected_revision，所以
+// 「同键换版本号」照样会被确定性拒绝。
 wireControl("reveal-btn", () => {
   const panel = state.view?.action_panel ?? null;
-  return act("hand.reveal", { hand_id: panel?.hand_id });
+  return act("hand.reveal", {
+    hand_id: panel?.hand_id,
+    expected_revision: panel?.expected_revision,
+    idempotency_key: `reveal:${panel?.hand_id}:${panel?.expected_revision}`,
+  });
 });
 
 el("leave-btn").addEventListener("click", async () => {
