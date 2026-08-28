@@ -180,6 +180,28 @@ stderr 写明「未处理的拒绝，本次运行不算通过」。
 4. 是否把边池分层投影进 `tokengame.table-view.v1` 供 UI 显示。
 5. 畸形投影时错误条是否该显示 JS 的 TypeError 原文。
 6. 是否把 `test-support/` 下所有参与判定的代码都纳入常规变异范围。
+7. `plugins/tokengame/.codex-plugin/plugin.json` 的 `interface.longDescription` 写着
+   「牌局行动仍由独立四人 Web 牌桌裁决」。这句话错在一个安全边界上：裁决在权威内核
+   （`src/authority/`），Web 牌桌只是 UI——整套 F1–F6 的前提就是「裁决只在权威侧」。
+   「四人」也已不准确。未擅自改（用户可见的市场描述文案）。
+
+### 全新克隆复跑（108c334）
+
+门禁与浏览器验收都不依赖本机状态。方法：`git clone --no-hardlinks` 到临时目录，
+不跑 `npm install`（`package.json` 既无 `dependencies` 也无 `devDependencies`）。
+
+| 项 | 结果 |
+| --- | --- |
+| `npm test` | 644/644 通过、0 失败、0 跳过 |
+| `npm run gate` | `MUTATION_TOTAL=315 KILLED=315 SURVIVED=0 SKIPPED=0` / `GATE=PASS` |
+| 浏览器验收 | 201 条断言全过、控制台错误 0、到第 12 手、27 张截图、exit 0 |
+| `result.json` | `passed: true`、`steps_ran: 201`、`aborted: null` |
+| 凭据原文 | 无（「已脱敏」标记 1 次） |
+| 行尾抽查 | 五个新文件均 `i/lf w/lf` |
+
+那一轮里 carol 当了跟注方（395，桌上最多）、bob（89）全下并归零。carol 覆盖得住 bob 的
+89，所以她当跟注方不承担归零风险——**风险按筹码大小落在全下方身上这一点，与谁坐哪个位子
+无关**，这正是 9d 那套选人规则要保证的。
 
 ### 引用的 artifacts/ 路径不在仓库里
 

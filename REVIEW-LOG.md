@@ -777,6 +777,36 @@ HostCommandAdapter 没有实现。它要动 `table-web-host.cjs`，而那是一�
 9d 补上了这条缺口的另一半：有人跟的全下确实走到摊牌、确实把一席打到 0，
 而「筹码归零的席位不带着 0 筹码进下一手」这条 F1 第一次在浏览器层被验过。
 
+### 全新克隆复跑（108c334）
+
+门禁与浏览器验收都不依赖本机状态。方法：`git clone --no-hardlinks` 到临时目录，
+不跑 `npm install`（本仓库 `package.json` 既无 `dependencies` 也无 `devDependencies`）。
+
+| 项 | 结果 |
+| --- | --- |
+| `npm test` | 644/644 通过、0 失败、0 跳过 |
+| `npm run gate` | `MUTATION_TOTAL=315 KILLED=315 SURVIVED=0 SKIPPED=0` / `GATE=PASS` |
+| 浏览器验收 | 201 条断言全过、控制台错误 0、到第 12 手、27 张截图、exit 0 |
+| `result.json` | `passed: true`、`steps_ran: 201`、`aborted: null` |
+| 凭据原文 | 无（`invite_code` 等键后无长值；「已脱敏」标记出现 1 次） |
+| 行尾抽查 | `multi-hand-verdict.test.cjs`、`multi-hand-verdict.json`、`acceptance-result.cjs`、`adapter-contract.cjs`、`HOST-ADAPTER-CONTRACT.md` 均 `i/lf w/lf` |
+
+一处顺带确认了 9d 的设计成立：全新克隆那一轮里 carol 当了**跟注方**（395，桌上最多），
+bob（89）全下、bob 归零。carol 覆盖得住 bob 的 89，所以她当跟注方不承担归零风险——
+风险按筹码大小落在全下方身上这一点，与谁坐哪个位子无关。
+
+### 又一处用户可见字符串，同样不擅自改
+
+`plugins/tokengame/.codex-plugin/plugin.json` 的 `interface.longDescription` 写着
+「牌局行动仍由独立四人 Web 牌桌裁决」。这句话不对，而且错在一个安全边界上：
+裁决在权威内核（`src/authority/`），Web 牌桌只是 UI，它拿不到权威原始事件、拿不到席位凭据。
+整套 F1–F6 的设计前提就是「裁决只在权威侧」，而这句描述把裁决说成在 UI 侧。
+「四人」也已经不准确，牌桌不再固定四席。
+
+没有改它，理由与 `src/authority/table-store.cjs` 那个牌桌显示名一致：这是用户可见的
+市场描述文案，改它属于改用户可见语义，不在本轮权限内。列为待裁决项，并把「错在哪、
+为什么这个错值得单独说」记在这里，避免它作为一句读起来通顺的话继续留着。
+
 ```yaml
 review:
   unit: TG-EU-HOST-ADAPTER-CONTRACT
@@ -817,10 +847,20 @@ review:
     - rename_codex_table_display_name_in_superseded_table_store
     - project_side_pot_layers_into_table_view_v1_for_ui
     - whether_all_of_test_support_enters_routine_mutation_scope
+    - plugin_long_description_says_web_table_adjudicates_but_authority_does
   still_unverified:
     - real_host_gate_5_proactive_wake
     - four_human_uat
     - side_pot_layering_in_browser_layer
+  fresh_clone_rerun:
+    commit: 108c334
+    method: git clone --no-hardlinks 到临时目录，无 npm install（本仓库无任何依赖）
+    npm_test: 644_pass_0_fail_0_skipped
+    mutation_gate: 315_killed_0_survived_0_skipped_GATE_PASS
+    browser_acceptance: 201_pass_0_fail_0_console_errors_27_screenshots_hand_12
+    result_json: passed_true_steps_201_aborted_null
+    result_json_free_of_credential_literals: yes
+    eol_check: 五个新文件均 i/lf w/lf
   not_covered:
     - four_player_smoke_every_candidates_frozen_stack
     - old_probe_stack_playwright_rerun
