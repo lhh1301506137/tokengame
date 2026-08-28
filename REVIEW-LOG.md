@@ -627,9 +627,17 @@ reopen_review:
   still_unverified:
     - real_host_gate_5_proactive_wake
     - four_human_uat
+  fresh_clone_rerun:
+    commit: 2549474
+    method: git clone --no-hardlinks 到临时目录，无 npm install（本仓库无任何依赖）
+    npm_test: 498_pass_0_fail
+    mutation_gate: 226_killed_0_survived_0_skipped_GATE_PASS
+    browser_acceptance: 150_pass_0_fail_0_console_errors_24_screenshots
+    eol_check: 抽查 gate.sh / acceptance-result.cjs / table-view-model.cjs 均 i/lf w/lf
+    artifacts_absent_as_documented: yes
+    result_json_free_of_credential_literals: yes
   not_covered:
     - four_player_smoke_every_candidates_frozen_stack
     - old_probe_stack_playwright_rerun
-    - fresh_checkout_rerun_of_final_gate
   requires_user_acceptance: yes
 ```

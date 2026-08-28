@@ -375,6 +375,7 @@ plan_tree:
         - "浏览器验收在全新克隆连跑三次、工作树连跑四次，均 80/80"
         - "【2026-08-28 复开后实测】npm test 498/498 pass、0 fail"
         - "【2026-08-28 复开后实测】npm run gate：MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0 GATE=PASS"
+        - "【2026-08-28 复开后实测】按 2549474 全新 git clone 重跑（无 npm install，本仓库零依赖）：npm test 498/498、门禁 226/226 GATE=PASS、浏览器验收 150/150 控制台错误 0；抽查行尾均 LF"
         - "【2026-08-28 复开后实测】浏览器验收 artifacts/acc-item7-redact：150 条断言全过，控制台错误 0，四个隔离上下文，打到第 4 手，24 张截图。artifacts/ 被 .gitignore 忽略，该路径只在本机存在；判定数字誊在 docs/ACCEPTANCE-EVIDENCE.md，那才是记录在案的证据"
         - "【2026-08-28 复开后新增变异规格】connection-lease 16/16、voluntary-reveal 6/6、entry-consent-idempotency 11/11、scope-reconfirmation 12/12、view-model-degradation 7/7，全部 0 存活 0 未评估"
       commits:

@@ -60,6 +60,21 @@ node test-support/table-web-acceptance.mjs artifacts/acc-item7-redact
 | `artifacts/negctl5`、`negctl6`、`negctl6c`（负控） | 先按 `REVIEW-LOG.md` 对应条目回退那一处，再跑同一条命令换个输出目录 |
 | `artifacts/mut-*.txt`（变异明细） | `npm run gate`，明细落在 `$OUT/mut-<规格名>.txt` |
 
+### 全新克隆里重跑（`2549474`）
+
+工作树里的数字只说明「在我这台机器的这个目录里成立」。按 `2549474` 做了一次
+`git clone --no-hardlinks` 到临时目录，**不跑 `npm install`**（本仓库 `dependencies` 与
+`devDependencies` 都是空的，门禁只用 stock Node）：
+
+- `npm test`：498/498 通过、0 失败、0 跳过。
+- `npm run gate`：`MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0` / `GATE=PASS`。
+- 浏览器验收：150 条断言全过、控制台错误 0、24 张截图，`result.json` 里
+  `passed: true` / `aborted: null` / `steps_ran: 150`，且不含任何邀请码原文。
+- 行尾抽查 `test-support/gate.sh`、`test-support/acceptance-result.cjs`、
+  `src/host/table-view-model.cjs`，均 `i/lf w/lf`。PI 门禁按工作树字节算哈希，
+  这一条是它在新克隆里成立的前提。
+- `artifacts/` 在新克隆里确实不存在——与上一小节所述一致。
+
 顺带修掉了 2 的根因：脱敏挪进 `test-support/acceptance-result.cjs` 的 `redactDetail()`，
 由 `ok()`/`bad()` 两条记录路径统一调用——不是只改那一处 `invite_code=${...}`，否则下一条
 写出凭据的断言照样会漏。凭据键下的短值（`session_token=null`）刻意不脱敏：一条断言失败时

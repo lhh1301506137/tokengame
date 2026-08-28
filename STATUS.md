@@ -309,6 +309,7 @@ project_intelligence:
     - npm_test:351_pass_0_fail_measured_2026-08-28
     - npm_test:498_pass_0_fail_measured_2026-08-28_after_reopen
     - mutation_gate:226_killed_0_survived_0_skipped_measured_2026-08-28_after_reopen
+    - fresh_clone_rerun_at_2549474:498_pass_226_killed_150_browser_assertions_GATE_PASS
     - browser_acceptance:150_pass_0_fail_measured_2026-08-28_after_reopen
     - mutation_specs:f1_15,f2_18,f3_14,f4_14,f5_28,f6_14,web_host_16,vacuous_3,total_122,survivors_0
     - browser_acceptance:80_assertions_0_console_errors_exit_0_clean_clone_x3
