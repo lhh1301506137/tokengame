@@ -585,14 +585,25 @@ execution_closure:
       kind: file_set_digest
       scope: package.json + src/** + web/** + plugins/tokengame/**
       identity: sha256:173d600bc05a53004b17f5fe6faf6d30d514063a865965254889a3d4482fb3c0
-      status: current
+      status: superseded_scope_rewritten
+      status_note: >-
+        该摘要在本节闭合时（2026-08-25）为 current。此后同一覆盖面已被
+        a8763c4..ab29e34 大幅改写，因此它不再描述当前仓库，只作为本节闭合时的实现身份保留。
+        仓库内没有生成该摘要的脚本，算法不可复现，所以不自行编造新值冒充同一算法的结果；
+        当前实现身份改用 Git 提交范围锚定，见 STATUS.md#capability_inventory。
     verification_identities:
       - evidence_pointer: docs/ACCEPTANCE-EVIDENCE.md#自动化
         identity: test_file_set_sha256:76b5740bcf074bbd81d0bcbc062b36e74a02acde1f2d6d01d35944adef48b409;npm_test:11_pass
-        status: current
+        status: superseded_scope_rewritten
+        status_note: >-
+          `npm_test:11_pass` 是本节闭合时的实测值，现已被 351/351 取代（测试集也已扩写）。
+          保留原值是因为本节的结论只由当时那 11 项支撑；引用时不得当作当前测试规模。
       - evidence_pointer: artifacts/full-page-smoke.png + docs/ACCEPTANCE-EVIDENCE.md#浏览器
         identity: sha256:adae218d82a59a330a2e333bbfceca71433e045a1ad3173e73352214908c9af9;console_errors:0
         status: current
+        status_note: >-
+          2026-08-28 重算该文件 SHA256 与此处一致。但 `artifacts/` 在 .gitignore 内、
+          文件未入库，全新克隆没有它——复核者只能重跑生成命令，不能指望检出即可比对。
       - evidence_pointer: docs/HOST-PROBE-CHECKLIST.md
         identity: codex_cli:0.145.0;host_probe:pass_with_notes;cleanup:zero_residuals
         status: current
