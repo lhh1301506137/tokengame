@@ -1,0 +1,230 @@
+"use strict";
+
+// 一致性套件自己的测试。
+//
+// 两件事，第二件才是重点：
+//   1. 套件对着合规实现全绿。
+//   2. 套件真的能抓到不合规——模拟器里每一项故意破坏都必须让至少一条检查变红。
+//
+// 少了第二件，这套东西就是一组恒为真的断言：跑得很好看，一个真问题也抓不住。本轮已经
+// 撞到过四次同一类缺陷（恒假的条件、恒真的断言），所以这里把「套件能失败」当成一等要求。
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const { runConformance } = require("../test-support/adapter-conformance.cjs");
+const { BROKEN, SimulatedAdapter } = require("../test-support/adapter-simulator.cjs");
+
+const ROLES = ["host_command", "seat_model"];
+
+function make(role, overrides = {}) {
+  return () => new SimulatedAdapter({
+    role,
+    dispatch: async () => ({ room: { room_id: "r1" }, seats: [] }),
+    ...overrides,
+  });
+}
+
+for (const role of ROLES) {
+  test(`参考适配器过一致性套件：${role}`, async () => {
+    const report = await runConformance(make(role), { role });
+    assert.deepEqual(report.failures, [], `不合规项：${report.failures.join(" / ")}`);
+    assert.equal(report.passed, true);
+    // 钉一个下界防止「套件退化成只跑两条也全绿」。两侧条数不同（模型面多三条句柄检查），
+    // 所以取较小的那一侧。
+    assert.ok(report.checks.length >= 18, `只跑了 ${report.checks.length} 条检查`);
+  });
+
+  test(`声明了全部能力时不出现降级项：${role}`, async () => {
+    const all = [
+      "command_dispatch", "proactive_wake", "structured_ui",
+      "private_hand_view", "persistent_session",
+    ];
+    const report = await runConformance(make(role, { capabilities: all }), { role });
+    assert.deepEqual(report.failures, []);
+  });
+}
+
+// ---- 套件必须能失败 ----
+
+for (const [name, variant] of Object.entries(BROKEN)) {
+  for (const role of variant.roles) {
+    test(`套件抓得住：${name}（${role}）`, async () => {
+      const report = await runConformance(
+        () => variant.make({ role, dispatch: async () => ({}) }), { role });
+      assert.ok(report.failures.length > 0,
+        `${name} 这项破坏在 ${role} 上没有被任何一条检查抓到——套件在这一点上是空的`);
+      assert.equal(report.passed, false);
+    });
+  }
+}
+
+test("越界检查不是空的：只破坏那一条也要被抓住", async () => {
+  // out_of_face_passthrough 连带破坏了释放语义，所以它被「释放后不能再发命令」抓住——
+  // 那不能证明越界那一条不空。这里把破坏收窄到命令面上，并且要求失败项里点名越界。
+  for (const role of ["host_command", "seat_model"]) {
+    const report = await runConformance(
+      () => BROKEN.out_of_face_only.make({ role, dispatch: async () => ({}) }), { role });
+    assert.ok(report.failures.some((line) => line.includes("越界命令")),
+      `${role}：失败项里没有点名越界。失败项：${report.failures.join(" | ") || "（一条都没有）"}`);
+  }
+});
+
+test("缺 inspectableState 时报告点名这个方法，不只重复症状", async () => {
+  // 下游那几条身份检查也会红（它们会说「没有 inspectableState() 可查」），所以光看
+  // failures 非空抓不出这条显式检查是不是空的。诊断价值在于报告要说出根因，
+  // 而不是把同一个症状说四遍。
+  for (const role of ["host_command", "seat_model"]) {
+    const report = await runConformance(
+      () => BROKEN.no_inspectable_state.make({ role, dispatch: async () => ({}) }), { role });
+    assert.ok(report.failures.some((line) => line.includes("实现了 inspectableState()")),
+      `${role}：报告没点名缺失的方法。失败项：${report.failures.join(" | ")}`);
+  }
+});
+
+test("每一项破坏都声明了适用角色", () => {
+  // 第一版按名字前缀猜角色，于是 release_keeps_tracked_ids 被拿去真人面上跑——那一侧
+  // 本来就没有一次性 id，不构成违规，而「没抓到」被读成了「套件有洞」。这条钉住角色
+  // 必须显式写出来。
+  for (const [name, variant] of Object.entries(BROKEN)) {
+    assert.ok(Array.isArray(variant.roles) && variant.roles.length > 0, `${name} 缺 roles`);
+    assert.equal(typeof variant.make, "function", `${name} 缺 make`);
+    for (const role of variant.roles) {
+      assert.ok(["host_command", "seat_model"].includes(role), `${name} 的 roles 里有 ${role}`);
+    }
+  }
+});
+
+test("模型面专属的破坏项确实只声明模型面", () => {
+  // 反向确认：真人面本来就该持有句柄，同一段代码在那边合规。少了这一条，
+  // 「只在模型面跑」看起来像是为了让测试过。
+  assert.deepEqual(BROKEN.model_holds_handle.roles, ["seat_model"]);
+  assert.deepEqual(BROKEN.model_claims_handle.roles, ["seat_model"]);
+  assert.deepEqual(BROKEN.release_keeps_tracked_ids.roles, ["seat_model"]);
+  // 真人面上跑 model_claims_handle 必须是**通过**的——它声明持有句柄，那是真人面的正解。
+  return runConformance(
+    () => BROKEN.model_claims_handle.make({ role: "host_command", dispatch: async () => ({}) }),
+    { role: "host_command" },
+  ).then((report) => {
+    assert.deepEqual(report.failures, [],
+      "声明持有句柄在真人面上是正解，不该被判违规");
+  });
+});
+
+test("真人面持有句柄，模型面不持有", async () => {
+  const human = await runConformance(make("host_command"), { role: "host_command" });
+  const model = await runConformance(make("seat_model"), { role: "seat_model" });
+  const names = (report) => report.checks.map((c) => c.name);
+  assert.ok(names(human).includes("真人侧适配器声明持有句柄"));
+  assert.ok(names(model).includes("模型侧适配器不持有 seat_handle"));
+  assert.equal(names(human).some((n) => n.includes("不持有 seat_handle")), false);
+});
+
+test("角色名不认时套件不静默通过", async () => {
+  await assert.rejects(
+    () => runConformance(make("host_command"), { role: "nope" }),
+    { code: "unknown_adapter_role" });
+});
+
+test("没给工厂时套件报出来而不是崩", async () => {
+  const report = await runConformance(undefined, { role: "seat_model" });
+  assert.equal(report.failures.length, 1);
+  assert.match(report.failures[0], /提供了适配器工厂/);
+});
+
+test("工厂抛错时套件如实记下，不当成通过", async () => {
+  const report = await runConformance(() => { throw new Error("接线错了"); },
+    { role: "seat_model" });
+  assert.equal(report.failures.length > 0, true);
+  assert.match(report.failures[0], /能构造适配器/);
+});
+
+test("核心失败时适配器回错误信封而不是抛", async () => {
+  // 传输失败是可重试类，适配器该把它变成一个信封交上去，让调用方按分类决定。抛出去
+  // 会让每个调用点自己写 try/catch，而那些 catch 里迟早有人写成静默忽略。
+  const adapter = new SimulatedAdapter({
+    role: "seat_model",
+    dispatch: async () => {
+      const error = new Error("core_unreachable");
+      error.code = "core_unreachable";
+      error.status = 502;
+      throw error;
+    },
+  });
+  adapter.negotiate();
+  const response = await adapter.call("view.projection", {});
+  assert.equal(response.ok, false);
+  assert.equal(response.code, "core_unreachable");
+  assert.equal(response.status, 502);
+  assert.equal(adapter.state, "degraded");
+});
+
+test("一次传输失败之后还能继续发命令", async () => {
+  // degraded 不是终态。一次网络抖动让适配器再也发不出命令的话，牌局就停在那里了。
+  let fail = true;
+  const adapter = new SimulatedAdapter({
+    role: "seat_model",
+    dispatch: async () => {
+      if (fail) {
+        fail = false;
+        const error = new Error("core_unreachable");
+        error.code = "core_unreachable";
+        throw error;
+      }
+      return { ok: true };
+    },
+  });
+  adapter.negotiate();
+  await adapter.call("view.projection", {});
+  assert.equal(adapter.state, "degraded");
+  const second = await adapter.call("view.projection", {});
+  assert.equal(second.ok, true);
+  assert.equal(adapter.state, "bound");
+});
+
+test("没协商就发命令被拒", async () => {
+  const adapter = new SimulatedAdapter({ role: "seat_model" });
+  await assert.rejects(() => adapter.call("view.projection", {}),
+    (error) => error.code === "required_capability_missing"
+      && error.details.reason === "not_negotiated");
+});
+
+test("重复释放不抛", async () => {
+  // 用户关页面之后连接租约又超时，两条路都会调 release。第二次抛错会让清理路径自己
+  // 变成一个错误来源。
+  const adapter = new SimulatedAdapter({ role: "seat_model" });
+  adapter.negotiate();
+  adapter.release();
+  assert.doesNotThrow(() => adapter.release());
+  assert.equal(adapter.state, "released");
+});
+
+test("释放清空句柄", async () => {
+  const adapter = new SimulatedAdapter({ role: "host_command" });
+  adapter.handles = ["h1", "h2"];
+  adapter.negotiate();
+  adapter.release();
+  assert.deepEqual(adapter.handles, []);
+});
+
+test("真人面的可检视状态只报句柄数目，不报值", () => {
+  // 值一旦进了报告就等于凭据落进了日志——本轮刚在验收产物里修过同一类问题。
+  const adapter = new SimulatedAdapter({ role: "host_command" });
+  adapter.handles = ["seat_handle-secret-value"];
+  const serialized = JSON.stringify(adapter.inspectableState());
+  assert.equal(serialized.includes("secret-value"), false);
+  assert.match(serialized, /"handle_count":1/);
+});
+
+test("模拟器与一致性套件都不引用宿主专有名字", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  for (const file of ["adapter-conformance.cjs", "adapter-simulator.cjs"]) {
+    const source = fs.readFileSync(
+      path.join(__dirname, "..", "test-support", file), "utf8");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").map((line) => line.replace(/\/\/.*$/, "")).join("\n");
+    assert.doesNotMatch(code, /\b(claude|codex|cowork|anthropic)\b/i,
+      `${file} 的可执行代码里出现了宿主专有名字`);
+  }
+});
