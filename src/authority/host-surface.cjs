@@ -113,6 +113,58 @@ const CREDENTIAL_COMMANDS = Object.freeze([
   "view.hand",
 ]);
 
+// 宿主面再分权：这一条是谁做的决定。
+//
+// 上面那个三分回答「适配器能发什么」，这个二分回答「适配器里的哪一半能发」。宿主面是
+// 一份平坦清单时，hand.act 与 ai.resolve 并列其中，于是把整份清单交给模型可见的工具就
+// 成了最省事的做法——而那等于让模型替玩家下注、按 Ready、代确认隐私范围、翻开底牌。
+//
+// 判断标准是「这个决定的后果记在谁头上」。筹码、开局时机、隐私承诺、亮牌都记在真人头上，
+// 所以归真人；该席 AI 的公开发言记在那一席的 AI 头上，所以归模型。
+//
+// 模型面是白名单：新命令默认落到真人面。反过来（黑名单）会让每一条新命令悄悄对模型开放，
+// 而漏掉一条的代价是模型获得一项没人审过的权限。
+
+// 模型可见面。只有该席 AI 的参赛回路，加上公开读取。
+//
+// 这三条 AI 命令在核心侧要席位凭据（见 command-surface.cjs 的 SEAT_AUTHORIZED），所以
+// 「模型面不含需凭据命令」这句是假的，别照那个方向写断言。真正成立的是更强的一句：模型
+// 手里没有句柄。句柄只在 room.create / room.join 的返回里产生，而那两条在真人面上。模型
+// 能出示的只有权威铸造的 intent_id / turn_id，一次性，且只有这三条命令认它。
+// 席位身份的补齐在 src/host/model-command-surface.cjs。
+//
+// view.hand 刻意不在这里：它是唯一吐底牌的出口，而座位 AI 的上下文由权威裁剪后随 intent
+// 一起给出（F5 要求 2）。给模型第二条自取底牌的路等于让它绕过那次裁剪。
+const MODEL_COMMANDS = Object.freeze([
+  "ai.take_intents",
+  "ai.start",
+  "ai.resolve",
+  "view.projection",
+  "view.timeline",
+]);
+
+// 真人操作面。宿主面减去模型面，逐条写出而不是算出来：算出来的清单读不出「为什么这条是
+// 真人的」，而下一个人要改的正是这个判断。两者相等由 test/model-command-isolation.test.cjs
+// 对账。
+const HUMAN_COMMANDS = Object.freeze([
+  "room.create",
+  "room.confirm_public_scope",
+  "room.join",
+  "seat.recover",
+  "seat.connect",
+  "seat.disconnect",
+  "seat.ready",
+  "seat.sit_out_after_hand",
+  "seat.leave",
+  "hand.act",
+  "hand.reveal",
+  "chat.say",
+  "ai.set_mode",
+  "ai.hide_local",
+  "view.hand",
+  "view.seat",
+]);
+
 function classify(command) {
   if (HOST_COMMANDS.includes(command)) return "host";
   if (AUTHORITY_DRIVEN_COMMANDS.includes(command)) return "authority_driven";
@@ -120,10 +172,21 @@ function classify(command) {
   return "unknown";
 }
 
+// 宿主面之外一律 "none"。不叫 "unknown"：权威自驱与诊断命令是已知的，只是不属于任何
+// 一方适配器。答成 unknown 会被读作「没归类」，而没归类容易被当成「随便谁都能发」。
+function classifyActor(command) {
+  if (MODEL_COMMANDS.includes(command)) return "model";
+  if (HUMAN_COMMANDS.includes(command)) return "human";
+  return "none";
+}
+
 module.exports = {
   AUTHORITY_DRIVEN_COMMANDS,
   CREDENTIAL_COMMANDS,
   DIAGNOSTIC_COMMANDS,
   HOST_COMMANDS,
+  HUMAN_COMMANDS,
+  MODEL_COMMANDS,
   classify,
+  classifyActor,
 };

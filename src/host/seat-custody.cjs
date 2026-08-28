@@ -110,6 +110,14 @@ class SeatCustody {
     return { ...incoming, seat_id: seatId, recovery_credential: credential };
   }
 
+  // 本进程托管的句柄。给模型命令面扇出用（ai.take_intents 要遍历本机拥有的席位）。
+  //
+  // 只回句柄，不回 seat_id 也不回凭据：调用方要的是「往哪些席位各发一次」，而不是
+  // 「这些席位是谁」。返回数组的副本，外部拿到的东西改不动这里的绑定。
+  handles() {
+    return [...this.bindings.keys()];
+  }
+
   forget(handleValue) {
     return this.bindings.delete(String(handleValue));
   }

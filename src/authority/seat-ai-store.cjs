@@ -801,12 +801,32 @@ class SeatAiStore {
         turn_id: turnId,
       });
     }
+    // 先校验，再改状态。
+    //
+    // 这个顺序是一条纪律，不是风格。原来是先把回合摘下来再 requiredEnum，于是模型拼错一个
+    // 枚举就会：回合被吃掉（active_turn = null），status 停在 THINKING 再也不会变，而
+    // reclaimSeatIfExpired 看的是 active_turn 的租约期限——null 意味着没有租约可到期。
+    // 三条加起来是一个既不推进也不复原、也没人能收拾的状态。
+    //
+    // 输出来自语言模型，所以畸形是常态路径而不是异常路径。畸形请求不该吃掉这次唤醒：
+    // 唤醒有额度（规则 2：每个来源事件对每席最多一次），吃掉就是真的少了一次发言机会。
+    // 有界性由 120 秒评估租约提供，不需要靠吃掉回合来保证——适配器重试一次就好，
+    // 一直重试也只能重试到租约到期，然后权威自己收回。
+    //
+    // 只把纯输入校验提前。requireConfirmedScope 与额度检查留在原处：前者刻意放在 silent
+    // 分支之后（见下方注释），后者在抛出之前已经自己写好了状态。
+    const decision = requiredEnum(input.decision, AI_DECISIONS, "decision");
+    if (decision === "public_speech") {
+      // text 的形状在这里就要求。长度上限不在这里——message_too_long 刻意写 DEGRADED
+      // 并消耗回合，那是「说了话但太长」，与「没说出结构完整的话」不是一回事。
+      requiredString(input.text, "text");
+    }
+
     if (detached !== null) {
       seat.detached_turn = null;
     } else {
       seat.active_turn = null;
     }
-    const decision = requiredEnum(input.decision, AI_DECISIONS, "decision");
 
     // 规则 6：OFF 后任何迟到结果都不得发布；被取消或被回收的回合同样不得发布。
     // 理由在此刻计算而非摘下时固定：同一个被取消的回合，席位仍 OFF 时理由是

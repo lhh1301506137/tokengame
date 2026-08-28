@@ -1,0 +1,78 @@
+{
+  "name": "model-output-degradation",
+  "note": "有界降级：模型返回 null / 畸形 / 非法枚举 / 超时 / 抛错时不得永久 THINKING。变异分两处——权威侧的校验顺序，宿主驱动侧的归一化与超时。",
+  "mutations": [
+    {
+      "id": "validate-after-mutate-again",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "    const decision = requiredEnum(input.decision, AI_DECISIONS, \"decision\");\n    if (decision === \"public_speech\") {",
+      "replacement": "    const decision = input.decision;\n    if (decision === \"public_speech\") {",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "把提前的枚举校验退化成裸取值。原缺陷正是校验落在摘回合之后：非法枚举吃掉回合，status 停在 THINKING，而 null 的 active_turn 意味着没有租约可到期。"
+    },
+    {
+      "id": "text-shape-not-checked-early",
+      "file": "src/authority/seat-ai-store.cjs",
+      "needle": "      requiredString(input.text, \"text\");\n    }",
+      "replacement": "      void 0;\n    }",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "public_speech 缺 text 时不再提前拒绝，于是回合被一条发不出去的输出吃掉。"
+    },
+    {
+      "id": "no-adapter-timeout",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    this.adapterTimeoutMs = options.adapterTimeoutMs ?? 30_000;",
+      "replacement": "    this.adapterTimeoutMs = options.adapterTimeoutMs ?? 0;",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "超时上限归零即等于无上限（withTimeout 对非正数直接放行）。挂死的适配器会让整张桌子的 AI 一起停。"
+    },
+    {
+      "id": "timeout-window-longer-than-lease",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    this.adapterTimeoutMs = options.adapterTimeoutMs ?? 30_000;",
+      "replacement": "    this.adapterTimeoutMs = 600_000;",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "写死一个超过评估租约的上限，并忽略注入值。等到租约到期才放手意味着权威已经收回回合，适配器那次 resolve 只会被当迟到输出丢弃。"
+    },
+    {
+      "id": "malformed-output-forwarded",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "          const normalized = normalizeDecision(decision);",
+      "replacement": "          const normalized = decision ?? { decision: \"silent\" };",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "跳过归一化，把模型返回的任意结构原样转给权威。null 被兜住了，但空对象、拼错的枚举、缺 text 都会穿过去。"
+    },
+    {
+      "id": "unknown-decision-guessed-as-speech",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "  return { decision: \"silent\", failure: \"adapter_unknown_decision\" };",
+      "replacement": "  return { decision: \"public_speech\", text: String(value.text ?? value.decision) };",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "认不出的 decision 猜成公开发言。猜错的代价是以该席的名义公开发一句它没说过的话——而 silent 的代价只是这一次不说话。"
+    },
+    {
+      "id": "empty-text-accepted-as-speech",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "    if (typeof value.text !== \"string\" || value.text === \"\") {",
+      "replacement": "    if (typeof value.text !== \"string\") {",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "空字符串当成合法发言。它会被权威拒（requiredString 不收空串），于是回合按新规则留在原地，那一席白等满租约。"
+    },
+    {
+      "id": "timeout-not-recorded",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "              failure: error?.code === \"adapter_timeout\"\n                ? \"adapter_timeout\"",
+      "replacement": "              failure: false\n                ? \"adapter_timeout\"",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "超时不再留痕。静默收尾但不记录，等于把「模型坏了」这件事藏起来——driveErrors 是诊断这件事的唯一入口。"
+    },
+    {
+      "id": "drive-errors-unbounded",
+      "file": "src/host/table-web-host.cjs",
+      "needle": "          if (normalized.failure !== undefined) {\n            this.driveErrors.push({ at: this.now(), code: normalized.failure });\n            if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();\n          }",
+      "replacement": "          if (normalized.failure !== undefined) {\n            this.driveErrors.push({ at: this.now(), code: normalized.failure });\n          }",
+      "test": "test/model-output-degradation.test.cjs",
+      "note": "去掉环形缓冲的丢弃。坏适配器会一直坏下去，诊断缓冲跟着一直长。"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "name": "model-command-isolation",
+  "note": "分权：模型可见面与真人操作面。每条变异都是一种「看起来还能跑，但模型重新获得了真人权限」的写法——这些正是最可能被顺手改回去的地方。",
+  "mutations": [
+    {
+      "id": "enum-back-to-host-commands",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "needle": "command: { type: \"string\", enum: [...MODEL_COMMANDS] },",
+      "replacement": "command: { type: \"string\", enum: [...HUMAN_COMMANDS, ...MODEL_COMMANDS] },",
+      "test": "test/mcp-table-surface.test.cjs",
+      "note": "把枚举改回整份宿主面。这是本轮修的原始缺陷，模型由此重新看得见 hand.act。"
+    },
+    {
+      "id": "model-whitelist-becomes-host-surface",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "if (!MODEL_COMMANDS.includes(command)) {",
+      "replacement": "if (false) {",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "白名单闸门失效。枚举没变，所以 tools/list 看起来仍然正确——但模型手写一条 hand.act 就能穿过去。"
+    },
+    {
+      "id": "human-command-allowed-on-model-surface",
+      "file": "src/authority/host-surface.cjs",
+      "needle": "  \"ai.take_intents\",\n  \"ai.start\",\n  \"ai.resolve\",\n  \"view.projection\",\n  \"view.timeline\",\n]);",
+      "replacement": "  \"ai.take_intents\",\n  \"ai.start\",\n  \"ai.resolve\",\n  \"view.projection\",\n  \"view.timeline\",\n  \"hand.act\",\n]);",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "往模型面加一条下注命令。清单对账那条应当立刻发现真人面与模型面相交。"
+    },
+    {
+      "id": "identity-params-silently-dropped",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "        throw new ModelSurfaceError(\"seat_identity_not_model_supplied\", { command, field });",
+      "replacement": "        delete params[field];",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "把模型自带的 seat_id 静默丢掉而不是报错。静默看起来更宽容，实际是把绕过口留着：模型分不清「被忽略」和「生效了」。"
+    },
+    {
+      "id": "guess-the-only-bound-seat",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "      throw new ModelSurfaceError(\"unknown_authority_id\", { field });",
+      "replacement": "      return this.custody.handles()[0];",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "伪造的 intent_id 回落到「反正只绑了一席」。单席时猜对了，多席时是替错的人行动。"
+    },
+    {
+      "id": "seat-id-leaked-back-to-model",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "        const { seat_id: _seatId, ...visible } = intent;\n        intents.push(visible);",
+      "replacement": "        intents.push(intent);",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "把 seat_id 还给模型。它不是秘密，但模型手上有它就会试着回传——而回传会被拒，于是模型开始猜自己哪里做错了。"
+    },
+    {
+      "id": "turn-id-mapping-kept-after-resolve",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "    if (result.ok) this.issued.delete(params.turn_id);",
+      "replacement": "    if (false) this.issued.delete(params.turn_id);",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "回合交出去之后仍留着映射。重放判定本该由权威做，本层帮它成立就等于多了一份事实。"
+    },
+    {
+      "id": "human-path-becomes-a-tool",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "needle": "  if (!HUMAN_COMMANDS.includes(command)) {",
+      "replacement": "  if (false) {",
+      "test": "test/mcp-table-surface.test.cjs",
+      "note": "真人入口不再校验命令归属，于是它同时接受模型面命令——两条路合成一条，分权作废。"
+    }
+  ]
+}

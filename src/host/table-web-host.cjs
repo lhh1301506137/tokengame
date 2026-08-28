@@ -73,6 +73,15 @@ class TableWebHost {
     // 适配器驱动的节流。默认 250 毫秒：AI 启动间隔下限是 5 秒（LIVELY_V1），驱动只要
     // 明显快于它就不会成为瓶颈；再快只是徒增空轮询。
     this.driveIntervalMs = options.driveIntervalMs ?? 250;
+    // 等模型的上限。必须明显短于 120 秒的评估租约：等到租约到期才放手意味着权威已经把
+    // 回合收回去了，适配器随后那次 resolve 只会被判成迟到输出丢弃——那一席白等了两分钟，
+    // 而这两分钟里它一直显示在思考。取 30 秒：给真模型足够时间，又留足余量让 silent
+    // 收尾赶在租约之前落地。
+    this.adapterTimeoutMs = options.adapterTimeoutMs ?? 30_000;
+    // 诊断环形缓冲的上限。做成可注入是为了让「超过上限会丢最旧的」这条能被测到：真实上限
+    // 是 50，而一手牌里真人发言有额度（12 条/人/手），测试凑不出 51 条而不去改动产品规则。
+    // 不可注入的上限等于一条只能靠读代码相信的不变量。
+    this.maxDriveErrors = options.maxDriveErrors ?? 50;
     this.driveTimer = null;
     this.driving = false;
     this.driveErrors = [];
@@ -212,21 +221,41 @@ class TableWebHost {
           started += 1;
 
           // 适配器只看到权威给的上下文。它拿不到对手底牌，因为上下文是权威组装的。
+          //
+          // 三种失败在这里收敛成同一种结果：抛错、超时、返回畸形结构，全都落成一次 silent。
+          // 理由是活性而不是整洁——回合悬着会一直占着 active_turn，该席在整个租约期内
+          // 不可能再有第二次发言机会；而 driveOnce 是一个 for 循环，一席抛出会带走同一轮
+          // 里后面所有席位，那些席位的回合压根没起来，权威侧的租约救不了它们。
           let decision;
           try {
-            decision = await this.modelAdapter.evaluate({
-              seat_id: intent.seat_id,
-              turn_id: turn.turn_id,
-              context: intent.context,
-            });
+            decision = await withTimeout(
+              this.modelAdapter.evaluate({
+                seat_id: intent.seat_id,
+                turn_id: turn.turn_id,
+                context: intent.context,
+              }),
+              this.adapterTimeoutMs,
+            );
           } catch (error) {
-            // 模型失败必须落成一次 silent，而不是把回合悬着。悬着的回合会一直占着
-            // active_turn，该席在整个租约期内不可能再有第二次发言机会。
-            decision = { decision: "silent", failure: error?.message ?? "adapter_failed" };
+            decision = {
+              decision: "silent",
+              failure: error?.code === "adapter_timeout"
+                ? "adapter_timeout"
+                : error?.message ?? "adapter_failed",
+            };
           }
 
-          const params = { turn_id: turn.turn_id, decision: decision.decision };
-          if (decision.decision === "public_speech") params.text = decision.text;
+          // 归一化。模型返回的是自由结构，所以「不是我认识的形状」必须当成 silent 而不是
+          // 原样转发：转发过去权威会拒，回合按 F5 的判断留在原地，于是这一席要等满租约
+          // 才回到 IDLE——有界，但那两分钟里它一直显示在思考，而它其实早就没救了。
+          const normalized = normalizeDecision(decision);
+          if (normalized.failure !== undefined) {
+            this.driveErrors.push({ at: this.now(), code: normalized.failure });
+            if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
+          }
+
+          const params = { turn_id: turn.turn_id, decision: normalized.decision };
+          if (normalized.decision === "public_speech") params.text = normalized.text;
           try {
             await this.core.dispatch("ai.resolve", this.injected("ai.resolve", session, params));
             resolved += 1;
@@ -234,7 +263,7 @@ class TableWebHost {
             // 回填被权威拒绝（额度耗尽、迟到跨手、文本超长）是正常的确定性结果，
             // 不是驱动故障。记录下来供诊断，不重试——重试会再消耗一次配额判定。
             this.driveErrors.push({ at: this.now(), code: error?.code ?? "resolve_failed" });
-            if (this.driveErrors.length > 50) this.driveErrors.shift();
+            if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
           }
         }
       }
@@ -249,7 +278,7 @@ class TableWebHost {
     this.driveTimer = setInterval(() => {
       this.driveOnce().catch((error) => {
         this.driveErrors.push({ at: this.now(), code: error?.code ?? "drive_failed" });
-        if (this.driveErrors.length > 50) this.driveErrors.shift();
+        if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
       });
     }, this.driveIntervalMs);
     this.driveTimer.unref?.();
@@ -537,4 +566,48 @@ class TableWebHost {
   }
 }
 
-module.exports = { TableWebHost, BROWSER_ACTIONS };
+// 等一个 promise，但不无限等。
+//
+// 不用 AbortSignal.timeout：模型适配器是外部实现的，它不一定接受 signal，而这里要保证的是
+// 「本进程不会因为它不返回而卡住」，不是「让它停下来」。它之后回来也没关系——那次返回没有
+// 接收者，回合已经被 silent 收尾，权威那边按迟到输出处理。
+function withTimeout(promise, ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve(promise);
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      // message 与 code 刻意不同。两者相同时「按 code 分类」和「拿 message 顶上」产生一样的
+      // 结果，于是分类那一步成了永远看不出差别的死代码——一份自己无法被证伪的实现。
+      reject(Object.assign(new Error(`模型适配器在 ${ms}ms 内没有返回`), { code: "adapter_timeout" }));
+    }, ms);
+  });
+  // unref 让这个定时器不阻止进程退出：正常路径上模型早就返回了，定时器还挂着。
+  if (typeof timer?.unref === "function") timer.unref();
+  return Promise.race([Promise.resolve(promise).finally(() => clearTimeout(timer)), timeout]);
+}
+
+// 把模型返回的任意东西收敛成权威认得的形状。
+//
+// 白名单判断，不做「尽量修好」：把 "SILENT" 大写还原、把 text 转成字符串之类的宽容处理，
+// 等于替模型猜它想说什么。猜错的代价是以该席的名义公开发一句它没说过的话——而 silent
+// 的代价只是这一次不说话。两者不对称，所以一律 silent。
+//
+// failure 只在真的畸形时出现，正常路径上不留痕：给每一次成功评估都记一条错误会让
+// driveErrors 变成噪音，而它是诊断「模型坏了吗」的唯一入口。
+function normalizeDecision(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { decision: "silent", failure: "adapter_malformed_output" };
+  }
+  if (value.decision === "silent") {
+    return value.failure === undefined ? { decision: "silent" } : { decision: "silent", failure: value.failure };
+  }
+  if (value.decision === "public_speech") {
+    if (typeof value.text !== "string" || value.text === "") {
+      return { decision: "silent", failure: "adapter_missing_text" };
+    }
+    return { decision: "public_speech", text: value.text };
+  }
+  return { decision: "silent", failure: "adapter_unknown_decision" };
+}
+
+module.exports = { TableWebHost, BROWSER_ACTIONS, normalizeDecision };
