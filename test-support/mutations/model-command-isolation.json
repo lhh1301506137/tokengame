@@ -53,8 +53,8 @@
     {
       "id": "turn-id-mapping-kept-after-resolve",
       "file": "src/host/model-command-surface.cjs",
-      "needle": "    if (result.ok) this.issued.delete(params.turn_id);",
-      "replacement": "    if (false) this.issued.delete(params.turn_id);",
+      "needle": "    if (result.ok) this.#issued.delete(params.turn_id);",
+      "replacement": "    if (false) this.#issued.delete(params.turn_id);",
       "test": "test/model-command-isolation.test.cjs",
       "note": "回合交出去之后仍留着映射。重放判定本该由权威做，本层帮它成立就等于多了一份事实。"
     },

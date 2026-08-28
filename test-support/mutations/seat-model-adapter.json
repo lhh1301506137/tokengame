@@ -20,9 +20,10 @@
     {
       "id": "inspectable-leaks-handles",
       "file": "src/host/seat-model-adapter.cjs",
-      "find": "      tracked_id_count: this.surface.issued.size,",
-      "replace": "      tracked_ids: [...this.surface.issued.keys()],",
-      "note": "可检视状态报出 id 原文而不是数目。这一侧的 id 不是秘密，但同一个写法用在真人面就是把句柄写进日志——本轮刚在验收产物里修过同一类问题。"
+      "find": "      tracked_id_count: this.#surface.trackedCount,",
+      "replace": "      tracked_id_count: this.#surface.trackedCount,\n      surface: this.#surface,",
+      "note": "可检视状态夹带一个通往命令面的对象引用。原来这条变异是「报出 id 原文而不是数目」，现在写不出来了：issued 成了私有字段，类外取不到 keys()——那正是 P1 修的东西。改成同一个缺陷的现代形态，而且更重：不再是把 id 写进日志，是把整条属性链交出去。杀它的是凭据边界那一批（本文件的测试只查序列化文本，而私有字段序列化出来是空对象，查不到）。",
+      "test": "test/model-visible-credential-boundary.test.cjs"
     },
     {
       "id": "no-local-face-check",
@@ -34,8 +35,8 @@
     {
       "id": "local-rejection-counts-as-degraded",
       "file": "src/host/seat-model-adapter.cjs",
-      "find": "      return errorEnvelope(error?.code ?? \"unknown_error\", 400, error?.details);",
-      "replace": "      this.state = this.state === \"released\" ? this.state : \"degraded\";\n      return errorEnvelope(error?.code ?? \"unknown_error\", 400, error?.details);",
+      "find": "      const code = error?.code ?? \"unknown_error\";\n      return this.#guarded(error?.details, \"model_local_rejection\",",
+      "replace": "      const code = error?.code ?? \"unknown_error\";\n      this.state = this.state === \"released\" ? this.state : \"degraded\";\n      return this.#guarded(error?.details, \"model_local_rejection\",",
       "note": "本地拒绝算成降级。「适配器刚失败过」这个状态就此失去意义，而宿主正是靠它决定要不要退回轮询。"
     },
     {
@@ -48,14 +49,14 @@
     {
       "id": "degraded-never-recovers",
       "file": "src/host/seat-model-adapter.cjs",
-      "find": "    if (this.state === \"negotiated\" || this.state === \"degraded\") {\n      this.state = nextLifecycleState(this.state, \"bound\");\n    }\n    return okEnvelope(inner.body?.result ?? null, inner.status ?? 200);",
-      "replace": "    if (this.state === \"negotiated\") {\n      this.state = nextLifecycleState(this.state, \"bound\");\n    }\n    return okEnvelope(inner.body?.result ?? null, inner.status ?? 200);",
+      "find": "    if (this.state === \"negotiated\" || this.state === \"degraded\") {\n      this.state = nextLifecycleState(this.state, \"bound\");\n    }\n    const status = inner.status ?? 200;",
+      "replace": "    if (this.state === \"negotiated\") {\n      this.state = nextLifecycleState(this.state, \"bound\");\n    }\n    const status = inner.status ?? 200;",
       "note": "一次网络抖动之后永远停在 degraded。degraded 不是终态，卡在那里等于这一席再也不动了。"
     },
     {
       "id": "release-keeps-issued-ids",
       "file": "src/host/seat-model-adapter.cjs",
-      "find": "    this.surface.issued.clear();",
+      "find": "    this.#surface.clearIssued();",
       "replace": "    this.negotiation = this.negotiation;",
       "note": "释放不清一次性 id。下一个实例复用同一张表时，一个陈旧映射会帮一条早该失效的 turn_id 成立——这种残留只在复用时才露头。"
     },

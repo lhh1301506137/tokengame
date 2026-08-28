@@ -155,15 +155,26 @@ class SeatCustody {
   // 路径会搬运秘密，下一次换个字段名就又漏出去了。要修的是搬运，不是显示。
   assertNoLeak(text, where = "tool_result") {
     const haystack = typeof text === "string" ? text : JSON.stringify(text) ?? "";
+    // 值扫描：整段文本里任何位置出现凭据原文都算泄漏，不限键位。
+    // 这一条才是真正的防线，下面那条只是补漏。
     for (const secret of this.knownSecrets) {
       if (haystack.includes(secret)) {
         throw new CredentialLeak(where, null);
       }
     }
     for (const field of SECRET_FIELDS) {
-      // 字段名也扫。此刻值可能还没进 knownSecrets（比如换了新凭据的返回），
-      // 但一个叫 recovery_credential 的键出现在模型可见文本里，本身就是搬运。
-      if (haystack.includes(`"${field}"`)) {
+      // 字段名也扫，但只扫**键位**。此刻值可能还没进 knownSecrets（比如换了新凭据的
+      // 返回），而一个叫 recovery_credential 的键出现在模型可见结构里，本身就是搬运。
+      //
+      // 为什么必须限定键位：不限的话，安全边界报不出自己拒了什么。
+      // ModelCommandSurface 拒收模型自带身份字段时，details.field 的**值**正是
+      // "recovery_credential"，那条拒绝是边界起作用的证据，却会被这里判成泄漏——
+      // 一次成功的拦截于是显示成一次内部泄漏，读日志的人得到完全相反的结论，
+      // 而模型也拿不到「你不该自己带这个字段」这句话。
+      //
+      // 这没有放宽对值的判据：凭据原文出现在值位仍然由上面那圈命中。
+      // JSON.stringify 可能带缩进（server.cjs 用 null, 2），所以冒号前允许空白。
+      if (new RegExp(`"${field}"\\s*:`).test(haystack)) {
         throw new CredentialLeak(where, field);
       }
     }

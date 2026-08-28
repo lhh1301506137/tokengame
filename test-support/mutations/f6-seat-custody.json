@@ -67,9 +67,9 @@
     {
       "id": "F6-08-字段名扫描失效",
       "file": "src/host/seat-custody.cjs",
-      "find": "      if (haystack.includes(`\"${field}\"`)) {\n        throw new CredentialLeak(where, field);\n      }",
+      "find": "      if (new RegExp(`\"${field}\"\\\\s*:`).test(haystack)) {\n        throw new CredentialLeak(where, field);\n      }",
       "replace": "",
-      "why": "不再扫字段名。此刻值可能还没进 knownSecrets（新发的凭据），只有字段名扫描能抓到。与 F6-07 互为对照，两条都得死。"
+      "why": "不再扫字段名。此刻值可能还没进 knownSecrets（新发的凭据），只有字段名扫描能抓到。与 F6-07 互为对照，两条都得死。P1 之后这一圈只扫键位（后面紧跟冒号），查找串随之更新——理由写在 seat-custody.cjs 里：不限键位的话，边界报不出自己拒了什么。"
     },
     {
       "id": "F6-09-命中后打码放过",

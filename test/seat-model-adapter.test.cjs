@@ -139,8 +139,10 @@ test("核心失败进 degraded，下一次成功回到 bound", async () => {
 test("释放清空一次性 id", () => {
   const adapter = makeAdapter();
   adapter.negotiate();
-  adapter.surface.track("intent-1", "handle-1", null);
-  adapter.surface.track("turn-1", "handle-1", null);
+  // 从 seedForRelease 播种，不再从外部 adapter.surface.track 塞。
+  // 外部塞得进去这件事本身就是缺陷：往那张表里写一条 intent_id -> handle，
+  // 等于给自己发了一张替那一席行动的通行证，而 ai.start 只查这张表。
+  adapter.seedForRelease();
   assert.equal(adapter.inspectableState().tracked_id_count, 2);
   adapter.release();
   assert.equal(adapter.inspectableState().tracked_id_count, 0);

@@ -60,12 +60,26 @@ class SeatModelAdapter {
     this.capabilities = capabilities;
     this.state = "created";
     this.negotiation = null;
-    this.dispatchImpl = dispatch;
-    this.surface = new ModelCommandSurface({
+    // 私有字段，不是命名约定。#custody / #surface / #dispatch 在类外无论如何都取不到：
+    // 点号取不到、Reflect.ownKeys 列不出、JSON.stringify 序列化不出、Object.keys 看不见。
+    //
+    // 上一版把这三样挂成公开属性，于是 adapter.surface.custody.resolve(handle) 一步就能
+    // 取出凭据原文——文本出口净化得再干净都没用，因为根本不用走文本出口。
+    // 那时的辩解是「inspectableState 只报数目」，但「选择不展示」不等于「不可访问」，
+    // 而 F6 要的是后者。
+    this.#custody = custody;
+    this.#dispatch = dispatch;
+    this.#surface = new ModelCommandSurface({
       custody,
-      request: (command, params) => this.makeRequest(command, params),
+      request: (command, params) => this.#makeRequest(command, params),
     });
   }
+
+  #custody;
+
+  #dispatch;
+
+  #surface;
 
   // 合同侧恒为假。不写成 `this.role !== "host_command"`：那种写法读起来像「将来可能变」，
   // 而模型面持有句柄这件事不是配置项。
@@ -82,8 +96,10 @@ class SeatModelAdapter {
     return {
       role: this.role,
       state: this.state,
-      capabilities: this.capabilities,
-      tracked_id_count: this.surface.issued.size,
+      // 冻结的副本。给出内部数组等于给出一条可写路径，调用方 push 一个能力名就能让
+      // 之后的协商结果变样。
+      capabilities: Object.freeze([...this.capabilities]),
+      tracked_id_count: this.#surface.trackedCount,
     };
   }
 
@@ -91,8 +107,11 @@ class SeatModelAdapter {
   //
   // 这里塞的是一个假 id，不经过核心。真实路径是 ai.take_intents 回来之后 track()，
   // 而那需要一个活的核心与真的席位绑定——一致性套件必须能在没有核心的情况下跑。
+  // 两条，intent_id 与 turn_id 各一。一条也能证明「释放会清」，但两条还顺带钉住
+  // 「共用一张表」这件事——分成两张表的实现会让其中一条清不掉。
   seedForRelease() {
-    this.surface.track("intent-conformance-seed", "handle-conformance-seed", null);
+    this.#surface.track("intent-conformance-seed", "handle-conformance-seed", null);
+    this.#surface.track("turn-conformance-seed", "handle-conformance-seed", null);
   }
 
   negotiate() {
@@ -106,6 +125,15 @@ class SeatModelAdapter {
   }
 
   assertUsable(command) {
+    // 这三条是抛，不是回信封（调用方靠 rejects 接）。但抛出去的 details 一样是模型可见的
+    // ——MCP 服务器会把它转成 tool_result 文本——所以 command 必须先过闸。
+    //
+    // command 原样来自模型，它能构造任意字符串。不靠「谁会把凭据写进命令名」来论证安全：
+    // 那是在推理可达性，而边界的意义正是不必推理可达性。
+    //
+    // 命中就抛 CredentialLeak，仍然是抛，仍然失败关闭，而且它的 details 只有 where 与
+    // field，不含原文。
+    this.#custody.assertNoLeak(command, "model_command_name");
     if (this.state === "released") {
       throw new ContractError("illegal_lifecycle_transition", { from: "released", command });
     }
@@ -125,9 +153,9 @@ class SeatModelAdapter {
 
   // ModelCommandSurface 要的 request 形状是 { ok, status, body }，而宿主给的 dispatch
   // 是「成功回 result，失败抛 CoreError」。转换只在这一个地方做。
-  async makeRequest(command, params) {
+  async #makeRequest(command, params) {
     try {
-      const result = await this.dispatchImpl(command, params);
+      const result = await this.#dispatch(command, params);
       return { ok: true, status: 200, body: { result } };
     } catch (error) {
       return {
@@ -138,16 +166,53 @@ class SeatModelAdapter {
     }
   }
 
+  // 模型可见出口的唯一净化点。三条出口（成功 result、核心错误 details、本地拒绝 details）
+  // 全部经过这里。
+  //
+  // 为什么必须是唯一一处：各出口各写一份，迟早有一份漏掉新加的字段，而漏掉的那一份不会
+  // 报错——它只是安静地把秘密送出去。本轮反复撞到的缺陷类正是「一段不会红的路径」。
+  //
+  // 顺序：先在原始值上 assertNoLeak，再净化。反过来写就看不见上游的缺陷了——
+  // sanitizeResult 会把 recovery_credential 这个字段摘掉，摘干净之后扫描什么都扫不到，
+  // 于是「核心在模型面返回里带了凭据」这件事被无声地补好，没有人知道上游漏过。
+  //
+  // 命中就失败关闭，不打码后继续。打码后的返回仍然证明这条路径会搬运秘密，
+  // 下一次换个字段名或换个格式就又漏出去了。要修的是搬运，不是显示。
+  //
+  // 净化仍然做，作为纵深防御：万一将来 assertNoLeak 的判据被放宽，摘字段这一层还在。
+  #guard(value, where) {
+    this.#custody.assertNoLeak(value, where);
+    return this.#custody.sanitizeResult(value);
+  }
+
+  // 把净化包成「要么给出干净值，要么给出 credential_leak 信封」。
+  // 泄漏本身也不能带原文出去，所以 CredentialLeak.details 只有 where 与 field。
+  #guarded(value, where, build) {
+    let clean;
+    try {
+      clean = this.#guard(value, where);
+    } catch (error) {
+      if (error?.code !== "credential_leak") throw error;
+      return errorEnvelope("credential_leak", 500, error.details ?? { where });
+    }
+    return build(clean);
+  }
+
   async call(command, params = {}) {
     this.assertUsable(command);
     let inner;
     try {
-      inner = await this.surface.call(command, params);
+      inner = await this.#surface.call(command, params);
     } catch (error) {
       // ModelSurfaceError 是本地拒绝（越界命令、模型自带身份字段、认不出的 authority id）。
       // 它不是传输失败，所以不进 degraded——把本地拒绝算成降级会让「适配器刚失败过」
       // 这个状态失去意义，而宿主正是靠它决定要不要退回轮询。
-      return errorEnvelope(error?.code ?? "unknown_error", 400, error?.details);
+      //
+      // details 也过闸。本地拒绝最容易带上原文：拒收原因往往就是「你传的这个字段不对」，
+      // 而那个字段的值可能正是模型试图塞进来的凭据。
+      const code = error?.code ?? "unknown_error";
+      return this.#guarded(error?.details, "model_local_rejection",
+        (clean) => errorEnvelope(code, 400, clean));
     }
     if (inner.ok === false) {
       // 传输或核心侧失败。degraded 让宿主知道自己刚失败过，而 degraded 不是终态：
@@ -155,16 +220,22 @@ class SeatModelAdapter {
       if (this.state === "negotiated" || this.state === "bound") {
         this.state = nextLifecycleState(this.state, "degraded");
       }
-      return errorEnvelope(
-        inner.body?.code ?? "core_request_failed",
-        inner.status ?? 502,
-        inner.body?.details,
-      );
+      // 状态推进放在过闸之前。核心确实失败过这件事与返回里有没有秘密无关，
+      // 反过来写的话一次泄漏会把 degraded 吃掉，宿主就不知道自己该退回轮询。
+      const code = inner.body?.code ?? "core_request_failed";
+      const status = inner.status ?? 502;
+      return this.#guarded(inner.body?.details, "model_core_error",
+        (clean) => errorEnvelope(code, status, clean));
     }
+    // 成功出口。核心的 result 直接就是模型能看到的东西，所以这一条是三条里最要紧的。
+    //
+    // 注意状态推进也在过闸之前，理由同上：这一跳确实成功了。
     if (this.state === "negotiated" || this.state === "degraded") {
       this.state = nextLifecycleState(this.state, "bound");
     }
-    return okEnvelope(inner.body?.result ?? null, inner.status ?? 200);
+    const status = inner.status ?? 200;
+    return this.#guarded(inner.body?.result ?? null, "model_result",
+      (clean) => okEnvelope(clean ?? null, status));
   }
 
   release() {
@@ -172,7 +243,7 @@ class SeatModelAdapter {
     if (this.state !== "released") this.state = nextLifecycleState(this.state, "released");
     // 一次性 id 一并清掉。留着的后果是下一个实例复用同一张表时，一个陈旧映射会帮一条
     // 早该失效的 turn_id 成立——而那种残留只在复用时才露头。
-    this.surface.issued.clear();
+    this.#surface.clearIssued();
     this.negotiation = null;
   }
 }
