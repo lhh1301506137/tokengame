@@ -437,14 +437,22 @@ async function main() {
     // 继续吃点击。这条断言存在的原因就是它真的发生过：.scope-gate 是 display:grid 的
     // 全屏固定层，带着 hidden 罩住整张桌子，之后每一次点击都被它吞掉，画面上毫无痕迹。
     // 检查所有 hidden 元素而不只是那一个：这是一类缺陷，不是一个。
-    const renderedWhileHidden = await alice.page.evaluate(() =>
-      [...document.querySelectorAll("[hidden]")]
-        .filter((node) => getComputedStyle(node).display !== "none")
-        .map((node) => node.id || node.className || node.tagName));
+    const hiddenAudit = await alice.page.evaluate(() => {
+      const nodes = [...document.querySelectorAll("[hidden]")];
+      return {
+        total: nodes.length,
+        rendered: nodes
+          .filter((node) => getComputedStyle(node).display !== "none")
+          .map((node) => node.id || node.className || node.tagName),
+      };
+    });
+    // 同时要求真的查到了 hidden 元素。一个都没查到时上面的 length === 0 也成立，
+    // 那会在选择器写错或页面结构变化之后，把「什么都没检查」报成「全部合格」。
     check("带 hidden 属性的元素一律不参与渲染",
-      renderedWhileHidden.length === 0,
-      renderedWhileHidden.length === 0 ? "已检查全部 hidden 元素"
-        : `仍在渲染：${renderedWhileHidden.join("、")}`);
+      hiddenAudit.rendered.length === 0 && hiddenAudit.total >= 5,
+      hiddenAudit.rendered.length === 0
+        ? `已检查 ${hiddenAudit.total} 个 hidden 元素`
+        : `仍在渲染：${hiddenAudit.rendered.join("、")}`);
     artifacts.push(await shot(alice, "02-four-seated"));
 
     // ---- 2. Ready 与倒计时 ----
