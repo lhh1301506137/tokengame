@@ -31,16 +31,23 @@ if (input.stop_hook_active) {
 
 ## 浏览器事件与数据获取
 
-- 牌桌初始状态通过带玩家凭据的 `GET /api/table/state` 获取，后续通过同身份的 `EventSource('/api/table/events/stream')` 接收快照或事件通知；旧 `/api/state` 与 `/api/events/stream` 继续服务 Codex 桥接探针。
-- 收到 `SNAPSHOT` 可直接替换 `ui.state`；收到 `EVENT` 后重新读取权威状态，避免在客户端重放不完整业务规则。
-- 玩家操作统一经 `postPlayer()` 处理禁用、凭据附着、请求、刷新、成功/错误提示和恢复；按钮只使用当前 `legal_actions`。
-- `resize`、键盘和定时器回调只触发显示层更新；不得改变权威牌局状态。
-- 所有异步事件处理必须捕获错误并落到可见状态，连接错误要更新 `ui.connected`。
+当前产品路径（`web/table/` ↔ `src/host/table-web-host.cjs`）：
+
+- 建会话拿到会话令牌后按固定间隔轮询 `GET /api/view`，每次用返回的 `table-view.v1` 整体替换 `state.view` 再渲染。没有 SSE：内核只暴露 `POST /command`，协调器若自己做推送就得维护一份变更判定，那正是第二份事实的入口。
+- 玩家操作统一经 `post()` 处理禁用、请求、刷新、成功/错误提示和恢复；按钮只使用当前视图的 `legal_actions`，金额是目标总额而非增量。
+- 会话令牌只在内存里，请求头带的是会话令牌而不是席位凭据；凭据留在协调器进程内。
+- 终态会话码（`web_session_unknown`、`seat_credential_revoked`、`seat_not_found`）必须停止轮询并回到入口，非终态错误保留上一份可见投影。
+- 键盘和定时器回调只触发显示层更新；不得改变权威牌局状态。
+- 所有异步处理必须捕获错误并落到可见状态，连接失败要更新连接显示。
+
+### 旧探针栈（已替代，保留参考）
+
+旧栈用带玩家凭据的 `GET /api/table/state` 加同身份 `EventSource('/api/table/events/stream')`：`SNAPSHOT` 直接替换 `ui.state`，`EVENT` 只作为「状态已改变」通知再回拉权威状态。该机制随旧栈冻结。
 
 ## 命名约定
 
 - Codex Hook 文件按宿主事件使用 snake_case：`user_prompt_submit.cjs`、`pre_tool_use.cjs`、`stop.cjs`。
-- 浏览器回调按动作命名：`connectEvents`、`postControl`、`setControlsDisabled`。
+- 浏览器回调按动作命名：`startPolling`、`submitAction`、`wireControl`、`returnToEntry`。
 - 协议入口与本地辅助函数分开导出；Hook 入口文件不作为通用库导入。
 
 ## 常见错误

@@ -7,13 +7,15 @@
 ## 代码与模块格式
 
 - Node.js 服务、测试和插件入口使用 CommonJS `.cjs`、`require()`、`module.exports` 与 `"use strict"`。
-- 浏览器 UI 使用普通脚本 `web/app.js`；Playwright 辅助加载器使用 ESM `.mjs`。
+- 浏览器 UI 使用普通脚本加 `"use strict"`：产品路径是 `web/table/table.js`，旧探针栈是 `web/app.js`。两者都不是 ESM 模块。
+- Playwright 验收脚本与浏览器侧辅助加载器使用 ESM `.mjs`。
 - 不在同一模块内混用 CommonJS 和 ESM。
 
 ## 运行时校验
 
 - 所有外部 JSON 先经过 `readJson()` 的大小限制和解析错误处理。
-- 必填文本在 `EventStore`/`TableStore` 边界通过 `requiredString(value, field, maxLength)` 校验类型、空值和长度。
+- 必填文本在每个权威边界通过本地 `requiredString(value, field, maxLength)` 校验类型、空值和长度：`command-surface.cjs`（256）、`room-store.cjs`（256）、`seat-ai-store.cjs`（4096），旧栈的 `event-store.cjs`（4096）与 `table-store.cjs`（512）同理。上限按各自语义取值，不要统一成一个常量再到处 import——那会让「席位名」和「公开发言」共享同一个上限。
+- 面向玩家的长度上限按**字素**判定，用 `Intl.Segmenter`。`String.length` 会把家庭 emoji 算成 8，用它做 140 上限等于把上限交给对方选字符。浏览器与权威两侧都要判，浏览器那侧只是提前反馈，不能当作已经校验。
 - 筹码、版本和下注目标显式使用 `Number()`，随后以 `Number.isSafeInteger()` 和领域允许范围校验；时间长度可使用 `Number.isFinite()` 后检查范围。
 - HTTP/桥响应先读取文本，再在 `try/catch` 中解析 JSON；无效响应转换为稳定错误码。
 - 浏览器读取可能缺失的投影字段时使用可选链和默认值，不假定首次请求一定成功。
