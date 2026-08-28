@@ -412,6 +412,9 @@ function seatNode(seat, view) {
   li.append(hole);
 
   li.append(aiRow(seat));
+  // 气泡紧跟在 AI 那一行之后、隐藏开关之前：玩家、他的 AI、他们刚说的话，
+  // 三者在同一张卡片里自上而下相邻。
+  li.append(seatSpeech(seat));
   li.append(hideRow(seat));
   return li;
 }
@@ -467,6 +470,76 @@ function aiRow(seat) {
   else if (seat.ai.status === "OFFLINE") row.append(tag("OFFLINE", "offline"));
   else if (seat.ai.mode === "OFF") row.append(tag("OFF", "off"));
   return row;
+}
+
+// 座位旁的聊天气泡。
+//
+// 这一块与底部的公开时间线是两个不同的东西，不能互相冒充：
+//   - 座位旁：归属。这句话是这张卡片上这个真人（或他的 AI）说的，看一眼就知道是谁。
+//     只留最近几条、约 10 秒后退出，因为它占的是牌面旁边的位置。
+//   - 时间线：历史。全部发言、永不退出、可以往上翻。
+//
+// 归属靠 DOM 结构而不是靠气泡里那行名字：气泡挂在 li.seat 内部，所以「谁说的」这件事
+// 在 DOM 上是父子关系，不依赖读文本。名字仍然写在气泡里——结构、文字、样式三条通道
+// 冗余，缺一条时另两条还在（component-guidelines 那条「至少三条互相冗余的通道」）。
+function seatSpeech(seat) {
+  const wrap = document.createElement("ol");
+  wrap.className = "seat-speech";
+  wrap.setAttribute("aria-label", `${seat.player_id} 座位旁的最近发言`);
+  // 整席被本地隐藏时连气泡一起收起：那一席在这个查看者眼里是收起状态，
+  // 留着气泡就等于隐藏只藏了名字。
+  const list = seat.locally_hidden.seat ? [] : (seat.recent_speech ?? []);
+  wrap.dataset.count = String(list.length);
+  wrap.replaceChildren(...list.map((entry) => seatBubbleNode(entry, seat)));
+  // 空列表也保留节点。有无气泡都是同一个容器，几何断言不必区分两种 DOM 形状。
+  return wrap;
+}
+
+function seatBubbleNode(entry, seat) {
+  const li = document.createElement("li");
+  li.className = "seat-bubble";
+  li.dataset.speaker = entry.speaker_type;
+  li.dataset.seatId = seat.seat_id;
+  li.dataset.hidden = String(entry.hidden === true);
+  li.dataset.late = String(entry.late === true);
+  // 淡出交给 CSS，年龄由投影给。页面不开 setTimeout：定时器会变成第二份「该不该显示」
+  // 的状态，而它和视图的唯一同步点是它自己。
+  li.style.setProperty("--age", String(entry.age_ms));
+
+  const who = document.createElement("span");
+  who.className = "seat-bubble-who";
+  // AI 说话时写「<玩家> 的 AI」而不只是玩家名：否则同一张卡片上两条气泡的署名一模一样。
+  who.textContent = entry.speaker_type === "SEAT_AI"
+    ? `${entry.player_id ?? seat.player_id} 的 AI`
+    : (entry.player_id ?? "—");
+  li.append(who);
+
+  if (entry.speaker_type === "SEAT_AI") {
+    const badge = document.createElement("span");
+    badge.className = "ai-badge";
+    badge.textContent = "AI";
+    li.append(badge);
+  }
+
+  if (entry.late === true) {
+    const street = { preflop: "翻牌前", flop: "翻牌", turn: "转牌", river: "河牌" };
+    const basis = street[entry.based_on_street] ?? entry.based_on_street;
+    li.append(tag(basis ? `延迟 · 基于${basis}` : "延迟", "late"));
+  }
+
+  const note = document.createElement("span");
+  note.className = "hidden-note";
+  note.textContent = entry.speaker_type === "SEAT_AI"
+    ? "（这条 AI 发言已被你隐藏）"
+    : "（这条发言已被你隐藏）";
+  li.append(note);
+
+  const text = document.createElement("p");
+  text.className = "seat-bubble-text";
+  // textContent 而不是 innerHTML。这是别人输入的文本。
+  text.textContent = entry.text;
+  li.append(text);
+  return li;
 }
 
 // 本地隐藏的三个开关。规则 7：只影响这一个查看者的渲染，不改配额、不改权威时间线。

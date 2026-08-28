@@ -161,6 +161,9 @@ class TableWebHost {
         simulated: this.modelAdapter.simulated !== false,
       },
       limits: { max_text_graphemes: this.limits.maxGraphemesPerMessage ?? null },
+      // 座位旁气泡的退出时刻按协调器的时钟算。不传的话 recent_speech 恒为空，
+      // 座位旁一条都不显示——测试里注入的假时钟也走这条路，所以退出时刻可判定。
+      now: this.now(),
     });
 
     // 双保险：视图模型已做结构自检（禁止的键名），这里再按秘密原文扫一遍。两者方向不同，

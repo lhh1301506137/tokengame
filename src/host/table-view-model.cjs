@@ -1,6 +1,6 @@
 "use strict";
 
-// 逐查看者的牌桌视图模型。纯函数，无 IO，无时钟，无状态。
+// 逐查看者的牌桌视图模型。纯函数，无 IO，无状态；时钟只以 now 入参的形式出现。
 //
 // 存在的理由：MVP 验收里有一条是「每个客户端只能收到公共状态和自己的底牌投影」，另一条是
 // 「任一查看者可本地隐藏指定玩家、AI 或整席聊天；其他查看者与权威事件历史不受影响」。
@@ -22,6 +22,18 @@
 // 视图里允许出现的发言方类型。权威事件的 speaker_type 只有这两个值，写成常量是为了让
 // 「出现第三种」变成一个显式失败而不是一个静默渲染。
 const SPEAKER_TYPES = Object.freeze(["PLAYER", "SEAT_AI"]);
+
+// 座位旁气泡的存活时长。约 10 秒之后这条发言从座位旁退出，但仍留在公开时间线里。
+//
+// 为什么由投影算而不是页面开 setTimeout：定时器会把「这条该不该显示」变成第二份状态，
+// 它与视图的唯一同步点是它自己。轮询丢一次、标签页被浏览器节流一次，两者就再也对不上，
+// 而对不上的表现是气泡永远不消失——正好压在公共牌上。now 作为入参传进来，本模块
+// 仍然不读时钟。
+const SEAT_SPEECH_TTL_MS = 10_000;
+
+// 一席旁边同时最多几条。不设上限时一席连说八句就会盖住相邻席位与公共牌，而「盖住了」
+// 在窄屏上不可能靠缩小解决。4 条留得下「玩家问 + AI 答」两轮。
+const MAX_SEAT_SPEECH = 4;
 
 // 绝不允许出现在视图里的字段名。build() 结束前自检一遍。
 //
@@ -182,6 +194,57 @@ function buildMessages(timeline, seatIndexById) {
   });
 }
 
+// 气泡 -> 逐席位的座位旁投影。
+//
+// 归属按 seat_id，不按 player_id：名字会重、会改，seat_id 在这一桌里唯一。没有 seat_id
+// 的发言一条都不挂——挂错席比不显示更糟，那会把一句无主的话变成某个真人说过的话。
+//
+// 顺序沿用 messages 的顺序，而 messages 已经是权威 sequence 序（buildMessages 不重排）。
+// 四个视图必须以同一顺序看到同一批发言，唯一的顺序来源是权威。
+function buildSeatSpeech(messages, now, knownSeatIds) {
+  const bySeat = new Map();
+  if (typeof now !== "number" || !Number.isFinite(now)) return bySeat;
+  const known = knownSeatIds instanceof Set ? knownSeatIds : new Set();
+
+  for (const message of messages) {
+    // 只挂到这一桌真有的席位上。这一条同时管住四种情形，所以前面不再单独判类型——
+    // 加一个「先查是不是非空字符串」的闸门跑出来是等价变异，因为 Set.has 对 null、
+    // 空串、数字一律为 false，那个闸门永远改变不了结果。
+    //
+    //   - 缺失的 seat_id：buildMessages 归一成 null。只判 undefined 的写法会把无主
+    //     发言挂到一个不存在的键上——不显示、不报错，直到某天有人让 seat_id 可空。
+    //   - 空串或非字符串：同上，进不了 known。
+    //   - 已离桌的席位：它的话留在历史区，不挂在一张已经不存在的卡片旁边。
+    if (!known.has(message.seat_id)) continue;
+    const age = now - message.at;
+    // 未来时间戳（at > now）当作刚发生：时钟回拨不该让气泡提前退出，
+    // 而负的 age_ms 会让页面的淡出算出一个越来越不透明的值。
+    const ageMs = age < 0 ? 0 : age;
+    if (ageMs > SEAT_SPEECH_TTL_MS) continue;
+
+    const list = bySeat.get(message.seat_id) ?? [];
+    list.push({
+      sequence: message.sequence,
+      speaker_type: message.speaker_type,
+      player_id: message.player_id,
+      text: message.text,
+      late: message.late,
+      based_on_street: message.based_on_street,
+      // 隐藏在这里只标不抹。抹掉正文就等于本地隐藏改变了投影事实，而验收要求的是
+      // 「只影响渲染」——页面据此显示「此处有 1 条被你隐藏的发言」。
+      hidden: message.hidden,
+      age_ms: ageMs,
+    });
+    bySeat.set(message.seat_id, list);
+  }
+
+  // 超出上限时留最近的几条。slice 从尾部取，顺序仍是 sequence 序。
+  for (const [seatId, list] of bySeat) {
+    if (list.length > MAX_SEAT_SPEECH) bySeat.set(seatId, list.slice(-MAX_SEAT_SPEECH));
+  }
+  return bySeat;
+}
+
 // 合法动作。权威只对「已证明拥有该席」的调用者给出 legal_actions（view.hand），
 // 所以这里的空数组有两种含义：不是你的回合，或者现在没有牌局。两者在 UI 上都是
 // 「按钮不可用」，不需要区分。
@@ -225,6 +288,10 @@ function build(input = {}) {
     pendingIntentCount = 0,
     modelAdapter = null,
     limits = null,
+    // 座位旁气泡的退出时刻要靠它算。缺省 null 而不是 Date.now()：本模块不读时钟，
+    // 而一个偷偷读时钟的缺省值会让「投影是纯函数」这句话在某些调用路径上不成立。
+    // 不传时座位旁一条都不显示，时间线不受影响——宁可少显示，不要显示一份算错时刻的。
+    now = null,
   } = input;
 
   const hidden = {
@@ -245,6 +312,14 @@ function build(input = {}) {
   const seatIndexById = new Map(seats.map((seat) => [seat.seat_id, seat.seat_index]));
   const viewerSeat = seats.find((seat) => seat.is_viewer) ?? null;
   const hand = pickHandSource(publicHand, privateHand);
+
+  // 座位旁气泡挂到各席上。先建 messages 再分组：两者必须来自同一份翻译结果，
+  // 否则时间线与座位旁会出现两套 late / hidden 判定。
+  const messages = buildMessages(timeline, seatIndexById);
+  const speechBySeat = buildSeatSpeech(messages, now, new Set(seatIndexById.keys()));
+  for (const entry of seats) {
+    entry.recent_speech = speechBySeat.get(entry.seat_id) ?? [];
+  }
 
   const view = {
     contract: "tokengame.table-view.v1",
@@ -278,7 +353,7 @@ function build(input = {}) {
       settlement: hand.settlement ?? null,
     },
     seats,
-    messages: buildMessages(timeline, seatIndexById),
+    messages,
     action_panel: buildActionPanel({ privateHand, viewerSeat, limits }),
     // 模型适配器的真实状态。没有适配器时必须显示 attached: false——把「本地没有模型」
     // 画成 AI 沉默会让「宿主具备主动唤醒能力」变成一句没有证据的话。
@@ -327,4 +402,9 @@ module.exports = {
   assertNoForbiddenKeys,
   FORBIDDEN_KEYS,
   SPEAKER_TYPES,
+  SEAT_SPEECH_TTL_MS,
+  MAX_SEAT_SPEECH,
+  // 导出是为了让「归属只挂到真实席位」这条能被直接观察。经 build() 只看得到
+  // view.seats，而挂到一个不存在的席位键上时那里恰好什么都不显示——一个查不到的缺陷。
+  buildSeatSpeech,
 };

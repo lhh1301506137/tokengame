@@ -1,0 +1,94 @@
+{
+  "name": "seat-speech-projection",
+  "note": "阶段 1 项 2 的投影层：座位旁气泡的归属、顺序、约 10 秒退出、条数上限。每条变异都是一种「气泡看起来还在座位旁，但归属或退出已经失效」的写法。",
+  "mutations": [
+    {
+      "id": "attribution-by-player-id",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    if (!known.has(message.seat_id)) continue;",
+      "replacement": "    if (typeof message.player_id !== \"string\") continue;\n    message = { ...message, seat_id: message.player_id };\n    if (!known.has(message.seat_id)) continue;",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "按 player_id 归属。名字会重、会改，重名时两个真人的话会混到同一席旁边；而这一桌的 player_id 与 seat_id 不同名，于是一条都挂不上——「归属靠 seat_id」这句话不是排版偏好。"
+    },
+    {
+      "id": "unowned-speech-attached",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    if (!known.has(message.seat_id)) continue;",
+      "replacement": "    if (message.seat_id === undefined) continue;",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "闸门换成只判 undefined。buildMessages 把缺失的 seat_id 归一成 null，所以这一版放过无主发言，把它挂到 \"null\" 这个不存在的席位键上；已离桌席位的发言也会挂到一张不存在的卡片上。经 view.seats 看不出来——那里恰好什么都不显示——所以测试要直接查分组表的键集。"
+    },
+    {
+      "id": "ttl-gate-removed",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    if (ageMs > SEAT_SPEECH_TTL_MS) continue;",
+      "replacement": "    if (false) continue;",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "退出闸门拿掉。气泡永不消失，一直压在牌面旁边——而条数上限会让它看起来像是「只留最近几条」在正常工作。"
+    },
+    {
+      "id": "ttl-boundary-inclusive",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    if (ageMs > SEAT_SPEECH_TTL_MS) continue;",
+      "replacement": "    if (ageMs >= SEAT_SPEECH_TTL_MS - 1) continue;",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "边界提前一毫秒。差一个毫秒看不出来，但它说明阈值的两侧都要有测试——只测「超时的走了」不测「没超时的还在」时，把阈值改成 0 也能过。"
+    },
+    {
+      "id": "ttl-value-inflated",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "const SEAT_SPEECH_TTL_MS = 10_000;",
+      "replacement": "const SEAT_SPEECH_TTL_MS = 600_000;",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "阈值改成 10 分钟。仍然「有退出行为」，但 10 分钟等于没有——要求写的是约 10 秒。"
+    },
+    {
+      "id": "negative-age-passthrough",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    const ageMs = age < 0 ? 0 : age;",
+      "replacement": "    const ageMs = age;",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "未来时间戳产生负 age_ms。CSS 那条淡出算式会得到大于 1 的不透明度，而时钟一旦回拨，气泡会比新发言更显眼。"
+    },
+    {
+      "id": "cap-removed",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    if (list.length > MAX_SEAT_SPEECH) bySeat.set(seatId, list.slice(-MAX_SEAT_SPEECH));",
+      "replacement": "",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "条数上限拿掉。一席在 10 秒内连说八句就把卡片撑高，桌面上把行动区推下去，窄屏上把公共牌推出视口。"
+    },
+    {
+      "id": "cap-keeps-oldest",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "bySeat.set(seatId, list.slice(-MAX_SEAT_SPEECH));",
+      "replacement": "bySeat.set(seatId, list.slice(0, MAX_SEAT_SPEECH));",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "留最早的几条而不是最近的。条数对得上、退出也在工作，但座位旁显示的是过时的话——最新那句永远看不到。"
+    },
+    {
+      "id": "hidden-text-stripped",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "      text: message.text,\n      late: message.late,",
+      "replacement": "      text: message.hidden === true ? \"\" : message.text,\n      late: message.late,",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "在投影层把被隐藏的正文抹掉。本地隐藏于是从「只影响渲染」变成改变投影事实，撤销隐藏也拿不回正文。"
+    },
+    {
+      "id": "now-defaults-to-clock",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "    now = null,",
+      "replacement": "    now = Date.now(),",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "缺省值偷偷读时钟。投影不再是纯函数，而注入时钟的测试会在某些调用路径上读到真实时间——表现是退出时刻随机对不上。"
+    },
+    {
+      "id": "speech-outside-self-check",
+      "file": "src/host/table-view-model.cjs",
+      "needle": "  for (const entry of seats) {\n    entry.recent_speech = speechBySeat.get(entry.seat_id) ?? [];\n  }",
+      "replacement": "  const detachedSpeech = new Map(speechBySeat);\n  for (const entry of seats) {\n    Object.defineProperty(entry, \"recent_speech\", {\n      value: detachedSpeech.get(entry.seat_id) ?? [], enumerable: false,\n    });\n  }",
+      "test": "test/seat-speech-projection.test.cjs",
+      "note": "把 recent_speech 挂成不可枚举。UI 照旧读得到，但 assertNoForbiddenKeys 的 Object.entries 走不进去——凭据字段一旦出现在这里，结构自检不会报。"
+    }
+  ]
+}

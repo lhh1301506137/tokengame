@@ -677,6 +677,195 @@ async function main() {
     check("每一席的玩家与其 AI 在同一张卡片内",
       adjacency.length === 4 && adjacency.every((s) => s.hasName && s.hasAiRow));
     artifacts.push(await shot(alice, "06-ai-bubble"));
+
+    // ---- 6b. 座位旁聊天：DOM 归属 ----
+    //
+    // 这一节查的是「归属」，而归属必须是 DOM 父子关系，不是气泡里那行名字。
+    // 只查 class 存在等于没查：一个把所有气泡塞进同一个容器再写上名字的实现也能通过。
+    const attribution = await until("座位旁出现聊天气泡", async () => {
+      const found = await alice.page.evaluate(() => [...document.querySelectorAll("#seats > li.seat")]
+        .map((li) => ({
+          seatId: li.dataset.seatId,
+          name: li.querySelector(".seat-name")?.textContent?.trim() ?? null,
+          // 气泡必须查得到是这张卡片的后代，而不是页面上某处的同名节点。
+          bubbles: [...li.querySelectorAll(".seat-speech > li.seat-bubble")].map((b) => ({
+            speaker: b.dataset.speaker,
+            seatId: b.dataset.seatId,
+            who: b.querySelector(".seat-bubble-who")?.textContent?.trim() ?? null,
+            badge: b.querySelector(".ai-badge")?.textContent?.trim() ?? null,
+            text: b.querySelector(".seat-bubble-text")?.textContent ?? "",
+            // 这条气泡的最近祖先 li.seat 是不是这一席：DOM 归属的直接证据。
+            ownerSeatId: b.closest("li.seat")?.dataset.seatId ?? null,
+          })),
+        })));
+      return found.some((s) => s.bubbles.length > 0) ? found : false;
+    }, { timeout: 30_000 });
+
+    const allSeatBubbles = attribution.flatMap((s) => s.bubbles.map((b) => ({ ...b, cardSeat: s.seatId })));
+    check("座位旁气泡真的挂在某一席卡片内（DOM 父子关系）",
+      allSeatBubbles.length > 0 && allSeatBubbles.every((b) => b.ownerSeatId === b.cardSeat),
+      `共 ${allSeatBubbles.length} 条；不匹配 ${
+        allSeatBubbles.filter((b) => b.ownerSeatId !== b.cardSeat).length} 条`);
+    check("座位旁气泡的 seat_id 与所在卡片一致（没有串席）",
+      allSeatBubbles.every((b) => b.seatId === b.cardSeat),
+      `不一致=${JSON.stringify(allSeatBubbles.filter((b) => b.seatId !== b.cardSeat).slice(0, 3))}`);
+
+    const seatAi = allSeatBubbles.filter((b) => b.speaker === "SEAT_AI");
+    check("座位旁的 AI 气泡带文字 AI 徽标", seatAi.length > 0 && seatAi.every((b) => b.badge === "AI"),
+      `AI 气泡 ${seatAi.length} 条，徽标=${JSON.stringify([...new Set(seatAi.map((b) => b.badge))])}`);
+    check("座位旁的 AI 气泡署名为「某人的 AI」，与玩家气泡署名不同",
+      seatAi.every((b) => typeof b.who === "string" && b.who.endsWith("的 AI")),
+      `who=${JSON.stringify([...new Set(seatAi.map((b) => b.who))]).slice(0, 200)}`);
+
+    // 座位旁与时间线必须是两个区，不能互相冒充。
+    const twoRegions = await alice.page.evaluate(() => ({
+      seatSide: document.querySelectorAll("#seats .seat-speech > li.seat-bubble").length,
+      timeline: document.querySelectorAll("#timeline > li.bubble").length,
+      // 时间线的气泡不能出现在座位卡里，座位旁的气泡也不能出现在时间线里。
+      timelineInsideSeat: document.querySelectorAll("#seats li.bubble").length,
+      seatBubbleInsideTimeline: document.querySelectorAll("#timeline li.seat-bubble").length,
+    }));
+    check("座位旁与公开时间线是两个独立区域，互不嵌套",
+      twoRegions.timelineInsideSeat === 0 && twoRegions.seatBubbleInsideTimeline === 0,
+      JSON.stringify(twoRegions));
+    check("公开时间线保留的历史条数不少于座位旁（座位旁只是最近一小组）",
+      twoRegions.timeline >= twoRegions.seatSide,
+      `时间线 ${twoRegions.timeline} 条，座位旁 ${twoRegions.seatSide} 条`);
+
+    // ---- 6c. 座位旁聊天：桌面与窄屏的真实几何 ----
+    //
+    // 查的是矩形相交，不是 class 存在。「气泡不遮挡牌面」这句话只能这样验证：
+    // 拿到 getBoundingClientRect 再算重叠。class 查得再细也证明不了两块东西没有叠在一起。
+    for (const [label, size] of [["桌面", { width: 1280, height: 980 }],
+      ["窄屏", { width: 420, height: 900 }]]) {
+      await alice.page.setViewportSize(size);
+      // 换视口后布局要重排一次再量。不等的话读到的是旧矩形。
+      await alice.page.waitForTimeout(400);
+
+      const geometry = await alice.page.evaluate(() => {
+        const rect = (selector) => {
+          const node = document.querySelector(selector);
+          if (node === null) return null;
+          const r = node.getBoundingClientRect();
+          return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right };
+        };
+        const overlap = (a, b) => {
+          if (a === null || b === null) return 0;
+          const w = Math.min(a.right, b.right) - Math.max(a.x, b.x);
+          const h = Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y);
+          return w > 0 && h > 0 ? Math.round(w * h) : 0;
+        };
+        const bubbles = [...document.querySelectorAll("#seats .seat-speech > li.seat-bubble")]
+          .map((n) => {
+            const r = n.getBoundingClientRect();
+            return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right };
+          });
+        // 参照物用 .board-area 而不是 #board。
+        //
+        // #board 是一个空的 <ol>，还没发公共牌时宽高都是 0——那时任何重叠都算成 0，
+        // 「不遮挡」这条断言就永远为真。负对照跑出来正是这个：气泡钉在公共牌上，
+        // overlapBoard 仍然报 0。参照物必须自己有真实尺寸，否则断言是空的。
+        const boardArea = rect(".board-area");
+        const board = rect("#board");
+        const actions = rect("#actions");
+        const pot = rect(".pot");
+        return {
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          bubbleCount: bubbles.length,
+          // 每个气泡与公共牌区、行动区、底池的重叠面积。全部应为 0。
+          overlapBoard: bubbles.reduce((sum, b) => sum + overlap(b, boardArea), 0),
+          overlapActions: bubbles.reduce((sum, b) => sum + overlap(b, actions), 0),
+          overlapPot: bubbles.reduce((sum, b) => sum + overlap(b, pot), 0),
+          // 参照物自己的尺寸。它们退化时上面那三个 0 没有意义。
+          refs: {
+            boardArea, actions, pot,
+            degenerate: [boardArea, actions, pot]
+              .filter((r) => r === null || r.w < 20 || r.h < 10).length,
+          },
+          // 可读性：气泡必须有真实尺寸。0 宽或 0 高等于「藏起来算不遮挡」。
+          degenerate: bubbles.filter((b) => b.w < 40 || b.h < 10).length,
+          // 气泡不得溢出所在座位卡片的横向范围——溢出就会压到相邻席位上。
+          overflowingCard: [...document.querySelectorAll("#seats > li.seat")].reduce((n, card) => {
+            const c = card.getBoundingClientRect();
+            const inside = [...card.querySelectorAll(".seat-speech > li.seat-bubble")];
+            return n + inside.filter((b) => {
+              const r = b.getBoundingClientRect();
+              return r.right > c.right + 1 || r.x < c.x - 1;
+            }).length;
+          }, 0),
+          // 座位区整体是否还在文档流里（窄屏下塌成一列，但不该被推到负坐标之外）。
+          seatsRect: rect("#seats"),
+          boardRect: board,
+          actionsRect: actions,
+        };
+      });
+
+      // 先证明参照物有尺寸，再看重叠。顺序反过来的话，一个 0 宽的参照物会让
+      // 下面三条全部通过而什么都没验证——负对照跑出来就是这样。
+      check(`${label}：几何参照物本身有真实尺寸（否则"不相交"是空话）`,
+        geometry.refs.degenerate === 0,
+        `退化 ${geometry.refs.degenerate} 个：${JSON.stringify(geometry.refs)}`);
+      check(`${label}：座位旁气泡与公共牌区不相交`,
+        geometry.overlapBoard === 0,
+        `重叠 ${geometry.overlapBoard}px²　气泡 ${geometry.bubbleCount} 个　视口 ${
+          geometry.viewport.w}x${geometry.viewport.h}`);
+      check(`${label}：座位旁气泡与行动区不相交`,
+        geometry.overlapActions === 0, `重叠 ${geometry.overlapActions}px²`);
+      check(`${label}：座位旁气泡与底池不相交`,
+        geometry.overlapPot === 0, `重叠 ${geometry.overlapPot}px²`);
+      check(`${label}：气泡有可读尺寸（没有靠压成 0 尺寸来"不遮挡"）`,
+        geometry.bubbleCount > 0 && geometry.degenerate === 0,
+        `退化 ${geometry.degenerate} / ${geometry.bubbleCount} 个`);
+      check(`${label}：气泡不横向溢出所在座位卡片（不压到相邻席位）`,
+        geometry.overflowingCard === 0, `溢出 ${geometry.overflowingCard} 个`);
+      check(`${label}：公共牌与行动区都还在视口内`,
+        geometry.boardRect !== null && geometry.actionsRect !== null
+          && geometry.boardRect.y >= 0 && geometry.actionsRect.h > 0,
+        `board.y=${geometry.boardRect?.y} actions.h=${geometry.actionsRect?.h}`);
+
+      artifacts.push(await shot(alice, `06b-seat-speech-${label === "桌面" ? "desktop" : "narrow"}`));
+    }
+    // 量完恢复桌面视口，后面的步骤都按桌面几何写的。
+    await alice.page.setViewportSize({ width: 1280, height: 980 });
+    await alice.page.waitForTimeout(300);
+
+    // ---- 6d. 座位旁聊天：约 10 秒后退出 ----
+    //
+    // 单元测试已经钉了投影层的阈值，但那是拿注入时钟算的。这里要证明真浏览器里它真的
+    // 会消失：轮询把新的 view 拿回来，气泡随之退出。盯一条具体的文本而不是盯条数——
+    // 脚本适配器还在说话，条数会来回变，而「这一条走了」是确定的。
+    const beforeExit = await alice.page.evaluate(() => {
+      const first = document.querySelector("#seats .seat-speech > li.seat-bubble");
+      return first === null ? null : {
+        text: first.querySelector(".seat-bubble-text")?.textContent ?? "",
+        seatId: first.dataset.seatId,
+      };
+    });
+    if (check("座位旁至少有一条气泡可用于观察退出", beforeExit !== null)) {
+      const stillThere = async () => alice.page.evaluate((target) => {
+        const texts = [...document.querySelectorAll("#seats .seat-speech > li.seat-bubble")]
+          .map((n) => n.querySelector(".seat-bubble-text")?.textContent ?? "");
+        const timelineTexts = [...document.querySelectorAll("#timeline > li.bubble")]
+          .map((n) => n.querySelector(".bubble-text")?.textContent ?? "");
+        return {
+          besideSeat: texts.includes(target.text),
+          inTimeline: timelineTexts.includes(target.text),
+        };
+      }, beforeExit);
+
+      const atStart = await stillThere();
+      check("观察起点：那条气泡此刻在座位旁", atStart.besideSeat === true, JSON.stringify(atStart));
+
+      // 等过阈值。多给 3 秒余量：轮询间隔 700ms，且这一步不该因为差半秒就偶发。
+      const exited = await until("座位旁那条气泡退出", async () => {
+        const now = await stillThere();
+        return now.besideSeat === false ? now : false;
+      }, { timeout: 20_000, interval: 500 });
+
+      check("约 10 秒后那条气泡从座位旁退出", exited.besideSeat === false);
+      check("退出之后它仍然留在公开时间线里（退出不是删历史）",
+        exited.inTimeline === true, JSON.stringify(exited));
+    }
     // ---- 7. 连续多手：筹码跨手结转 ----
     // 守恒量是「各席筹码 + 底池」，不是各席筹码。
     //

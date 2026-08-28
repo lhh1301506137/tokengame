@@ -389,6 +389,63 @@ code.invite {
 .hidden-note { color: var(--muted); font-size: 12px; font-style: italic; }
 .bubble[data-hidden="false"] .hidden-note { display: none; }
 
+/*
+  座位旁气泡。与底部时间线里的 .bubble 是两套类名，刻意不复用：
+  两者的几何约束相反——时间线可以任意长，座位旁必须有界，因为它占的是牌面旁边的位置。
+  共用一套类名会让「改窄座位旁」顺手把时间线也改窄。
+
+  三条冗余通道在这里同样成立：左边框色、底色、AI 侧的文字徽标。
+*/
+.seat-speech {
+  list-style: none;
+  margin: 9px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  /*
+    有界高度。这是几何要求的承重点：气泡不设上限时，一席连说几句就会把这张卡片撑高，
+    而 .seats 是 grid，一格变高会顶开整行——桌面上把行动区推下去，窄屏上把公共牌推出
+    视口。给一个上限加滚动，撑高就停在卡片内部。
+
+    上限用 em 而不是 px：用户放大字号时上限跟着长，否则放大之后每条气泡只剩一行可读。
+  */
+  max-height: 11em;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.seat-speech[data-count="0"] { display: none; }
+
+.seat-bubble {
+  padding: 6px 9px;
+  border-radius: 8px;
+  border-left: 4px solid var(--player);
+  background: var(--bg);
+  font-size: 13px;
+  /*
+    退出前的淡出。--age 由投影给（毫秒），10 秒时接近全透明。
+    calc 里不用魔数 10000 的原因是它必须与 SEAT_SPEECH_TTL_MS 对上；对不上的表现是
+    气泡在还该显示的时候就淡到看不见，或者到点了还很清楚。这里写成变量以便一眼比对。
+  */
+  --ttl: 10000;
+  opacity: calc(1 - (var(--age, 0) / var(--ttl)) * 0.55);
+}
+.seat-bubble[data-speaker="SEAT_AI"] {
+  border-left-color: var(--ai);
+  background: var(--panel-2);
+  /* 结构位置也是一条通道：AI 的气泡缩进，与玩家的错开。 */
+  margin-left: 18px;
+}
+.seat-bubble-who { color: var(--text); font-weight: 600; font-size: 12px; }
+.seat-bubble-text {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.seat-bubble[data-late="true"] { border-style: dashed; }
+.seat-bubble[data-hidden="true"] { border-left-color: var(--line); background: transparent; }
+.seat-bubble[data-hidden="true"] .seat-bubble-text { display: none; }
+.seat-bubble[data-hidden="false"] .hidden-note { display: none; }
+
 .say-form { display: flex; gap: 9px; align-items: center; }
 .say-form input {
   flex: 1;
@@ -401,6 +458,24 @@ code.invite {
 }
 .counter { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .counter[data-over="true"] { color: var(--bad); font-weight: 700; }
+
+/*
+  窄视口。.seats 本来就是 auto-fit 网格，会自己塌成一列——所以这里要管的不是列数，
+  而是座位旁气泡在一列布局里的占比。
+
+  一列时每张座位卡片横跨整个宽度，11em 的气泡区在 1280 宽下只占卡片的一小块，在 420 宽
+  下却可能比底牌和筹码加起来还高，把下一席推出视口。项 2 要求「桌面/窄屏几何位置」都
+  成立，而「成立」在这里的含义是：气泡不把公共牌或行动区顶出可视范围。
+
+  做法是压低上限并保留滚动，而不是缩小字号。component-guidelines 那条说的是
+  「不以缩小到不可读的方式强塞」——把 13px 再往下调正是那件事。
+*/
+@media (max-width: 720px) {
+  .seat-speech { max-height: 7em; }
+  /* 窄屏下 AI 的缩进减半：18px 缩进在窄卡片上会把文本挤成每行两三个字。
+     缩进作为区分通道仍然存在，只是不必用同样的量。 */
+  .seat-bubble[data-speaker="SEAT_AI"] { margin-left: 10px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
