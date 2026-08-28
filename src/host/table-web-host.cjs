@@ -326,6 +326,10 @@ class TableWebHost {
       ok: true,
       session_token: session.token,
       seat_id: session.seat_id,
+      // 连接 id 明确回给浏览器。openSession 用会话令牌当首个连接 id，而
+      // postDisconnect 在缺参数时也回落到会话令牌——两处巧合相等，但依赖巧合会在
+      // 任一侧改动时断掉，而断掉的表现是「点了掉线却没掉」，很难查。
+      connection_id: session.first_connection_id,
       invite_code: created.invite_code,
       room_id: created.room?.room_id ?? null,
     });
@@ -342,6 +346,7 @@ class TableWebHost {
       ok: true,
       session_token: session.token,
       seat_id: session.seat_id,
+      connection_id: session.first_connection_id,
       room_id: joined.room?.room_id ?? null,
     });
   }
@@ -366,7 +371,7 @@ class TableWebHost {
     // 建会话就是建连接。不连的话 seat.ready 会被权威以 seat_not_connected 拒绝——
     // 那条拒绝是对的（掉线席位不能被别处代为 Ready），所以要做的是如实建连接，
     // 而不是绕过它。
-    await this.connect(session, token);
+    session.first_connection_id = await this.connect(session, token);
     // 适配器驱动只在真的有席位可驱动时才起表。没有会话时空转没有意义。
     this.startDriver();
     return session;
