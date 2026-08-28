@@ -235,8 +235,8 @@
     {
       "id": "conformance-passes-with-failures",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "  return { role, checks, failures, passed: failures.length === 0 };",
-      "replace": "  return { role, checks, failures, passed: true };",
+      "find": "  return { role, checks, failures, unverifiable, passed: failures.length === 0 };",
+      "replace": "  return { role, checks, failures, unverifiable, passed: true };",
       "note": "报告永远说通过。与本轮刚修的验收判定式是同一个缺陷（artifacts/negctl6 那份 passed:true），换了个地方长出来。",
       "test": "test/adapter-conformance.test.cjs"
     },

@@ -1,0 +1,120 @@
+{
+  "name": "seat-model-adapter",
+  "note": "阶段 2：真实的座位模型适配器。它是「这份合同可实现」的唯一证据——模拟器过了只说明套件自洽，而一份只有模拟器实现的合同整个就是本轮反复撞到的那种东西（一段永远走不到的检查）。这一批守三件事：权限边界没被适配器放宽（真人面命令必须本地拒绝，一个请求都不许发出去）；句柄与凭据在可检视状态里读不出来；主动唤醒不声明，所以协商必须给出降级路径，而声明了它就必须在报告里留下不可验证项——一份全绿的一致性报告不能被读成 Gate 5 通过。",
+  "test": "test/seat-model-adapter.test.cjs",
+  "mutations": [
+    {
+      "id": "declares-proactive-wake",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "const DECLARED_CAPABILITIES = Object.freeze([\"command_dispatch\"]);",
+      "replace": "const DECLARED_CAPABILITIES = Object.freeze([\"command_dispatch\", \"proactive_wake\"]);",
+      "note": "把一个未验证的能力声明成已具备。协商结果据此不给降级路径，宿主不轮询，牌局静默停住——而停住读不出是在等模型还是已经死了。"
+    },
+    {
+      "id": "claims-seat-handle",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "  get holdsSeatHandle() {\n    return false;\n  }",
+      "replace": "  get holdsSeatHandle() {\n    return true;\n  }",
+      "note": "模型面声明持有句柄。句柄代表该席的行动能力，两份合同分开的全部意义就在这一行。"
+    },
+    {
+      "id": "inspectable-leaks-handles",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "      tracked_id_count: this.surface.issued.size,",
+      "replace": "      tracked_ids: [...this.surface.issued.keys()],",
+      "note": "可检视状态报出 id 原文而不是数目。这一侧的 id 不是秘密，但同一个写法用在真人面就是把句柄写进日志——本轮刚在验收产物里修过同一类问题。"
+    },
+    {
+      "id": "no-local-face-check",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    if (!commandsForRole(this.role).includes(command)) {",
+      "replace": "    if (false) {",
+      "note": "越界命令不在本地拦。ModelCommandSurface 仍会拒，但那已经是在 makeRequest 之后——靠核心兜的话，一次拒绝也要先把请求发出去，而那条请求带着的正是模型不该有的权限。"
+    },
+    {
+      "id": "local-rejection-counts-as-degraded",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "      return errorEnvelope(error?.code ?? \"unknown_error\", 400, error?.details);",
+      "replace": "      this.state = this.state === \"released\" ? this.state : \"degraded\";\n      return errorEnvelope(error?.code ?? \"unknown_error\", 400, error?.details);",
+      "note": "本地拒绝算成降级。「适配器刚失败过」这个状态就此失去意义，而宿主正是靠它决定要不要退回轮询。"
+    },
+    {
+      "id": "transport-failure-not-degraded",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "      if (this.state === \"negotiated\" || this.state === \"bound\") {\n        this.state = nextLifecycleState(this.state, \"degraded\");\n      }",
+      "replace": "      if (false) {\n        this.state = nextLifecycleState(this.state, \"degraded\");\n      }",
+      "note": "核心失败后不进 degraded。宿主读不出「刚失败过」，于是不会退回轮询。"
+    },
+    {
+      "id": "degraded-never-recovers",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    if (this.state === \"negotiated\" || this.state === \"degraded\") {\n      this.state = nextLifecycleState(this.state, \"bound\");\n    }\n    return okEnvelope(inner.body?.result ?? null, inner.status ?? 200);",
+      "replace": "    if (this.state === \"negotiated\") {\n      this.state = nextLifecycleState(this.state, \"bound\");\n    }\n    return okEnvelope(inner.body?.result ?? null, inner.status ?? 200);",
+      "note": "一次网络抖动之后永远停在 degraded。degraded 不是终态，卡在那里等于这一席再也不动了。"
+    },
+    {
+      "id": "release-keeps-issued-ids",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    this.surface.issued.clear();",
+      "replace": "    this.negotiation = this.negotiation;",
+      "note": "释放不清一次性 id。下一个实例复用同一张表时，一个陈旧映射会帮一条早该失效的 turn_id 成立——这种残留只在复用时才露头。"
+    },
+    {
+      "id": "release-throws-on-repeat",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    if (this.state !== \"released\") this.state = nextLifecycleState(this.state, \"released\");",
+      "replace": "    this.state = nextLifecycleState(this.state, \"released\");",
+      "note": "重复释放抛错。用户关页面之后连接租约又超时，两条路都会调它——清理路径自己变成一个错误来源。"
+    },
+    {
+      "id": "usable-after-release",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    if (this.state === \"released\") {\n      throw new ContractError(\"illegal_lifecycle_transition\", { from: \"released\", command });\n    }",
+      "replace": "    if (false) {\n      throw new ContractError(\"illegal_lifecycle_transition\", { from: \"released\", command });\n    }",
+      "note": "释放后还能发命令。而释放要删的正是 web session、托管绑定与凭据。"
+    },
+    {
+      "id": "callable-before-negotiation",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    if (this.negotiation === null) {\n      throw new ContractError(\"required_capability_missing\", {\n        command,\n        reason: \"not_negotiated\",\n      });\n    }",
+      "replace": "    if (false) {\n      throw new ContractError(\"required_capability_missing\", {\n        command,\n        reason: \"not_negotiated\",\n      });\n    }",
+      "note": "没协商就能发命令。「缺了什么该怎么退」这个问题从来没问过。"
+    },
+    {
+      "id": "core-error-loses-code",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "        body: { code: error?.code ?? \"core_request_failed\", details: error?.details },",
+      "replace": "        body: { details: error?.details },",
+      "note": "核心失败时丢掉错误码。信封里 code 落到兜底值，而错误分类是适配器唯一该分支的东西。"
+    },
+    {
+      "id": "conformance-wake-unverifiable-not-recorded",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "      unverifiable.push({\n        capability: \"proactive_wake\",",
+      "replace": "      [].push({\n        capability: \"proactive_wake\",",
+      "note": "声明了主动唤醒却不留不可验证项。于是一份全绿的一致性报告读起来像「全都验过了」，而 Gate 5 从来没跑过。这一条与本轮刚修的验收判定式是同一个缺陷类，换了个地方长出来。",
+      "test": "test/seat-model-adapter.test.cjs"
+    },
+    {
+      "id": "constructor-accepts-missing-dispatch",
+      "file": "src/host/seat-model-adapter.cjs",
+      "find": "    if (typeof dispatch !== \"function\") {\n      throw new ContractError(\"invalid_field\", { field: \"dispatch\" });\n    }",
+      "replace": "    if (false) {\n      throw new ContractError(\"invalid_field\", { field: \"dispatch\" });\n    }",
+      "note": "缺 dispatch 也能构造。ModelCommandSurface 查不到它（它收到的 request 永远是那个闭包），所以真正的失败会推迟到第一次调用时，而那时的报错指向闭包内部，读不出「宿主没接上」。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "real-proactive-wake",
+      "reason": "适配器声明的 proactive_wake 是不是真的，这一批证明不了，一致性套件也证明不了——它只验内部一致性。所以套件在声明该能力时往报告里写一条 unverifiable，上面 conformance-wake-unverifiable-not-recorded 守的就是那条痕迹。真实 Gate 5 保留为未验证，实机清单（含每一步是否需要用户点击）见 docs/HOST-ADAPTER-CONTRACT.md。"
+    },
+    {
+      "id": "host-command-adapter",
+      "reason": "真人面适配器本轮只有合同与一致性套件，没有独立实现——现有的 table-web-host.cjs 是浏览器宿主的协调器，它同时承担 UI 与 HTTP 服务，拆成 HostCommandAdapter 会动到已闭合的单栈牌桌。等 Codex 裁决两份合同的节点划分之后再做，不在本轮擅自重构。"
+    },
+    {
+      "id": "duplicate-custody-check",
+      "reason": "适配器构造函数曾经也查一遍 custody，与 ModelCommandSurface 报同一个码同一个字段（invalid_field / custody）。一次变异存活证明那份检查不可观测：两条路径的可见结果完全相同，只有异常类名不同，而没有任何调用点按类名分支。已删掉那份重复检查，而不是补一条钉类名的断言——与本轮删掉的 sessions.has、!capSpec.required 两处死代码同类。"
+    }
+  ]
+}

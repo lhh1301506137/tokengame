@@ -25,6 +25,9 @@ const {
 async function runConformance(makeAdapter, { role } = {}) {
   const checks = [];
   const failures = [];
+  // 不可验证项。既不是通过也不是失败：套件够不到的地方要在报告里留下痕迹，
+  // 否则一份全绿的报告读起来像「全都验过了」。
+  const unverifiable = [];
 
   function record(name, ok, detail = "") {
     checks.push({ name, ok, detail });
@@ -43,13 +46,13 @@ async function runConformance(makeAdapter, { role } = {}) {
 
   if (typeof makeAdapter !== "function") {
     record("提供了适配器工厂", false, `收到 ${typeof makeAdapter}`);
-    return { role: role ?? null, checks, failures };
+    return { role: role ?? null, checks, failures, unverifiable, passed: false };
   }
   const commands = commandsForRole(role);
 
   // ---- 协商 ----
   const adapter = await attempt("能构造适配器", async () => makeAdapter());
-  if (adapter === undefined) return { role, checks, failures };
+  if (adapter === undefined) return { role, checks, failures, unverifiable, passed: false };
 
   record("暴露 role", adapter.role === role, `role=${adapter.role ?? "（无）"}`);
   record("初始生命周期状态是 created",
@@ -74,6 +77,18 @@ async function runConformance(makeAdapter, { role } = {}) {
       .find((entry) => entry.capability === "proactive_wake");
     if (declaredWake) {
       record("声明了主动唤醒就不该出现在降级清单里", wakeDegradation === undefined);
+      // 本套件查不了这个声明是不是真的：它只看内部一致性，而「收到权威事件后无需点击就能
+      // 启动一次 follow-up」只有真实宿主答得出。所以在报告里显式记一条不可验证项——
+      // 一份全绿的一致性报告绝不能被读成 Gate 5 通过。
+      //
+      // 记成 unverifiable 而不是 failure：适配器声明它并不违规（某个宿主真有这个能力时
+      // 就该声明）。判成失败会逼人为了让套件绿而少声明一项，那是更坏的结果。
+      unverifiable.push({
+        capability: "proactive_wake",
+        reason: "本套件只验内部一致性。无点击主动唤醒只有真实宿主实机能证实，"
+          + "SAME_VISIBLE_TASK_SPIKE_V1 尚未执行，两个宿主都未验证。",
+        gate: "Gate 5",
+      });
     } else {
       record("没声明主动唤醒时降级清单点明退回轮询",
         wakeDegradation?.degrade_to === "polling",
@@ -219,7 +234,7 @@ async function runConformance(makeAdapter, { role } = {}) {
       "released 是终态：允许回头就得回答「回来时凭据从哪来」");
   }
 
-  return { role, checks, failures, passed: failures.length === 0 };
+  return { role, checks, failures, unverifiable, passed: failures.length === 0 };
 }
 
 module.exports = { runConformance };
