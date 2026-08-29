@@ -540,6 +540,23 @@ plan_tree:
           mutation_gate: 370_killed_0_survived_0_skipped_GATE_PASS
           new_mutation_spec: request-envelope_12_of_12（首轮 8 杀 4 存活）
           browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+        conformance_report_structure_2026_08_29: >-
+          提交 31537dc。每项检查有稳定 check_id 与 pass|fail|not_run|unverifiable 四态；
+          必需项按角色登记，跑完逐条对账，漏记/重记/越界记账都是硬失败并进 failures。
+          passed 拆成 conformance_passed 与 fully_verified，不再导出叫 passed 的字段。
+          proactive_wake_actually_works 恒定登记且没有 pass 分支：声明了记 unverifiable，
+          没声明记 not_run，两个角色的 fully_verified 当前都是 false。
+          每个 BROKEN 变体声明 expect 并断言命中该 check_id——只断言 failures 非空的话，
+          out_of_face_passthrough 那种宽破坏被下游检查抓住就算过，而越界那条其实是空的。
+          请求信封在适配器层落成 dispatch_payload_envelope_ready：适配器只交
+          (command, params)，信封由传输构造，所以这一层验的是载荷构不构得出合规信封；
+          需要调用方提供 observeDispatch，缺了记 not_run，没有为可测性给适配器加出口。
+        measured_2026_08_29_d:
+          npm_test: 734_pass_0_fail_0_skipped
+          mutation_gate: 385_killed_0_survived_0_skipped_GATE_PASS
+          new_mutation_spec: conformance-report_15_of_15（首轮 5 杀 10 存活）
+          repaired_stale_finds: adapter-contract_34_of_34, seat-model-adapter_14_of_14
+          browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
         unverified_boundary: >-
           浏览器验收跑的是 core_transport=in_process，InProcessCoreClient 不构造信封，
           所以 209 项全过不构成 HTTP 传输已验证。远端那条另用一次性探针验过 4/4，

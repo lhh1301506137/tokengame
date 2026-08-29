@@ -1252,3 +1252,141 @@ review:
     - governance_plugin_json_says_web_table_adjudicates
   requires_user_acceptance: yes
 ```
+
+## 2026-08-29（承接）：一致性报告从「一串名字」改成可对账的结构
+
+### 「跳过」和「通过」长得一样，这一次的载体是数组长度
+
+旧报告是一个 `checks` 数组加一个 `failures` 数组。跳过一段检查的后果是数组短几条，
+而没有人数。上一轮那条 `assert.ok(report.checks.length >= 18)` 是唯一的防线，
+它挡得住整段消失，挡不住某一条被跳过——而单条被跳过恰恰是更常见的形状。
+
+改法是把必需项**先登记再对账**：按角色列出必需的 check_id，跑完逐条比对，
+漏记、重记、记了不属于本角色的都是硬失败。这样「没跑到」在报告里是一条
+带 `status: not_run` 的记录，不是数组里少一项。
+
+结构问题一并进 `failures` 而不是只留在 `report_integrity` 里。只放后者的话，
+一个只看 `failures` 的调用方会把一份缺了十条的报告读成通过——那正是要拆的形状，
+换个字段名重新长出来。
+
+### 要 check_id 的直接理由，不是「id 比名字规范」
+
+名字里带插值：`越界命令 ${outOfFace} 被本地拒绝` 在两个角色下是两个字符串。
+所以按名字断言就得按角色分支，跨报告也对不上账。
+
+更要紧的是变体测试的归因。断言 `failures.length > 0` 只能证明有东西红了，
+证明不了红的是该红的那一条。`out_of_face_passthrough` 就是活例：它把
+`assertUsable` 整个清空，于是连带破坏了释放语义，被「释放后不能再发命令」抓住——
+越界那一条其实一次都没红过，而报告读起来是「套件抓住了这项破坏」。
+
+现在每个变体声明 `expect`，测试断言那些 check_id 确实在 fail 列表里。
+同一处再加一条完整性断言：缺条时 `expect` 里的 id 当然也找不到，
+但原因是没记而不是没红，两者必须分得开。
+
+### passed 拆成两个，且不留同名字段
+
+旧的 `passed = failures.length === 0` 在 `unverifiable` 非空时仍然是 true。
+于是一份「Gate 5 根本没验」的报告，最显眼的那个字段写着通过。
+
+拆成 `conformance_passed`（实现遵守了合同）与 `fully_verified`（合同的每一条都真的验过）。
+刻意**不再导出一个叫 passed 的字段**：留一个兼容别名等于留一条最省事的读法，
+而所有调用方都会走那条。改名迫使每个调用点说出自己要的是哪一个——这次改动里
+三处调用点各自做了这个选择，没有一处是机械替换。
+
+`proactive_wake_actually_works` 恒定登记，且刻意没有 pass 分支：声明了记 unverifiable，
+没声明记 not_run。套件永远不该产出一条读起来像「主动唤醒验过了」的记录，
+哪怕适配器根本没声明这个能力。
+
+### 四条变异没有任何适配器能触发
+
+漏记、重记、结构问题不进 failures、未登记 id 被悄悄接受——这四种是**套件自己**的
+缺陷形状，没有任何适配器实现能让它们发生。所以「套件抓得住 BROKEN 变体」那一批
+测不到这里。
+
+为它们写了一个直接对着记账器构造的测试文件，并为此导出 `createLedger`。
+这不是为可测性给产品开口子：`test-support/adapter-conformance.cjs` 整体是测试机械。
+同一轮里我拒绝了给 `plugins/tokengame/mcp/server.cjs` 加导出，因为那是产品面——
+两处的判断依据是同一条，落点不同。
+
+### 又在自己刚写的检查里找出两处不会红
+
+请求载荷那条原先比序列化后的字符串。而 `JSON.stringify` 在**两侧**都会丢掉函数属性，
+所以 `{a:1, f(){}}` 和它的往返结果序列化出来完全相同，那条断言恒成立。
+变异 `unserializable_dispatch_params` 指出来的，不是审读发现的。改为比键的数目。
+
+紧接着补的那条逐个比成员的断言随即成了新的永不会红项：JSON 往返只丢键、
+不新增也不改名，所以等长子集必然是同一集合，数目那条已经先拦下了。
+删掉，而不是留着代码再配一条 `excluded`——留着的话下一个读代码的人会以为它在守什么。
+
+### 请求信封在适配器层的落点由结构决定，不由计划决定
+
+C 阶段的计划写着「D 里把请求信封检查加进一致性套件」。实际结构不允许照字面做：
+适配器交给传输的是 `dispatch(command, params)` 两个位置参数，里面没有信封；
+信封由传输构造。硬要在适配器层查信封，只能要求实现暴露它并不拥有的东西。
+
+落成的是 `dispatch_payload_envelope_ready`：验「交下去的载荷构不构得出合规信封」——
+命令非空且在本角色命令面里、参数是可序列化的普通对象、真的拿 `requestEnvelope`
+构一遍且三个字段对得上。这一条抓得住两种真实缺陷：适配器改写命令、
+参数带方法导致传输那一跳静默丢字段。两者都各配了一个 BROKEN 变体。
+
+```yaml
+review:
+  date: 2026-08-29
+  commit: 31537dc
+  scope: D_conformance_suite
+  closed:
+    - id: D1_check_id_and_status
+      statuses: [pass, fail, not_run, unverifiable]
+      required_checks_registered_per_role: true
+      integrity_checks: [missing, duplicated, unknown]
+      integrity_also_in_failures: true
+      why: 只留在 report_integrity 里的话，只看 failures 的调用方仍会读成通过
+      early_return_now_marks_rest_not_run: [no_factory, construct_threw]
+      why_check_id_not_name: 名字里带插值，跨角色是两个字符串，跨报告对不上账
+    - id: D2_conformance_passed_vs_fully_verified
+      conformance_passed: no_fail_and_integrity_ok
+      fully_verified: conformance_passed_and_no_unverifiable_and_no_not_run
+      passed_field_removed: true
+      why_no_alias: 留同名别名等于留一条最省事的读法，所有调用方都会走那条
+      proactive_wake_check: 恒定登记且无 pass 分支（声明→unverifiable，未声明→not_run）
+      fully_verified_both_roles: false
+    - id: D3_broken_variants_assert_check_id
+      every_variant_declares_expect: 16
+      new_variants: [rewrites_dispatch_command, unserializable_dispatch_params]
+      why: out_of_face_passthrough 曾被下游检查抓住，越界那条其实是空的
+    - id: C2_leftover_request_envelope_in_conformance
+      landed_as: dispatch_payload_envelope_ready
+      why_not_literal_envelope: adapter 交的是 (command, params) 两个位置参数，信封在传输层
+      needs_caller_hook: observeDispatch，缺了记 not_run
+      refused: 给适配器加导出或后门以便查信封
+  measured:
+    npm_test: 734_pass_0_fail_0_skipped
+    mutation_gate: MUTATION_TOTAL=385 KILLED=385 SURVIVED=0 SKIPPED=0 GATE=PASS
+    new_mutation_spec: conformance-report_15_of_15
+    conformance_report_first_run: 5_killed_10_survived
+    repaired_stale_finds: [adapter-contract_8_entries, seat-model-adapter_1_entry]
+    new_test_file: test/conformance-report-integrity.test.cjs_8_of_8
+    adapter_conformance_tests: 55
+    browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+  own_defects_found_by_mutation_not_by_reading:
+    - 请求载荷检查比序列化字符串，而两侧都丢函数属性，断言恒成立
+    - 补上的逐个比成员断言随即成为永不会红项，删掉而非配 excluded
+    - rewrites_dispatch_command 起初改写成 room.create，那在真人面里合法，于是那一侧抓不到
+  four_mutations_no_adapter_can_trigger:
+    - integrity-ignores-missing
+    - integrity-ignores-duplicates
+    - integrity-not-in-failures
+    - unknown-check-id-tolerated
+    killed_by: test/conformance-report-integrity.test.cjs（直接对记账器构造）
+    required_export: createLedger
+    why_acceptable: adapter-conformance.cjs 整体是测试机械；同轮拒绝了给 MCP server 加导出，判断依据同一条
+  unverified_boundaries:
+    - gate_5_proactive_wake_still_unverified
+    - fully_verified_false_for_both_roles_by_construction
+  next:
+    - E_host_command_reference_adapter_with_characterization_tests
+    - E_claude_host_adapter_browser_free_parts
+    - governance_policy_epoch_authority_side
+    - governance_plugin_json_says_web_table_adjudicates
+  requires_user_acceptance: yes
+```
