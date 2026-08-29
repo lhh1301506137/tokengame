@@ -59,6 +59,26 @@ test("SeatModelAdapter 没有接进任何运行路径——它是参考实现", 
     + "同时把文档里的「参考实现」改成「已接入」——两件事要一起做");
 });
 
+// 真人侧同一句话。写成一条测试而不是只写在提交信息与计划树里：一句「零个构造点」放在散文
+// 里，下一次有人真的接上它时不会有任何东西变红，于是文档继续说「参考实现」而代码已经是
+// 产品路径——本轮反复在修的正是这类「说的与做的对不上，而没有任何东西对账」。
+test("HostCommandAdapter 也没有接进任何运行路径——它同样是参考实现", () => {
+  const constructed = RUN_PATH_FILES.filter(
+    (parts) => /new\s+HostCommandAdapter\b/.test(code(read(...parts))));
+  assert.deepEqual(constructed.map((p) => p.join("/")), [],
+    "如果它真的接进了运行路径，这条断言就该改成正向断言，"
+    + "同时把提交信息与计划树里的「参考实现」改成「已接入」——两件事要一起做");
+});
+
+test("TableWebHost 仍直接持有 custody 与 core，没有改成经 HostCommandAdapter 走", () => {
+  // 上一条的正面。少了这一条，上一条读起来像「真人面根本没有实现」，而那是错的：
+  // 真人面的产品实现就是 TableWebHost 自己，参考适配器与它并存。
+  const host = code(read("src", "host", "table-web-host.cjs"));
+  assert.match(host, /new SeatCustody\(/, "牌桌应当自己持有托管层");
+  assert.match(host, /this\.custody\.inject\(/, "牌桌应当自己调托管层的注入");
+  assert.doesNotMatch(host, /HostCommandAdapter/);
+});
+
 test("MCP 服务端直接持有 ModelCommandSurface，绕过 SeatModelAdapter", () => {
   // 这一条是上一条的正面：不是「谁都没接」，而是「接的是更下面那一层」。
   // 少了这一条，上一条读起来像「模型网关根本没人用」，而那是错的。

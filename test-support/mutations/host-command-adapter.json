@@ -135,7 +135,20 @@
       "find": "    if (typeof handle !== \"string\" || handle === \"\") {",
       "replace": "    if (false) {",
       "note": "收下空句柄：seat_handle_count 报 1 而那张句柄解析不出任何席位，表现是「明明记着一张却什么都发不出去」。"
+    },
+    {
+      "id": "reference-adapter-wired-into-product",
+      "file": "src/host/table-web-host.cjs",
+      "find": "const { SeatCustody } = require(\"./seat-custody.cjs\");",
+      "replace": "const { HostCommandAdapter } = require(\"./host-command-adapter.cjs\");\nconst { SeatCustody } = require(\"./seat-custody.cjs\");",
+      "note": "把参考适配器接进产品文件。这一条不是在防「接上它」——将来真要接是合法的裁决——而是在防「接上了而文档还写着参考实现」。方向必须是变异产品、由 integration-truth 那条对账杀掉；反过来变异测试文件里的断言永远杀不掉，因为削弱后的断言自己就是绿的。",
+      "test": "test/adapter-integration-truth.test.cjs"
     }
   ],
-  "excluded": []
+  "excluded": [
+    {
+      "id": "integration-truth-assertion-weakened",
+      "note": "不收：变异对象若是 test/adapter-integration-truth.test.cjs 里的断言本身，把它换成 assert.ok(true) 之后跑同一个文件必然是绿的——一个测试杀不掉自己身上的削弱。这条边界改用上面那条反向变异覆盖，并另用一次双向手测确认过（给产品加上 require 后该断言变红，撤销后 8/8 复绿，git diff 确认字节复原）。"
+    }
+  ]
 }
