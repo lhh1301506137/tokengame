@@ -684,9 +684,46 @@ plan_tree:
         - TG-EU-HOST-ADAPTER-CONTRACT
       status: blocked
       unit_kind: host_adapter
-      summary: Claude 侧宿主适配器。按用户指令暂缓：当前会话在终端 Claude Code 内，没有 Claude Desktop / Cowork 界面，跑不了实机门禁，先写会积累一堆无法验证的代码。
+      summary: Claude 侧宿主适配器。适配器本体仍暂缓：当前会话在终端 Claude Code 内，没有 Claude Desktop / Cowork 界面，跑不了实机门禁，先写会积累一堆无法验证的代码。
       blocking_reason: 本环境无法执行真实桌面探针；实机 Gate 5 保留为明确未验证，只提供可执行清单。
-      claim_limit: 未开始且不得声称 Claude Cowork 已通过任何门禁。
+      browser_free_part_done_2026_08_29:
+        commit: 509417d
+        what: >-
+          这一侧真正与宿主无关、又只有这一侧才逼得出来的那一条：能力不确定时的诚实协商。
+          Claude 侧的能力本来就不确定（本环境跑不了实机门禁），而「不确定时不声明」此前只写在
+          每个适配器自己的 DECLARED_CAPABILITIES 里，合同从不检查——与 policy epoch 同形：
+          规则只在记得它的地方成立。两份参考适配器都恰好做对了，所以没有任何测试要求过。
+        why_it_matters_not_cosmetic: >-
+          negotiate 返回的 degradations 是宿主决定要不要轮询的唯一依据。声明了 proactive_wake，
+          polling 就不在清单里，宿主不轮询，而那个能力实际上并不存在——牌局停在某一席上，
+          谁都不知道是在等模型还是已经死了。这正是 CAPABILITIES 那张表自己写着的后果。
+        enforcement: >-
+          negotiate 按 verified_on_any_host 拒收，码 capability_not_verified（归 invalid_request：
+          重试同一份声明不会变好，改声明才行）。按字段走不写死名字——写死的实现在下一个
+          未验证能力加进来时不会红，而它同样会被静默接受。
+        self_retiring: >-
+          判据是「至今没有任何宿主验证过它」，不是「你这个宿主做不到」。实机 Gate 5 通过之后
+          把标志翻成 true，声明立刻合法。所以它不与旧设计那条顾虑冲突（判成失败会逼人为了让
+          套件绿而少声明一项）：没有人会因此少声明一项自己真有的能力。
+        three_assertions_intentionally_reversed: >-
+          旧版靠声明 proactive_wake 去到达「合规但被标注」那一格，而那个组合现在协商就过不去。
+          换的理由是后果不对称：标注在报告里，而轮询决定在宿主里，一份被标注的报告挡不住
+          宿主不轮询。逐条理由写在测试里。
+        suite_side_defence_kept_and_pinned: >-
+          套件不要求适配器走 contract.negotiate()，所以一个自己拼 negotiation 的适配器能绕过
+          合同的拒收，那时套件里那条 unverifiable 就是最后一道。用手写 rogue 适配器站在那个
+          条件上——不站的话该分支在拒收之后没有到达路径，而没有到达路径的分支与正常工作的
+          分支读起来一模一样（变异 conformance-wake-unverifiable-not-recorded 正是这样先存活的）。
+        measured:
+          capability_honesty_tests: 8_of_8
+          red_on_old_code: 5
+          new_mutation_spec: capability-honesty_8_of_8
+          npm_test: 789_pass_0_fail_0_skipped
+          mutation_gate: 438_killed_0_survived_0_skipped_GATE_PASS
+          browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+      claim_limit: >-
+        适配器本体未开始，不得声称 Claude Cowork 已通过任何门禁。已完成的只是「能力不确定时
+        诚实降级由合同强制」这一条，它没有让 Gate 5 前进一步，也不构成任何 Claude 侧实机证据。
     - id: TG-EU-PROACTIVE-WAKE-SPIKE
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies: []

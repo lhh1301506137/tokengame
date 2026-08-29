@@ -1568,3 +1568,83 @@ review_2026_08_29_host_command_adapter:
     - E_claude_host_adapter_browser_free_parts
   requires_user_acceptance: yes
 ```
+
+## 2026-08-29（承接）：能力不确定时的诚实协商，由合同强制而不是靠自觉
+
+结论：Claude 侧适配器本体仍缺外部条件，但那一侧逼出了一条与宿主无关的真缺陷并已闭合。
+`negotiate()` 此前接受任何能力声明，包括 `proactive_wake`——一项在两个宿主上都未验证的能力。
+「绝不声明它」这条规则只写在每个适配器自己的 `DECLARED_CAPABILITIES` 里，而合同从不检查。
+
+这与本轮开头那处 policy epoch 是同一个形状：**规则只在记得它的地方成立**。两份参考适配器都
+恰好做对了，于是没有任何测试要求过这件事。而「恰好做对」和「被强制做对」在源码里读起来一样。
+
+后果不是「多了一条声明」。`negotiate()` 返回的 `degradations` 是宿主决定要不要轮询的唯一依据：
+声明了 `proactive_wake`，`polling` 那一条就不在清单里，于是宿主不轮询，而那个能力实际上并不
+存在。表现正是 `CAPABILITIES` 那张表自己写着的那件事——牌局停在某一席上，谁都不知道是在等
+模型还是已经死了。
+
+这一轮换掉了一段**有理由的**旧设计，所以两边都得记下来。旧设计是「声明了就记 unverifiable，
+报告仍判合规」，理由写在当时的注释里：判成失败会逼人为了让套件绿而少声明一项自己真有的能力。
+那个顾虑是真的。它不适用于新检查，因为新检查的判据不是「你这个宿主做不到」，而是「至今没有
+任何宿主验证过它」——真有一次实机 Gate 5 通过、标志翻成 `true` 之后，声明立刻合法。这道检查
+会自己退休。
+
+```yaml
+review_2026_08_29_capability_honesty:
+  commit: 509417d
+  baseline_before: ea05b2f
+  entry_point: >-
+    Claude 侧适配器的可验证部分。那一侧的能力本来就不确定（本环境没有 Desktop / Cowork），
+    而不确定时唯一诚实的做法是不声明——「不声明」不能靠适配器作者自觉。
+  defect:
+    what: negotiate 接受任何能力声明，包括 verified_on_any_host 为假的
+    same_shape_as: policy epoch——规则只写在记得它的地方，权威侧不检查
+    why_no_test_caught_it: 两份参考适配器都恰好做对了，而「恰好做对」与「被强制做对」在源码里读起来一样
+    the_flag_had_exactly_one_reader: 一条断言它自己值为 false 的静态测试；negotiate 从不读它
+  consequence_is_not_cosmetic: >-
+    degradations 是宿主决定要不要轮询的唯一依据。声明了 proactive_wake 则 polling 不在清单里，
+    宿主不轮询，而那个能力并不存在——牌局停在某一席上，读不出是在等模型还是已经死了。
+  enforcement:
+    code: capability_not_verified
+    class: invalid_request
+    why_that_class: 重试同一份声明不会变好，改声明才行；与身份无关
+    keyed_on_field_not_name: >-
+      按 verified_on_any_host 走。写死 proactive_wake 的实现在下一个未验证能力加进来时不会红，
+      而它同样会被静默接受——测试里有一条静态断言禁掉写死的名字。
+  self_retiring:
+    criterion: 至今没有任何宿主验证过它，不是「你这个宿主做不到」
+    retirement: 实机 Gate 5 通过后把标志翻成 true，声明立刻合法
+    why_old_concern_does_not_apply: 没有人会因此少声明一项自己真有的能力
+    reminder_in_place: test/capability-honesty.test.cjs 最后一条在翻转时提醒把断言方向一起改
+  three_assertions_intentionally_reversed:
+    files: [test/adapter-conformance.test.cjs, test/seat-model-adapter.test.cjs]
+    old_path: 声明 proactive_wake 以到达「合规但被标注」那一格
+    why_reversed: 标注在报告里，而轮询决定在宿主里——一份被标注的报告挡不住宿主不轮询
+    recorded_where: 逐条理由写在各自测试的注释里，不只写在提交信息里
+  suite_side_defence_kept:
+    why_not_redundant: 套件不要求适配器走 contract.negotiate()
+    reachable_condition: 一个自己拼 negotiation 的 rogue 适配器绕过合同的拒收
+    future_condition: 标志翻真之后声明合法，而套件仍然验不了那个能力
+    survivor_that_forced_this: conformance-wake-unverifiable-not-recorded
+    why_it_survived: 我改掉了原来杀它的那条测试，而该分支在合同拒收之后没有到达路径
+    lesson_repeated_third_time: 没有到达路径的分支与正常工作的分支读起来一模一样
+  doc_updated_with_errata:
+    what: docs/HOST-ADAPTER-CONTRACT.md 的 unverifiable 一节
+    pinned_by_position_not_substring: >-
+      那句话不许出现在现行指导里，可以出现在勘误的引文里。一刀切禁掉整个文件会让勘误读不出
+      改了什么，而读不出改了什么的勘误等于没写。
+  measured:
+    capability_honesty_tests: 8_of_8
+    red_on_old_code: 5_of_8
+    new_mutation_spec: capability-honesty_8_of_8
+    seat_model_adapter_mutations: 14_of_14
+    adapter_conformance_tests: 57_of_57
+    npm_test: 789_pass_0_fail_0_skipped
+    mutation_gate: MUTATION_TOTAL_438_KILLED_438_SURVIVED_0_SKIPPED_0_GATE_PASS
+    browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+  unverified_boundaries:
+    - 这不是 Claude 宿主适配器本体，也没有让 Gate 5 前进一步
+    - 真实 Desktop / Cowork 探针仍缺外部条件，未执行，无任何 Claude 侧实机证据
+    - 两个角色的 fully_verified 仍为 false（proactive_wake 那一条永远够不到 pass）
+  requires_user_acceptance: yes
+```
