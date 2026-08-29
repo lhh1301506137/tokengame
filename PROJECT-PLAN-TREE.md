@@ -563,6 +563,58 @@ plan_tree:
           并双向验证（摘掉客户端版本会红成 contract_version_missing）；探针在 artifacts/、不入库。
           远端模式跑不了整套 209 项：run-table-core.cjs 不接受牌堆种子，确定性发牌那几条只对
           自带内核成立，没有为了让它通过去弱化断言。Gate 5 仍未验证。
+      governance_closure_2026_08_29:
+        commit: 4456a4c
+        policy_epoch_enforced_by_authority: >-
+          提交 4456a4c。公开范围同意的实质性判据改由 src/authority/policy-epoch.cjs 表达：
+          六个公开范围字段加绑房、桌规合成一个串，gate 与投影同一处推导。此前 limits 那一维
+          只在 src/host/table-view-model.cjs 里生效——limits_version 写进了确认记录却从不被
+          requireConfirmedScope 检查，绕过界面直接打命令的调用方在额度实质放宽之后仍握着旧同意
+          继续发言。同意门只在界面上成立等于没有同意门。
+        materiality_is_an_explicit_list: >-
+          version 与 bubbleDisplayMs 列在 POLICY_EXCLUDED_FIELDS 并各自写了理由：把 version
+          算进去会让任何版本号变动都让既有确认失效，同意门被刷成噪音；bubbleDisplayMs 只改本地
+          屏幕上停留多久，不改变公开了什么也不改变公开的量。playerRollingWindowMs 反过来算实质，
+          窗时长与条数合起来才是速率。
+        decided_reversal_not_regression: >-
+          test/scope-reconfirmation.test.cjs 中「版本串变化即要求重新确认」的断言方向被反转。
+          该文件开头本就把「权威侧要不要按版本串强制」记成待裁决项，并写明按版本串强制会让一次
+          非实质的版本号变动也让既有确认失效。裁决是不强制，改由 epoch 表达实质性。
+        projection_epoch_was_always_hollow: >-
+          同一轮修掉的连带缺陷：projection() 读 roomState() 顶层的 room_binding_id，而那些字段
+          收在 .room 里，于是投影报的 epoch 恒为 binding:-|rules:-。表现是界面每次渲染都要求
+          重新确认、理由永远是 new_room_binding，而权威侧照常放行、无任何错误日志。
+          policy-epoch 那组单元测试查不出它（直接拿真值调权威，两侧都对），查出它的是把 epoch
+          接进视图层之后既有断言变红。新增一条断言投影 epoch 与 gate epoch 同值且两段都非空壳。
+        fallback_pinned_at_its_own_condition: >-
+          三字段旧路径保留为权威不报 epoch 时的退路，并单独用一条把投影里的 policy_epoch 摘掉的
+          测试站在那个条件上。不这样做的话退路里的取值错误没有可观察后果——变异
+          host-reports-lifecycle-version 正是这样先从「代码不可达」里活着出去的。
+        plugin_entry_copy_had_the_adjudicator_backwards: >-
+          plugin.json 的 interface.longDescription 此前写着「牌局行动仍由独立四人 Web 牌桌裁决」。
+          裁决在宿主中立的权威内核，Web 牌桌只是真人操作它的界面之一。读者据此会以为换一个界面
+          就换了一个裁决者，于是「两个宿主是不是同一场牌局」的答案在装机页上是错的，而那正是
+          L2 章程点名要防的事。装机前唯一的说明此前没有任何检查看着它。
+          测试自身也补过一次：/真人的决定|由真人/ 的松散选项被「通常由真人操作」满足，
+          把一道硬边界读成一个习惯做法，变异 soften-human-decision 从这个缺口活着出去。
+        measured_2026_08_29_governance:
+          npm_test: 756_pass_0_fail_0_skipped
+          mutation_gate: 410_killed_0_survived_0_skipped_GATE_PASS
+          new_mutation_specs: policy-epoch_16_of_16, plugin-entry-copy_9_of_9
+          repaired_stale_finds: f3-public-scope-consent_14_of_14
+          target_tests: policy-epoch_18_of_18, plugin-entry-copy_5_of_5, scope-reconfirmation_14_of_14
+          red_on_old_code: policy-epoch_3, plugin-entry-copy_3, scope-reconfirmation_2
+          browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+        unverified_boundary_governance: >-
+          验收里那三条重新确认用的是改写 /api/view 的响应体，检验的是客户端渲染
+          （render -> renderScopeGate -> renderScopeReason），不是 epoch 判定本身。
+          epoch 端到端对得上这件事的证据是同意门在确认后确实收起——修复前的缺陷会让它永不收起——
+          而不是一条直接断言 epoch 值的浏览器步骤。
+        unidentified_flake_2026_08_29: >-
+          记录门禁通过之后的一次孤立失败：某一轮全量 npm test 出 755 过 1 失败，随后连续六轮
+          756/756。那一轮只抓了汇总行，没抓到失败用例名，所以这里不能说它是已知的 due-work
+          定时器抖动——那是猜测。如实记成「一次未定名的失败」，并保留为待查项：一次查不出名字的
+          红比一次已知的抖动更值得记，因为它连「是不是同一个」都还不知道。
       not_done:
         - id: host_command_adapter
           reason: >-

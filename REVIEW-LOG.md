@@ -1390,3 +1390,99 @@ review:
     - governance_plugin_json_says_web_table_adjudicates
   requires_user_acceptance: yes
 ```
+
+## 2026-08-29（承接）：把实质性改变写成 policy epoch 由权威侧强制，并修正入口文案的裁决者
+
+结论：两项治理真值闭合。公开范围同意的实质性判据此前只在界面上成立——`limits_version`
+写进了确认记录却从不被 `requireConfirmedScope` 检查，绕过界面直接打命令的调用方在额度实质
+放宽之后仍握着旧同意继续发言。`plugin.json` 的入口文案则把裁决权说成 Web 牌桌。两件事的共同
+形状是「承诺写在一处、执行在另一处，而两处不对账」。
+
+同意门只在界面上成立等于没有同意门。这不是措辞问题：`src/host/table-view-model.cjs` 里那一维
+判定得完全正确，`test/scope-reconfirmation.test.cjs` 也一直是绿的，因为它测的正是界面那一层。
+权威侧那半从来没有被任何测试要求过。
+
+`policy epoch` 把六个公开范围字段加绑房、桌规合成一个串，gate 与投影同一处推导，比较点只有
+一处。合成之前是逐维比对，而逐维比对漏掉了一维——将来加第七维时，「加了但某处没比」这个
+形状会重现，合成之后它没有地方重现。
+
+「实质」是显式清单而不是「任意配置变化」。`version` 与 `bubbleDisplayMs` 列进
+`POLICY_EXCLUDED_FIELDS` 并各自写了理由，而不是简单地不提它们：把 `version` 算进去会让任何
+版本号变动都让既有确认失效，同意门被刷成噪音；`bubbleDisplayMs` 只改本地屏幕上停留多久。
+`playerRollingWindowMs` 反过来算实质——窗时长与条数合起来才是速率，只看条数会漏掉「条数不变
+而窗缩短」这一路提速。
+
+这一轮反转了一条既有断言，而那是裁决不是回归。`test/scope-reconfirmation.test.cjs` 开头本就
+把「权威侧要不要按版本串强制」记成待裁决项，并写明按版本串强制会让一次非实质的版本号变动也让
+既有确认失效。裁决是不强制。反转的断言在提交信息、STATUS 与计划树里都标成了有意改动。
+
+```yaml
+review_2026_08_29_governance_closure:
+  commit: 4456a4c
+  baseline_before: b517cec
+  governance_item_1_policy_epoch:
+    defect: limits 那一维只在 src/host/table-view-model.cjs 生效，权威侧从不比对
+    consequence: 绕过界面的调用方在额度实质放宽之后仍握旧同意继续发言
+    why_tests_were_green: 既有测试测的正是界面那一层，权威侧那半从未被任何测试要求
+    fix: src/authority/policy-epoch.cjs，六个公开范围字段加绑房桌规合成一串，gate 与投影同一处推导
+    materiality_is_explicit_not_any_config_change:
+      excluded_with_reasons: [version, bubbleDisplayMs]
+      why_version_excluded: 算进去则任意版本号变动都让既有确认失效，同意门被刷成噪音
+      why_rolling_window_included: 窗时长与条数合起来才是速率，只看条数会漏掉窗缩短那一路
+    decided_reversal_not_regression:
+      file: test/scope-reconfirmation.test.cjs
+      was: 版本串变化即要求重新确认
+      now: 版本串变化本身不算实质，实质性由 epoch 表达
+      authority: 该文件开头记录的待裁决项，本轮裁决为不按版本串强制
+  connected_defect_found_by_wiring_not_by_reading:
+    what: projection() 读 roomState() 顶层的 room_binding_id，而那些字段收在 .room 里
+    symptom: 投影报的 epoch 恒为 binding:-|rules:-，界面每次渲染都要求重新确认、理由永远 new_room_binding
+    why_silent: 权威侧照常放行，没有任何错误日志；玩家看到一个点了也不消失的同意门
+    why_unit_tests_missed_it: policy-epoch 那组直接拿真值调权威，两侧都对
+    found_by: 把 epoch 接进视图层之后 scope-reconfirmation 的既有断言变红
+    new_assertion: 投影 epoch 与 gate epoch 同值，且两段都不是空壳（三段全缺也是合法字符串）
+  fallback_pinned_at_its_own_condition:
+    kept: 三字段旧路径，作为权威不报 epoch 时的退路
+    problem_after_wiring: epoch 分支优先，于是退路在生产路径上不可达，退路里的取值错误没有可观察后果
+    survivor_that_exposed_it: host-reports-lifecycle-version
+    why_it_survived: 不是因为它无害，而是因为没有测试站在它会造成伤害的那个条件上
+    new_test: 摘掉投影里的 policy_epoch，站在「内核不报这个字段」那个条件上
+    rejected_alternative: 直接删掉退路——那是在一条可能对更旧内核有意义的路径上改行为
+  governance_item_2_entry_copy:
+    was: 牌局行动仍由独立四人 Web 牌桌裁决
+    now: 牌局行动由宿主中立的权威内核裁决，Web 牌桌只是真人操作它的界面之一
+    why_it_matters: 读者据此以为换一个界面就换了一个裁决者，于是「两个宿主是不是同一场牌局」的答案在装机页上是错的
+    charter_reference: L2 点名要防的「不同房间命名空间或独立玩家身份」
+    previously_unwatched: 装机前唯一的说明此前没有任何检查看着它
+  own_defect_found_by_mutation_not_by_reading:
+    - 我自己写的 /真人的决定|由真人/ 松散选项被「通常由真人操作」满足
+    - 后果是一道硬边界被读成一个习惯做法，而「通常」意味着存在例外，这里没有例外
+    - 变异 soften-human-decision 从这个缺口活着出去；改为另外要求「发不出」并禁掉限定词
+    - 同类修正：缺字段占位符那条原先比「有值 vs 缺字段」，而真正的相撞是「缺字段 vs 显式空值」
+  stale_mutation_finds_repaired:
+    file: test-support/mutations/f3-public-scope-consent.json
+    count: 3
+    F3-04: 逐维比已换成比 epoch，改成「只比 epoch 的一部分」——掉绑房那一段
+    F3-05: 改成拒绝时不说哪一维变了，并把 test 指向断言 details.reason 的那个文件
+    F3-13: 原替换让对象字面量收不了口（INVALID 而非存活），改成整块替换
+  measured:
+    target_tests:
+      policy-epoch: 18_of_18
+      plugin-entry-copy: 5_of_5
+      scope-reconfirmation: 14_of_14
+    red_on_old_code: {policy-epoch: 3, plugin-entry-copy: 3, scope-reconfirmation: 2}
+    npm_test: 756_pass_0_fail_0_skipped
+    mutation_gate: MUTATION_TOTAL_410_KILLED_410_SURVIVED_0_SKIPPED_0_GATE_PASS
+    gate_first_run: 406_killed_1_survived_3_unevaluated_GATE_FAIL
+    new_mutation_specs: {policy-epoch: 16_of_16, plugin-entry-copy: 9_of_9}
+    browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+  unverified_boundaries:
+    - 验收里那三条重新确认改写的是 /api/view 响应体，检验客户端渲染而非 epoch 判定本身
+    - epoch 端到端对得上的证据是同意门在确认后确实收起（修复前会永不收起），不是直接断言 epoch 值的浏览器步骤
+    - gate_5_proactive_wake_still_unverified
+    - 门禁通过后出现过一次孤立失败（755 过 1 失败），随后连续六轮 756/756；那一轮没抓到用例名，故不指认为已知抖动
+  next:
+    - E_host_command_reference_adapter_with_characterization_tests
+    - E_claude_host_adapter_browser_free_parts
+  requires_user_acceptance: yes
+```

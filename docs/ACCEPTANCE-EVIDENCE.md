@@ -418,6 +418,25 @@ node test-support/table-web-acceptance.mjs artifacts/table-web-acceptance
 
 已验证：本地单栈产品闭环、四上下文隔离、控制台零错误。未验证：真实宿主适配器、无点击主动唤醒、四真人 45 分钟试玩签字、`PLAYABILITY_GATE_V1` 的自动化层（要求至少 10 手与故障矩阵、隐私金丝雀，本次只到第 3 手）、生产鉴权与远程部署。本机桥接鉴权仍是未闭合未知项 `U-TG-LOCAL-BRIDGE-AUTH`。
 
+### 勘误与补记（2026-08-29，提交 `4456a4c`）：重新确认那三条测的是渲染，不是判定
+
+§1c 的三条重新确认断言（`public_limits_changed` / `new_room_binding` / `table_rules_changed`）
+改写的是 `/api/view` 的响应体，随后检验客户端把理由渲染成了什么。它证明的是
+`render -> renderScopeGate -> renderScopeReason` 这条真实客户端路径，**不**证明服务端的判定
+本身正确——判定那一半由 `test/scope-reconfirmation.test.cjs` 在单元层钉住。原文已写明这一点，
+此处补记是因为同一段里另一句话已不成立。
+
+那句话是「`public_limits_changed` 是三者里唯一权威不强制的」。它在写下时是真的：权威侧
+`requireConfirmedScope` 当时只比对绑房与桌规，发言限制那一维只在视图层生效。2026-08-29 起
+权威侧按 `policy epoch` 强制公开范围额度，实质放宽之后 `confirmed` 会是 `false`。那段改写里
+仍写 `confirmed: true`，那是改写自己造的组合，用来检验「只看 `confirmed` 的渲染实现会漏掉
+带理由的那一路」，不是权威当下的语义。注释已按此更正，断言未变。
+
+同一轮里还有一件事值得记在验收证据里：epoch 端到端对得上的证据是**同意门在确认之后确实
+收起**（§1 与 §1c 各有一条），而不是任何一条直接断言 epoch 值的浏览器步骤。这条证据不是
+事后凑出来的——修复前的缺陷（投影读错嵌套层级，epoch 恒为空壳）会让那道门永不收起，于是
+那两条会在 15 秒超时处红。本轮 209/209、控制台错误 0、到第 13 手。
+
 ## TG-L3 四人牌桌垂直切片（2026-08-26，已替代范围）
 
 ### 自动化结果
