@@ -1126,3 +1126,129 @@ review:
     - policy_epoch_must_be_enforced_authority_side_not_ui_only
   requires_user_acceptance: yes
 ```
+
+## 2026-08-29（承接）：把请求信封接到真实路径，把合同版本号收成一处
+
+### 这一轮改的是「只在测试里成立的合同」
+
+前几轮找出的是「永远不会红的检查」，逐层往外：产品里、验收机械里、证据存储里、
+安全边界里。这一轮换了个方向——不是检查不会红，而是**合同只在纯函数测试里成立**。
+
+`requestEnvelope` 有完整实现、有测试、被文档写成协议的一部分，唯一的问题是
+**零个非测试调用方**。两个真实传输各自 `JSON.stringify({ command, params })`，
+线上从来没有过 `contract_version`。这类缺陷的隐蔽处在于：所有断言都是真的，
+helper 真的会构造正确的信封，测试真的在验它——只是没人用它。
+
+二选一里选接线不选删除，理由是版本号存在要回答的那句话。响应带版本、请求不带，
+意味着服务端没有任何办法察觉一个跑在别的合同上的客户端。E 阶段马上要来第二个适配器，
+那时这件事从「文档不准」变成「跨版本调试只能靠猜」。
+
+缺版本也拒，不当成「旧客户端」放行：放行等于让这条检查对任何从不带版本的客户端
+永远不会红——正好是前几轮一直在拆的那个形状。
+
+### 单一来源：源码断言钉不住，行为测试钉得住
+
+变异首轮 12 条里 4 条存活，全是一类：把常量抄成两份、或让传输自己拼
+`contract_version: 1`。这类写法**此刻什么都不坏**——两个数相等、形状也对、
+既有断言全绿。危险全在将来：下一次改版本号的人只会改一侧。
+
+顺手的答案是加一条源码断言，查 `require("../shared/contract-version.cjs")` 那行在不在。
+那钉的是文本：改成 `const CONTRACT_VERSION = 1;` 之后再把那行 require 留在文件里
+（哪怕不用），断言照样绿。
+
+改成把那唯一的来源换掉，看五处是否都跟着变。它测的是「值从哪儿来」，
+所以两类写法都会红，而正确的单一来源会过。逐条验过归因：四条变异各自被对应那条
+断言杀掉，不是被别的测试连带杀掉——这一步不能省，前几轮出过「杀是真的、
+归因是错的」。
+
+MCP 那侧 `coreRequest` 没有导出、也不收注入的 fetch。没有为可测性给产品加导出：
+它按 `TOKENGAME_COMMAND_ORIGIN` 决定打给谁，指向一个只负责记账的假核心就能看见
+落地字节。产品面不该为了被测而变宽。
+
+### 自己的测试里也有同一类问题
+
+写完发现 fake 版本号写死成 99/98/97：等版本号真的涨上去撞上其中一个，那条测试会在
+「fake 等于真值」的情况下继续全绿，而它要区分的恰恰是这两者。改成由真值加偏移算出。
+
+`await body()` 那条相反——实测杀不掉，且原因是结构性的而非疏漏：
+`const { X } = require(...)` 在加载那一刻取值，所有读版本都落在同步前缀里。
+没有为了让它变成「被覆盖」去造一条依赖还原时机的测试，那是为了杀变异而写测试。
+按前几轮 RNG 那两条的同一处理：连测得的数字一起写进 `excluded`。
+
+### 浏览器验收覆盖不到本轮改动，如实记下
+
+209 项全过，但 `core_transport=in_process`——而 `InProcessCoreClient` 直接调
+`surface.dispatch`，根本不构造信封。所以这份验收对本轮改的 HTTP 传输**零覆盖**，
+写成「浏览器验收通过所以传输没问题」就是把无关证据当成相关证据。
+
+远端那条另探：起真内核、Web 牌桌设 `TOKENGAME_COMMAND_ORIGIN`，确认
+`core_transport=http` 且过 HTTP 建房 200，再双向验证——把版本从客户端摘掉，
+探针红成 `contract_version_missing`。探针留在 `artifacts/`（已 gitignore），
+不入库也不计入门禁：它要起两个真进程、占两个端口，属于验收级不是单元级。
+
+远端模式跑不了整套 209 项：`run-table-core.cjs` 不接受牌堆种子，确定性发牌那几条
+断言只对自带内核成立。**没有为了让远端模式通过去弱化那些断言**——那会把上一轮
+刚补上的确定性覆盖拆掉。
+
+```yaml
+review:
+  date: 2026-08-29
+  commit: e6397c3
+  scope: C_contract_truth
+  closed:
+    - id: C1_wording
+      change: 措辞_两份合同_to_一套协议两个权限剖面
+      structural_change: none
+      note: ADAPTER_ROLES 本来就按对象身份引用，没有拷贝；关闭的是说法与结构不符
+    - id: C2_request_envelope
+      decision: wire_in_not_delete
+      why: 响应带版本请求不带，服务端无法察觉跨版本客户端；E 阶段第二个适配器在即
+      call_sites_before: 0_non_test
+      call_sites_after: [HttpCoreClient, mcp_coreRequest, core_entry_probe, remote_player]
+      gate_position: after_token_before_dispatch
+      missing_version: rejected_not_tolerated
+      constant_moved_to: src/shared/contract-version.cjs
+      why_not_authority_requires_contract: would_invert_dependency_direction
+      why_not_copy: same_reason_C1_forbids_copying_command_lists
+    - id: C3_gateway_vs_runtime
+      seat_model_adapter: reference_impl_zero_run_path_construction_sites
+      evaluate_wired_into: driveOnce
+      only_evaluate_impl: scripted_adapter_hardcoded_simulated_true
+      pinned_bidirectionally: test/adapter-integration-truth.test.cjs
+      doc_ban_scoped_to: status_table_not_whole_file
+  measured:
+    npm_test: 714_pass_0_fail_0_skipped
+    mutation_gate: MUTATION_TOTAL=370 KILLED=370 SURVIVED=0 SKIPPED=0 GATE=PASS
+    new_mutation_spec: request-envelope_12_of_12
+    request_envelope_first_run: 8_killed_4_survived
+    survivor_class: correct_today_drifts_tomorrow
+    survivors_killed_by: test/contract-version-single-source.test.cjs
+    attribution_verified_one_by_one: yes
+    new_test_files:
+      - test/adapter-integration-truth.test.cjs_6_of_6
+      - test/contract-version-single-source.test.cjs_5_of_5
+    browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+    remote_transport_probe: 4_of_4_and_reddens_when_version_dropped
+  own_defects_found_by_mutation_not_by_reading:
+    - hardcoded_fake_version_would_collide_with_real_version_someday
+    - four_survivors_showed_source_assertion_would_have_been_the_weak_answer
+  known_costs_recorded_with_numbers:
+    - id: single-source-helper-drops-await
+      measured: pass_5_fail_0_with_await_removed
+      reason: require_destructuring_captures_value_at_load_all_reads_in_sync_prefix
+      refused: writing_a_test_that_depends_on_restore_timing_just_to_kill_it
+  unverified_boundaries:
+    - browser_acceptance_runs_in_process_transport_so_covers_nothing_of_this_change
+    - remote_mode_cannot_run_full_209_no_deck_seed_in_run_table_core
+    - gate_5_proactive_wake_still_unverified
+  refused_to_weaken:
+    - deterministic_deck_assertions_to_make_remote_mode_pass
+    - product_export_added_just_to_make_mcp_transport_testable
+  next:
+    - D_conformance_suite_check_id_and_status_enum
+    - D_add_request_envelope_check_to_conformance_suite_same_file_rewrite
+    - E_host_command_reference_adapter
+    - governance_policy_epoch_authority_side
+    - governance_plugin_json_says_web_table_adjudicates
+  requires_user_acceptance: yes
+```

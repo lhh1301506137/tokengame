@@ -500,11 +500,13 @@ plan_tree:
           （player_id / seat_handle / authority_id，seat_credential 刻意不在其中）、生命周期迁移、
           能力协商。模型面适配器 SeatModelAdapter 已实现并过一致性套件。一致性套件配 14 个
           故意坏掉的变体，每个必须至少让一条检查变红。
-        two_contracts_rationale: >-
-          人类面（HostCommand/UI）与模型面（SeatModel）权力不同：人类面能确认公开范围、能 ready、
-          能下注，模型面一条都不能。合成一份意味着权限差别只能靠运行期检查表达，而那种检查漏一条
-          就是模型拿到了下注权限。ADAPTER_ROLES 按引用指向 HUMAN_COMMANDS / MODEL_COMMANDS，
-          不拷贝——拷贝会漂移。
+        two_permission_profiles_rationale: >-
+          措辞于 2026-08-29 更正：不是「两份合同」，而是一套 HostAdapter 协议加 host_command 与
+          seat_model 两个权限剖面。除 commands 之外信封、错误映射、身份层、生命周期、能力协商全部共享，
+          说成两份合同会让人以为要各自验证一遍，而一致性套件是同一批检查跑两个剖面。
+          真正必须分开的是命令清单：人类面能确认公开范围、能 ready、能下注，模型面一条都不能；
+          合成一张表意味着权限差别只能靠运行期检查表达，而那种检查漏一条就是模型拿到了下注权限。
+          ADAPTER_ROLES 按引用指向 HUMAN_COMMANDS / MODEL_COMMANDS，不拷贝——拷贝会漂移。
         host_neutrality_enforced_by_test: >-
           test/adapter-contract.test.cjs 扫源码，按词边界匹配 claude / codex / cowork / anthropic 四个词。
           唯一命中是 src/authority/table-store.cjs 里一个用户可见的牌桌显示名，文件带
@@ -516,6 +518,34 @@ plan_tree:
           npm_test: 644_pass_0_fail_0_skipped
           mutation_gate: 315_killed_0_survived_0_skipped_GATE_PASS
           new_mutation_specs: adapter-contract_34_of_34, seat-model-adapter_14_of_14, multi-hand-verdict_41_of_41
+      progress_2026_08_29:
+        commit: e6397c3
+        request_envelope_now_on_real_path: >-
+          requestEnvelope 此前零个非测试调用方，「每次请求都有信封」只在纯函数测试里成立。
+          两个传输（HttpCoreClient、MCP coreRequest）改为经它构造，服务端在令牌之后、派发之前
+          校验 contract_version，缺失也拒。版本号移到 src/shared/contract-version.cjs：
+          让权威层 require 合同层会倒转依赖方向，抄一份则会漂移。
+        single_source_needs_behavioural_test: >-
+          「抄一份数字」与「传输自己拼字面量」此刻无害（两数相等、形状也对），坏在下次改版本时
+          只有一侧跟着改，所以 4 条这类变异首轮全部存活。源码断言钉的是文本，不是来源。
+          test/contract-version-single-source.test.cjs 改掉那唯一的来源，看五处是否都跟着变——
+          测的是值从哪儿来。MCP 侧 coreRequest 未导出，用 TOKENGAME_COMMAND_ORIGIN 指向记账用的
+          假核心取落地字节，没有为可测性给产品开测试专用出口。
+        gateway_vs_runtime_pinned: >-
+          SeatModelAdapter 是参考实现，运行路径上零个构造点（MCP server 直接持 ModelCommandSurface）；
+          evaluate 确实接进了 driveOnce，但唯一实现是硬编码 simulated:true 的脚本适配器。
+          test/adapter-integration-truth.test.cjs 双向钉住，接线与文案哪一侧先动都会红。
+        measured:
+          npm_test: 714_pass_0_fail_0_skipped
+          mutation_gate: 370_killed_0_survived_0_skipped_GATE_PASS
+          new_mutation_spec: request-envelope_12_of_12（首轮 8 杀 4 存活）
+          browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+        unverified_boundary: >-
+          浏览器验收跑的是 core_transport=in_process，InProcessCoreClient 不构造信封，
+          所以 209 项全过不构成 HTTP 传输已验证。远端那条另用一次性探针验过 4/4，
+          并双向验证（摘掉客户端版本会红成 contract_version_missing）；探针在 artifacts/、不入库。
+          远端模式跑不了整套 209 项：run-table-core.cjs 不接受牌堆种子，确定性发牌那几条只对
+          自带内核成立，没有为了让它通过去弱化断言。Gate 5 仍未验证。
       not_done:
         - id: host_command_adapter
           reason: >-
