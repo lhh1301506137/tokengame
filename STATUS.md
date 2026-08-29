@@ -1,6 +1,6 @@
 # TokenGame 项目状态
 
-更新日期：2026-08-28
+更新日期：2026-08-29
 
 ## 初始化状态
 
@@ -224,6 +224,10 @@ project_intelligence:
         - "【2026-08-28 判定式可测性】8c/8d/9d 的判定原本写在 `.mjs` 里，而 `.mjs` 的逻辑单元测试装不进来——装不进来的判定式等于没有测试（上一轮「中止却判通过」正是这么漏过去的）。`chipConservation`/`degradationVerdict`/`handCoverage` 抽进 `test-support/acceptance-result.cjs`，`test/multi-hand-verdict.test.cjs` 39 条盯着，含盯调用点的静态断言"
         - "【2026-08-28 证据完整性修正】第 7 轮运行死在路由回调的未处理拒绝上，它绕过 `main` 的 `catch`，`finally` 不跑、`result.json` 写不出来，于是目录里留下的是上一轮那份——上一轮恰好通过的话，崩掉的运行看起来和通过一模一样（与 negctl6 同类，载体换成陈旧文件）。三处修：路由回调包 try 且吞下的错误由第 13 节结账、开跑前先删 `result.json`、加 `unhandledRejection` 处理器。负控实测：退出码 1、判定文件不留下、stderr 写明原因"
         - "【2026-08-28 如实记为缺口】边池分层在浏览器层不可观测：投影只给 `pot_total`（`src/host/table-view-model.cjs:456`），引擎算出的 `pots` 没进 `tokengame.table-view.v1`。没有写读 `undefined` 的断言（那种断言永远为真），由 `test/holdem-engine.test.cjs` 与 `test/cross-hand-stacks.test.cjs` 在单元层覆盖。是否投影出去列为待裁决项"
+        - "【2026-08-29 模型可见凭据边界】提交 `287f083`。三个模型可见出口（成功 result、核心错误 details、本地拒绝 details）此前各自净化，成功路径回显 `recovery_credential`，且 `adapter.surface.custody` 可从公开属性取到句柄与凭据映射。改为唯一托管净化 + `assertNoLeak`，命中秘密时**失败关闭**（返 `credential_leak`），不是打码后继续；`#custody`/`#dispatch`/`#surface`/`#issued` 改成真正的 JS 私有字段，不靠 `inspectableState`「选择不展示」。顺序是载荷：先扫后洗，反过来 `sanitizeResult` 会先把 `recovery_credential` 剥掉，扫描什么都找不到，于是上游缺陷被静默修好。字段名扫描收窄到键位（`\"field\":` 形式）——不收窄的话 `seat_identity_not_model_supplied` 这个成功拦截的 `details.field` **值**恰好是 `\"recovery_credential\"`，会被误判成泄漏，而把一次成功拦截读成泄漏会引人去删那份报告。本轮实测：`test/model-visible-credential-boundary.test.cjs` 26 项全过（只用合成秘密）；`credential-boundary` 变异 19/19 杀掉；`npm test` 670/670；`npm run gate` 334/334 GATE=PASS。55 节点对象图搜索：通向 custody 的路径无，对照组仍可取出。本地拒绝出口没有可构造的行为负例（`ModelSurfaceError.details` 只有三种形状、字段全是字面量、命令名在到达 `#surface.call` 之前已被拦），只有静态门禁存在性断言，限制写进测试与 `excluded`"
+        - "【2026-08-29 浏览器门禁根因修复】提交 `5235bf5`。B.1 三类证据都带 player/阶段/method/URL/status，新增「窗口外非 2xx/3xx 必须为 0」——补的是结构性盲区：浏览器不为 4xx 打控制台日志（fetch 拿到 403 是「成功收到响应」），只查控制台的脚本永远不会因为「请求发出去了但被拒」而红。豁免按语义不按文本。B.2 偶发 403 有三个来源：测试窗口竞态（证据按响应到达时刻归类，改为按发出时刻，用 WeakMap 记发出时的阶段与窗口状态）、离桌竞态（await 期间的轮询带着即将作废的凭据）、掉线竞态（更坏：`touchConnection` 对被摘掉的连接 id 会重新建连，那一跳轮询把刚刚的掉线撤销，保留窗根本没走；响应围栏挡不住，请求已经到了服务端）。两条产品竞态由「先 stopPolling 再发请求」修好；`refresh` 里刻意不中止上一次，重叠由 await 之后的围栏处理。双向验证：旧客户端 1 条 403 + 1 条控制台错误，新客户端 0 条。B.3 加确定性发牌（sfc32 + 拒绝采样，入口三道约束：只自带内核、只回环、启动报指纹不报原文）**还不够**——第一版种子正好让全下方赢，破产分支被稳定地跳过，而报告写着「确定性发牌，两次名单一致」；稳定缺失比随机缺失更坏。§9d 改成重复「短码全下、大码跟、其余弃」直到真有一席归零，预算用尽就红，失败收集到循环外一次性判定。本轮实测：`npm test` 698/698 fail 0 skipped 0；`npm run gate` MUTATION_TOTAL=358 KILLED=358 SURVIVED=0 SKIPPED=0 GATE=PASS；新增两个变异规格 deterministic-deck 9/9、poll-lifecycle-race 10/10，multi-hand-verdict 扩到 46/46；浏览器验收 **工作树连跑 3 次 + 全新无硬链接克隆连跑 3 次，六次全 EXIT=0、各 209 项全过、到第 13 手、名单完全一致**，破产分支六次都走到（第 2 轮归零 bob）。不再引用本轮之前的 644/644、315 个变异或 201 条断言作为当前实测"
+        - "【2026-08-29 顺带修掉两处永不会红的断言】六面骰那条均匀性检查查不出「拒绝采样退化成取模」：2^32 对 6 的偏差约 1.4e-9，比 5% 容差小九个数量级，也就是说删掉拒绝采样在那条下面永远绿。补一条上界取 3*2^30 的——拒绝采样下最低段占 1/3，取模下占 1/2，实测 33.3% 对 50.0%。另一处：四条 `xxxFailures` 断言原先只查串在文件里出现过，而每条 check 的 detail 里也有同一个三元，于是把条件位换成 `true` 仍然满足；改为断言 check 的**条件位**。两处都是变异存活指出来的，不是审读发现的"
+        - "【2026-08-29 记为已知代价】`deterministic-deck` 里两条变异杀不掉，且是实测而非推断：去掉 sfc32 的 12 次预热丢弃、把四个 FNV 起点改成同一个，相邻种子 1–64 各洗第一副牌的三项指标与基线无法区分（互不相同 64/64、前八张同位同牌 1.85%/1.81%/1.97%（随机期望 1.92%）、第一张用到的牌面 39–40/52）。原因是 `seedToState` 那轮额外搅拌已承担实际去相关，两者是第二道防线。留着代码但不为它们编阈值——那样的断言只会在改动无关代码时红。`poll-lifecycle-race` 十条中多数只由源码断言杀：`web/table/table.js` 是 classic script，没有测试能 require 它，行为侧兜底只有验收那条「窗口外非 2xx/3xx 为 0」。两处代价都写进各自 `excluded`"
         - "【2026-08-28 仍未验证】真实宿主 Gate 5（事件驱动主动唤醒）未通过，四真人 UAT 未做。本轮全部证据来自自动化，不能代替实机门禁；主动唤醒不得写成已验证"
       claim_limits:
         - 尚未证明当前 Codex 桌面会渲染插件 MCP UI

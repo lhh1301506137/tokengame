@@ -377,6 +377,11 @@ plan_tree:
         - "【2026-08-28 复开后实测】npm run gate：MUTATION_TOTAL=226 KILLED=226 SURVIVED=0 SKIPPED=0 GATE=PASS"
         - "【2026-08-28 复开后实测】按 2549474 全新 git clone 重跑（无 npm install，本仓库零依赖）：npm test 498/498、门禁 226/226 GATE=PASS、浏览器验收 150/150 控制台错误 0；抽查行尾均 LF"
         - "【2026-08-28 复开后实测】浏览器验收 artifacts/acc-item7-redact：150 条断言全过，控制台错误 0，四个隔离上下文，打到第 4 手，24 张截图。artifacts/ 被 .gitignore 忽略，该路径只在本机存在；判定数字誊在 docs/ACCEPTANCE-EVIDENCE.md，那才是记录在案的证据"
+        - "【2026-08-29 实测 5235bf5】npm test 698/698 pass、0 fail、0 skipped；npm run gate MUTATION_TOTAL=358 KILLED=358 SURVIVED=0 SKIPPED=0 GATE=PASS"
+        - "【2026-08-29 实测 5235bf5】浏览器验收 209 条断言全过、控制台错误 0、窗口外网络失败 0、到第 13 手：工作树连跑 3 次 + 全新无硬链接克隆连跑 3 次，六次 EXIT=0 且断言名单完全一致（用 artifacts/drift-diff.cjs 逐条比对多重集，不是只比条数）"
+        - "【2026-08-29 实测 5235bf5】新增变异规格 deterministic-deck 9/9、poll-lifecycle-race 10/10；multi-hand-verdict 由 41 扩到 46/46（新增 5 条盯破产循环）"
+        - "【2026-08-29 修掉的偶发】断网窗口关闭之后的 403 有三个来源，不是一个：测试窗口竞态（证据按响应到达时刻归类）、离桌竞态（await 期间那一跳轮询带着即将作废的凭据）、掉线竞态（touchConnection 对被摘掉的连接 id 会重新建连，那一跳轮询把刚掉的线接回去，保留窗根本没走）。第三条用响应围栏挡不住——请求已经到了服务端，只有顺序能修。双向验证：旧客户端 1 条 403，新客户端 0 条"
+        - "【2026-08-29 覆盖不再靠牌运】9d 的破产分支原先取决于摊牌，项数在 200/201 之间漂。加确定性发牌只解决了漂移，没解决覆盖：第一版种子正好让全下方赢，破产分支变成**稳定地**跳过。改成重复「短码全下、大码跟、其余弃」直到真有一席归零，预算用尽就红；六次运行都在第 2 轮归零 bob"
         - "【2026-08-28 复开后新增变异规格】connection-lease 16/16、voluntary-reveal 6/6、entry-consent-idempotency 11/11、scope-reconfirmation 12/12、view-model-degradation 7/7，全部 0 存活 0 未评估"
       commits:
         - 8ad8cac
@@ -396,6 +401,8 @@ plan_tree:
         - 959a29c
         - 2e00f01
         - af0865d
+        - 287f083
+        - 5235bf5
       acceptance_intent:
         - 用确定性 fake 宿主/模型适配器做自动化产品测试，不用假模型结果冒充真实宿主能力
         - 2～4 个隔离浏览器上下文验证，控制台错误必须为 0

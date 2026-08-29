@@ -866,3 +866,263 @@ review:
     - old_probe_stack_playwright_rerun
   requires_user_acceptance: yes
 ```
+
+## 2026-08-29：把模型可见凭据边界关到失败关闭，把浏览器门禁的偶发 403 修到根因
+
+两个闭环，两个原子提交：`287f083`（凭据边界）与 `5235bf5`（浏览器门禁）。
+
+这一节和前几节是同一个主题的延续。前几节找到的是产品里、验收机器里、证据存储里
+「永远不会红的检查」；这一节找到的是安全边界里的，以及**证据本身看不见一整类失败**。
+
+### 一、三个模型可见出口，各自净化，于是各自有漏
+
+`SeatModelAdapter` 有三条通往模型的出口：成功的 `result`、核心错误的 `details`、
+本地拒绝的 `details`。三条各自调净化，于是成功路径漏了 `recovery_credential`。
+
+用合成凭据复现，18 项里 5 过 13 失败。除了回显，还有一条更重的：
+`adapter.surface.custody` 可以从公开属性一路取到句柄与凭据映射——也就是说
+「适配器不把凭据交出去」成立，而「谁都拿不到托管」不成立。
+
+修法是把三条出口收到同一个 `#guarded` 上，命中秘密时**失败关闭**返 `credential_leak`，
+不是打码之后继续。打码继续等于把一次真实的泄漏降级成一条没人看的日志。
+
+顺序是载荷，不是风格：先 `assertNoLeak` 再 `sanitizeResult`。反过来的话
+`sanitizeResult` 会先把 `recovery_credential` 剥掉，扫描什么都找不到，于是上游的缺陷
+被静默修好——而下一次上游换个字段名泄漏时，这里同样什么都不报。
+
+能力收窄用真正的 JS 私有字段（`#custody` / `#dispatch` / `#surface` / `#issued`），
+不是 `inspectableState` 里「选择不展示」。私有字段从外部取不到：点号取不到，
+`Reflect.ownKeys` 取不到，`Object.keys` 取不到，`JSON.stringify` 也带不出来。
+「选择不展示」只是当前这一版没展示。
+
+### 二、把一次成功的拦截读成了泄漏
+
+字段名扫描原先不带位置，于是 `seat_identity_not_model_supplied` 被判成泄漏——
+那是一条**成功的拦截**，它的 `details.field` 的**值**恰好是 `"recovery_credential"`。
+
+这个假阳性值得单独写一段，因为它的危险不在误报本身：一个把成功拦截报成泄漏的扫描，
+会引下一个人去「修」那份报告，而最省事的修法是把那条拦截的 `details` 删掉——
+于是真正丢掉的是拦截的可诊断性。扫描收窄到键位（`"field":` 这种形式），值扫描不变。
+
+### 三、本地拒绝出口没有可构造的行为负例，就这么写
+
+`ModelSurfaceError.details` 只有三种形状（`{field}`、`{command, field}`、`{command}`），
+`field` 全是 `MODEL_FORBIDDEN_PARAMS` 里的字面量，`command` 在到达 `#surface.call`
+之前已经被拦。所以这条出口今天没有能构造出来的行为负例。
+
+三种做法：假装可达（写一个绕过产品路径的测试）、留一个存活的变异、或者如实记。
+选第三种：加一条静态门禁存在性断言，把「这比行为断言弱」写进测试正文与变异规格的
+`excluded`。静态断言的代价是改写成等价形式会误红——写清楚比装作没有更好。
+
+### 四、只测适配器，等于把「谁该有托管」换成「适配器不交出去」
+
+`surface-*-public-again` 那几条变异先是存活了。原因是我的对象图搜索从 `adapter` 起步，
+而那几条变异重新暴露的是 `ModelCommandSurface` 上的属性，那个对象由
+`plugins/tokengame/mcp/server.cjs:32` 直接持有。
+
+补一条从直接构造出发的图搜索。这处失误的一般形式值得记：只测「我的门把东西关住了」，
+测不出「这东西本来就不该在任何人手里」。
+
+### 五、控制台证据看不见一整类失败
+
+B.1 原本要的只是给证据加字段。加的过程中发现的是另一件事：
+
+**4xx 不产生 `requestfailed` 事件。** `fetch` 拿到 403 是「成功收到了响应」，
+浏览器不为它打控制台日志。于是「四个上下文控制台错误合计为 0」这句话对
+「请求发出去了但被拒」这一整类失败完全免疫——不是漏了几条，是结构上看不见。
+
+所以新增的判据是 `response` 事件上的「窗口外非 2xx/3xx 必须为 0」，
+配一条反面：断网窗口内必须记到过网络失败，否则说明掐路由没生效，而那会让整节
+在正常网络下跑——通过了也什么都没证明。
+
+豁免一律按语义。`net::ERR_ABORTED` 的含义是**发起方撤回**，它与
+`ERR_CONNECTION_REFUSED` / `ERR_CONNECTION_RESET` / `ERR_TIMED_OUT` /
+`ERR_NAME_NOT_RESOLVED` / `ERR_NETWORK_CHANGED` 是不相交的两组，再收窄到客户端
+设计上会撤回的那两条路径。`badResponses` 一条都不豁免。按「403」这种文本白名单
+过滤会顺手滤掉真实缺陷，而 409 这种文本恰好也是真实幂等缺陷的样子。
+
+### 六、那个偶发 403 有三个来源
+
+目标只说了一个。测出来是三个，而且分属两类：
+
+**测试窗口竞态。** 证据原先在响应到达时刻分类，而窗口在那之前已经关了。改为按
+**发出时刻**分类——Playwright 的请求对象在 `request` / `requestfailed` / `response`
+之间保持同一身份，所以用 `WeakMap` 记发出时的阶段与窗口状态。跨阶段的事件数目单独
+报出来：它们不算失败，但必须可见，否则下一个人看到偶发 403 只能猜是哪一类。
+
+**产品竞态之一，离桌。** `await act("seat.leave")` 期间 700 毫秒的 interval 会照常
+飞出一次轮询，它带的凭据正是这次离桌要作废的那一份。
+
+**产品竞态之二，掉线。** 严格更坏。轮询带着 `connection_id`，而那条请求同时是心跳；
+`table-web-host.cjs` 的 `touchConnection` 对一个已被摘掉的连接 id 会**重新建连**
+（那是拔网线场景要的行为，理由写在那个方法上）。所以 await 期间飞出去的那一跳
+不是打一条 403 就完了——它把刚刚的掉线撤销了，同桌看到掉线标记闪一下就没，
+保留窗根本没开始走。
+
+第三条用响应围栏挡不住：请求已经到了服务端，连接已经重建，丢掉响应改变不了这件事。
+只有顺序能修。两条都改成「先 `stopPolling()` 再发请求」，并给 `stopPolling` 加上
+中止在飞的那一次——`clearInterval` 拦得住「下一次」，拦不住「这一次」。
+
+用 2.5 秒慢响应把窗口撑开做双向验证：旧客户端 1 条 403 + 1 条控制台错误，新客户端 0 条。
+
+### 七、我自己的第一版修法制造了噪声
+
+第一版我在 `refresh` 里也中止上一次轮询。看起来更严格，实际是错的：验收里冒出
+两条 `/api/view` 的 `ERR_ABORTED`。
+
+一条已经发出的轮询同时是心跳，让它自然完成对服务端有用；中止它只换来一条
+`ERR_ABORTED`，而噪声会淹掉真的网络失败——而「窗口外网络失败为 0」正是新加的判据。
+重叠由 await 之后那道围栏处理，代价为零。中止只保留在 `stopPolling`，
+那里的请求对服务端有副作用。两半都写进 `test/poll-lifecycle-race.test.cjs`。
+
+### 八、确定性发牌解决了漂移，没解决覆盖
+
+9d 的破产分支取决于摊牌，于是断言项数在 200/201 之间跳。加了种子（sfc32 + 拒绝采样）
+之后两次运行名单完全一致，看起来就完了。
+
+但落在了**没有覆盖**的那一支：种子正好让全下方赢（95→194），
+于是脚本报一条「这一手没有人归零，破产路径本轮未走到」然后通过。
+
+**稳定缺失比随机缺失更坏。** 随机缺失下一次运行还有机会暴露；稳定缺失不会再暴露，
+而报告上写着「确定性发牌，两次名单一致」——读证据的人会认为覆盖是稳的。
+
+所以 9d 改成重复「短码全下、大码跟、其余弃」直到真有一席归零，预算用尽就红，
+不再留「本轮未走到」这种恒真收尾。失败全部收集到循环外一次性判定，
+断言条数与循环了几轮无关——循环里直接 `check()` 的话，项数会随「第几轮打出破产」
+变化，那正是这一节要消除的漂移换了个来源。
+
+顺带修掉代码与注释不符的一处：注释写「carol 一律弃牌」，而 `richest` 没排除她，
+实测里她成了跟注方。现在跟注方从「除全下方之外」里选，并显式检查覆盖得住全下方——
+覆盖不住时这一手可能把跟注方也打到 0，而下游三节各自依赖 carol / bob / dave 还在席，
+那会让失败出现在与根因无关的地方。
+
+### 九、种子不是后门，而这话要用结构说
+
+种子只改洗牌顺序：不放宽任何一条命令的授权，也不多给任何人一张牌的可见性——
+底牌可见性由权威的 `view.hand` 按席位裁决，与牌是怎么洗出来的无关。
+
+真正的风险是把种子带进真实对局。所以约束全在「谁能开」：只在自带内核时读、
+只允许回环监听、启动时必须如实报告指纹（绝不报原文，原文进日志之后任何读到日志的人
+都能预测发牌）。外加一条源码断言：入口不出现 `stackedDeck` / `requireSeatCredential` /
+`SEAT_AUTHORIZED` / `recovery_credential` / `seat_handle`。
+
+验收脚本断言的是**服务端确认了**种子生效，不是本脚本设过环境变量。设过与生效是两件事。
+
+### 十、变异测试第三次指出我的断言不成立
+
+三处，都不是审读发现的：
+
+**六面骰查不出取模。** 「拒绝采样退化成取模」这条变异在原有的均匀性断言下存活。
+算一下就知道为什么：2^32 对 6 的取模偏差约 1.4e-9，比那条 5% 容差小九个数量级。
+换上界到 3×2^30——拒绝采样下最低段占 1/3，取模下占 1/2——实测 33.3% 对 50.0%。
+
+**detail 里的同一个三元。** 四条 `xxxFailures` 断言原先只查串在文件里出现过，
+而每条 `check` 的 detail 里也有一个 `xxxFailures.length === 0 ? ... : ...`，
+于是把条件位换成 `true` 仍然满足：收集照做、判定没了，而这件事没有任何语法迹象。
+改为断言 `check` 的**条件位**。
+
+**`post` 收下 signal 却不传给 fetch。** 这是本轮最危险的一条：所有中止代码看上去
+都还在——`abort()` 调得到、不报错、控制器确实置成已中止，只是那个句柄跟在飞的请求
+毫无关系。补一条三段断言：参数上解构出 signal、fetch 选项里出现 signal、
+函数体里不能再声明同名变量把参数遮掉（少了第三条，「签名还接着、值被丢掉」照样满足）。
+
+### 十一、两条杀不掉的变异，实测之后如实记
+
+去掉 sfc32 的 12 次预热丢弃、把四个 FNV 起点改成同一个——两条都杀不掉。
+这次是量出来的，不是推断的：相邻种子 1–64 各洗第一副牌，三项指标与基线无法区分
+（互不相同 64/64 对 64/64 对 64/64；前八张同位同牌 1.85% / 1.81% / 1.97%，
+随机期望 1.92%；第一张用到的牌面 39 / 40 / 39 共 52）。
+
+原因是 `seedToState` 那轮额外搅拌已经承担了实际的去相关，两者是第二道防线。
+留着代码（sfc32 参考实现的通行做法，且 `seedToState` 若日后简化就重新有用），
+但不为它们编一个阈值——那样的断言只会在改动无关代码时红。数字写进 `excluded`。
+
+同样记在 `excluded` 的还有一条更大的代价：`poll-lifecycle-race` 十条里多数只由
+源码断言杀。`web/table/table.js` 是 classic script，没有任何测试能 require 它，
+而 Playwright 层要复现这些竞态需要 2.5 秒慢响应那种人为窗口（探针做的正是这件事，
+但探针不是回归测试）。源码断言查的是代码长什么样，不是它做了什么。
+
+### B.4 稳定性门禁
+
+工作树连跑 3 次 + 全新无硬链接克隆连跑 3 次，六次全部 EXIT=0、各 209 项全过、
+到第 13 手。名单用 `artifacts/drift-diff.cjs` 逐条比对多重集，不是只比条数——
+只比条数的话，两条断言一进一出会看起来一致。破产分支六次都走到（第 2 轮归零 bob）。
+
+克隆里 `git ls-files --eol` 全部 `i/lf w/lf`，尽管本机 `core.autocrlf=true`；
+`src` / `test` / `web` / `test-support` 与源仓字节一致。
+
+```yaml
+review:
+  unit: TG-EU-SINGLE-STACK-WEB-TABLE
+  date: 2026-08-29
+  acceptance_label: ai_generated_acceptance
+  commits:
+    credential_boundary: 287f083
+    browser_gate: 5235bf5
+  measured:
+    npm_test: 698_pass_0_fail_0_skipped
+    mutation_gate: 358_killed_0_survived_0_skipped_GATE_PASS
+    browser_acceptance: 209_pass_0_fail_0_console_errors_0_out_of_window_network_failures_hand_13
+    browser_acceptance_consecutive_clean_runs_working_tree: 3
+    browser_acceptance_consecutive_clean_runs_fresh_clone: 3
+    step_name_multiset_identical_across_all_six_runs: yes
+    bust_branch_reached_in_all_six_runs: yes
+    new_mutation_specs:
+      credential-boundary: 19_of_19
+      deterministic-deck: 9_of_9
+      poll-lifecycle-race: 10_of_10
+    extended_mutation_specs:
+      multi-hand-verdict: 41_to_46
+  negative_controls:
+    credential_boundary_reproduced_on_old_code: 18_items_5_pass_13_fail
+    object_graph_search_nodes: 55
+    object_graph_paths_to_custody_via_adapter: none
+    object_graph_control_group_still_extractable: yes
+    leave_403_old_client: 1_403_plus_1_console_error
+    leave_403_new_client: 0
+    poll_lifecycle_tests_on_old_client: 2_pass_6_fail
+    poll_lifecycle_tests_on_new_client: 10_pass
+    modulo_bias_probe: rejection_33.3_percent_vs_modulo_50.0_percent
+  defect_classes:
+    per_exit_sanitisation_left_one_exit_unguarded: 1
+    capability_reachable_via_public_property: 1
+    false_positive_that_invites_deleting_the_report: 1
+    tested_my_gate_not_the_capability_owner: 1
+    evidence_structurally_blind_to_a_failure_class: 1
+    classified_evidence_at_arrival_not_at_issue: 1
+    lifecycle_race_response_fence_cannot_fix: 1
+    my_own_fix_generated_noise_that_masks_real_failures: 1
+    determinism_stabilised_a_missing_branch: 1
+    assertion_matched_text_in_detail_not_in_condition: 1
+    tolerance_nine_orders_too_loose_to_detect: 1
+    comment_contradicted_code_selection: 1
+  no_behavioural_negative_available:
+    - model_local_rejection_exit
+    - sfc32_warmup_discard
+    - four_distinct_fnv_offsets
+  honest_costs:
+    - client_facts_pinned_by_source_assertions_only_classic_script_unloadable
+    - static_gate_presence_assertion_weaker_than_behavioural
+    - stderr_human_readable_seed_warning_has_no_regression_guard
+  fresh_clone_rerun:
+    commit: 5235bf5
+    method: git clone --no-hardlinks，无 npm install（本仓库零依赖）
+    npm_test: not_rerun_in_clone_this_round
+    browser_acceptance: 209_pass_x3_all_exit_0
+    eol_check: 全部 i/lf w/lf，尽管本机 core.autocrlf=true
+    byte_identical_to_source: src/ test/ web/ test-support/
+  still_unverified:
+    - real_host_gate_5_proactive_wake
+    - four_human_uat
+    - side_pot_layering_in_browser_layer
+  not_covered:
+    - four_player_smoke_every_candidates_frozen_stack
+    - old_probe_stack_playwright_rerun
+    - npm_test_inside_fresh_clone_this_round
+  deferred_to_user:
+    - host_command_adapter_implementation_requires_touching_closed_single_stack_host
+    - whether_two_contracts_or_one_is_the_right_split
+    - plugin_long_description_says_web_table_adjudicates_but_authority_does
+    - policy_epoch_must_be_enforced_authority_side_not_ui_only
+  requires_user_acceptance: yes
+```
