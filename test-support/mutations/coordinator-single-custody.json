@@ -1,0 +1,76 @@
+{
+  "name": "唯一协调器：模型命令与真人命令共用同一份托管",
+  "note": "B6。收敛前有两套不相交路径：TableWebHost 自持 SeatCustody 加一条手搓的 AI 循环（跑着，但只接得上进程内脚本运行时），MCP 进程自持另一份 SeatCustody（接得上真实模型，但往里 bind 的唯一入口 hostCommand 有零个产品调用者，于是 custody.handles() 恒为空、seats_polled 恒为 0）。真实模型一个席位也驱动不了，而这件事在日志里看起来一切正常。",
+  "test": "test/coordinator-single-custody.test.cjs",
+  "mutations": [
+    {
+      "id": "surface-gets-its-own-custody",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.modelSurface = new ModelCommandSurface({\n      custody: this.custody,",
+      "replace": "    this.modelSurface = new ModelCommandSurface({\n      custody: new SeatCustody(),",
+      "note": "模型面另起一份托管。这就是收敛前 MCP 进程的处境搬进了协调器：模型命令面存在、构造成功、调用不报错，扇出到零席。"
+    },
+    {
+      "id": "start-failure-aborts-round",
+      "file": "src/host/table-web-host.cjs",
+      "find": "          if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();\n          continue;\n        }\n        const turn = startResult.body.result.started;",
+      "replace": "          if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();\n          throw Object.assign(new Error(startResult.body?.code ?? \"start_failed\"), { code: startResult.body?.code ?? \"start_failed\" });\n        }\n        const turn = startResult.body.result.started;",
+      "note": "退回收敛前的活性缺陷：一席起回合失败带走同一轮里后面所有席位，而那些席位的回合压根没起来，权威侧的租约救不了它们。"
+    },
+    {
+      "id": "seat-gone-recorded-as-defect",
+      "file": "src/host/table-web-host.cjs",
+      "find": "        if (SEAT_GONE_CODES.includes(failure?.code)) continue;\n        this.driveErrors.push({ at: this.now(), code: failure?.code ?? \"take_intents_failed\" });",
+      "replace": "        this.driveErrors.push({ at: this.now(), code: failure?.code ?? \"take_intents_failed\" });",
+      "note": "席位已释放当成驱动故障记账。诊断缓冲被正常的席位回收刷满，真的故障被挤出去——环形缓冲只有 50 格。"
+    },
+    {
+      "id": "handle-for-id-returns-claim-token",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "  handleForId(id) {\n    if (typeof id !== \"string\" || id === \"\") return null;\n    return this.#issued.get(id)?.handle ?? null;\n  }",
+      "replace": "  handleForId(id) {\n    if (typeof id !== \"string\" || id === \"\") return null;\n    return this.#issued.get(id) ?? null;\n  }",
+      "note": "回整条记录而不只是句柄。领取令牌于是多了一个持有者，而调用方在那里根本不需要它——多一处可能被顺手写进日志的地方。"
+    },
+    {
+      "id": "handle-for-id-guesses-single-seat",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "    return this.#issued.get(id)?.handle ?? null;",
+      "replace": "    return this.#issued.get(id)?.handle ?? (this.#issued.size === 1 ? [...this.#issued.values()][0].handle : null);",
+      "note": "认不出的 id 回落到「只有一条记录就用那一条」。单席时看不出问题，多席时是替错的人说话——与托管层拒绝猜席位同一条理由。"
+    },
+    {
+      "id": "seat-id-join-guesses-first-session",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (session.seat_handle === handle) return session.seat_id;\n    }\n    return null;",
+      "replace": "      if (session.seat_handle === handle) return session.seat_id;\n    }\n    return [...this.sessions.values()][0]?.seat_id ?? null;",
+      "note": "找不到句柄时回落到第一个会话。推理运行时于是被告知自己在替另一席说话，而它会照着那一席的身份组织发言。"
+    },
+    {
+      "id": "core-request-swallows-failure",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      return {\n        ok: false,\n        status: error?.status ?? 400,\n        body: {\n          ok: false,\n          code: error?.code ?? \"core_request_failed\",",
+      "replace": "      return {\n        ok: true,\n        status: 200,\n        body: {\n          ok: true,\n          code: error?.code ?? \"core_request_failed\",",
+      "note": "核心失败包成成功。模型面于是把一次失败的取意图读成「这一席没有待办」，而失败原因被塞在一个成功信封里没人看。"
+    },
+    {
+      "id": "model-surface-error-swallowed",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (!(error instanceof ModelSurfaceError)) throw error;\n      return {\n        ok: false,\n        status: 400,\n        body: {\n          ok: false,\n          code: error.code,",
+      "replace": "      if (!(error instanceof ModelSurfaceError)) throw error;\n      return {\n        ok: true,\n        status: 200,\n        body: {\n          ok: true,\n          code: error.code,",
+      "note": "本地拒绝包成成功。模型发了一条真人命令或自带了席位身份，却收到 ok:true——它会以为自己发对了，而结果为空。"
+    },
+    {
+      "id": "resolve-failure-counted-as-resolved",
+      "file": "src/host/table-web-host.cjs",
+      "find": "        const resolveResult = await this.modelCommand(\"ai.resolve\", params);\n        if (resolveResult.ok) {\n          resolved += 1;\n        } else {",
+      "replace": "        const resolveResult = await this.modelCommand(\"ai.resolve\", params);\n        resolved += 1;\n        if (resolveResult.ok) {\n        } else {",
+      "note": "回填被拒也计入 resolved。驱动的返回值于是不再能用来判断「这一轮真的发出去了几句」，而浏览器验收正是按它判断的。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "drive-falls-back-to-all-when-claim-fails",
+      "note": "写过也变异过，然后删掉了产品代码里那个分支。driveOnce 原本有一段 `if (!claim.ok) { 记账; return; }`，它恒假：takeIntents 无条件回 ok:true（逐席失败全部收进 failures），而 modelCommand 只在 ModelSurfaceError 时回 ok:false，那需要「命令不在模型面上」或「自带席位身份」，两者在那个调用点都不可能——命令是字面量，参数是空对象。变异把整个分支换成 if (false) 时没有一条测试变红，因为那段代码从来没被执行过。恒假的分支与恒真的断言是同一类问题，处置也一样：删掉，而不是为它编一条能走到的测试。"
+    }
+  ]
+}

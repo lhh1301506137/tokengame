@@ -112,6 +112,21 @@ class ModelCommandSurface {
     this.#issued.set(id, { handle, claimToken });
   }
 
+  // 权威 id 对应的句柄，不带领取令牌。
+  //
+  // 给宿主用，不给模型用：宿主的推理运行时要知道「这个回合是哪一席的」，而意图里没有
+  // seat_id（上面摘掉它的理由是「留着只会诱使模型回传」）。宿主自己持有句柄到席位的对应，
+  // 所以它只缺这一跳。
+  //
+  // 为什么不直接把 issuedFor 拿去用：那个方法连 claimToken 一起回。领取令牌是世代围栏的
+  // 凭证，多一个持有它的调用点就多一处可能被顺手写进日志的地方，而调用方在这里根本不需要它。
+  //
+  // 不认识的 id 回 null 而不是抛：调用方是驱动循环，一个已经被权威回收的回合不该让整轮停下。
+  handleForId(id) {
+    if (typeof id !== "string" || id === "") return null;
+    return this.#issued.get(id)?.handle ?? null;
+  }
+
   issuedFor(id, field) {
     if (typeof id !== "string" || id === "") {
       throw new ModelSurfaceError("invalid_field", { field });

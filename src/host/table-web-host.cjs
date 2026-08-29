@@ -27,6 +27,7 @@ const path = require("node:path");
 const { closeServer, listen, readJson, sendJson } = require("../shared/http.cjs");
 const { CoreError } = require("./core-client.cjs");
 const { SeatCustody } = require("./seat-custody.cjs");
+const { ModelCommandSurface, ModelSurfaceError } = require("./model-command-surface.cjs");
 const viewModel = require("./table-view-model.cjs");
 const { LIVELY_V1 } = require("../authority/seat-ai-store.cjs");
 
@@ -112,6 +113,21 @@ class TableWebHost {
     // 改的是协调器对重复请求的应答，不是内核的绑定语义——所以这里存的是「上次那份响应」，
     // 而不是放宽下面任何一条检查。
     this.entryKeys = new Map();
+    // 模型命令面。与真人命令共用**同一份** this.custody，这是「唯一协调器」的全部内容。
+    //
+    // 为什么必须共用：席位凭据只在 room.create / room.join 的返回里出现一次，而那两条是
+    // 真人命令，落点在这个进程。别的进程另起一份 SeatCustody 时，往里 bind 的入口一个也
+    // 没有，于是 ai.take_intents 扇出到 custody.handles() === [] ——模型收到空意图，一个
+    // 席位也驱动不了，而这件事在日志里看起来一切正常。test/coordinator-single-custody
+    // 里那条「另起一份托管的模型面看不见任何席位」就是这个后果的可执行形式。
+    //
+    // 这不是新增一层：模型命令的实现原本就在 ModelCommandSurface 里，只是从来没有人在
+    // 产品路径上构造它。driveOnce 手搓的那份扇出与 intent_id 记账是它的重复实现，
+    // 收敛做的是把重复的那份删掉。
+    this.modelSurface = new ModelCommandSurface({
+      custody: this.custody,
+      request: (command, params) => this.coreRequest(command, params),
+    });
     this.modelAdapter = options.modelAdapter ?? null;
     this.now = options.now ?? (() => Date.now());
     this.limits = options.limits ?? LIVELY_V1;
@@ -211,6 +227,70 @@ class TableWebHost {
     return this.custody.inject(command, { ...params, seat_handle: session.seat_handle });
   }
 
+  // ------------------------------------------------------------------ 模型命令面
+
+  // 打到核心的那一跳，包成 { ok, status, body } 交给模型命令面。
+  //
+  // 为什么要这层形状转换：核心客户端的约定是「成功回 result、失败抛 CoreError」，而模型
+  // 命令面要的是逐跳不抛——一席失败不能带走别席。两种约定各有理由，转换点必须只有一个，
+  // 否则「哪一层会抛」这件事会在调用链上变得靠记忆。
+  //
+  // body 是命令服务响应体的形状（{ ok, result } / { ok, code }），与 MCP 进程那条 HTTP
+  // 路径同形。不同形的话，同一个模型命令在两种传输下会读到不同的字段。
+  async coreRequest(command, params) {
+    try {
+      const result = await this.core.dispatch(command, params);
+      return { ok: true, status: 200, body: { ok: true, result } };
+    } catch (error) {
+      return {
+        ok: false,
+        status: error?.status ?? 400,
+        body: {
+          ok: false,
+          code: error?.code ?? "core_request_failed",
+          ...(error?.details === undefined ? {} : { details: error.details }),
+        },
+      };
+    }
+  }
+
+  // 模型命令的唯一入口。进程内驱动与远端模型客户端都走它。
+  //
+  // 回 { ok, status, body } 而不是抛：调用方之一是 driveOnce 的循环，而那里任何一次抛出
+  // 都会带走同一轮里后面所有席位。另一个调用方是 HTTP 路由，它要的也是可直接落盘的形状。
+  //
+  // 拒绝理由不吞。ModelSurfaceError 是本地拒绝（真人命令、模型自带席位身份、伪造的权威
+  // id），它必须原样回给调用方——吞掉会让模型以为自己发对了而结果为空。
+  async modelCommand(command, params = {}) {
+    try {
+      return await this.modelSurface.call(command, params ?? {});
+    } catch (error) {
+      if (!(error instanceof ModelSurfaceError)) throw error;
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          ok: false,
+          code: error.code,
+          command: typeof command === "string" ? command : null,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        },
+      };
+    }
+  }
+
+  // 句柄 -> seat_id。推理运行时要知道自己在替哪一席说话，而模型面刻意把 seat_id 从意图里
+  // 摘掉了（摘它的理由是「留着只会诱使模型回传」）。
+  //
+  // 从 this.sessions 里 join 而不是问托管层：托管层的 resolve 会连凭据一起回来，
+  // 而这里只需要一个公开字段。少一处取凭据的调用就少一处泄漏面。
+  seatIdForHandle(handle) {
+    for (const session of this.sessions.values()) {
+      if (session.seat_handle === handle) return session.seat_id;
+    }
+    return null;
+  }
+
   // ------------------------------------------------------------------ 视图组装
 
   async buildView(session, options = {}) {
@@ -302,10 +382,19 @@ class TableWebHost {
 
   // ------------------------------------------------------------------ 模型适配器驱动
 
-  // 取意图 -> 起回合 -> 调适配器 -> 回填。这就是「宿主适配器」在本 MVP 里的形态。
+  // 取意图 -> 起回合 -> 调推理运行时 -> 回填。
   //
-  // 没有适配器时整个循环不跑：没有模型就是没有 AI 发言，视图里 attached: false 如实说明。
-  // 用脚本假装模型能力正是不能做的那件事。
+  // 命令那三跳全部经 this.modelSurface 走，与远端模型客户端**同一条实现**。此前这里手搓
+  // 了一份：在 this.sessions 上扇出、自己拼 claim_token、自己记 intent_id 到席位的对应。
+  // 那份与 ModelCommandSurface 做的是同一件事，而两份同义实现只会朝一个方向漂——某一侧
+  // 忘了带 claim_token 或漏了一席，表现是「AI 偶尔不说话」，没有任何东西会红。
+  //
+  // 收敛顺带修掉一个活性缺陷：起回合原本是裸 await，一次抛出会带走同一轮里后面所有席位，
+  // 而那些席位的回合压根没起来，权威侧的租约救不了它们。模型面逐跳回 { ok, body }，
+  // 所以一席的失败在结构上到不了别席。
+  //
+  // 没有推理运行时时整个循环不跑：没有模型就是没有 AI 发言，视图里 attached: false 如实
+  // 说明。用脚本假装模型能力正是不能做的那件事。
   async driveOnce() {
     if (this.modelAdapter === null) return { started: 0, resolved: 0 };
     if (this.driving) return { started: 0, resolved: 0, skipped: true };
@@ -313,78 +402,92 @@ class TableWebHost {
     let started = 0;
     let resolved = 0;
     try {
-      for (const session of this.sessions.values()) {
-        // 只驱动本进程真正托管着的席位。别人的席位由别人的宿主驱动——这一条就是
-        // ai.take_intents 按席位把关的理由。
-        let claimed;
+      // 一次取全部席位的待办。扇出在模型面里按 custody.handles() 做——那正是「本进程
+      // 真正托管着的席位」，与旧代码遍历 sessions 是同一集合（会话与绑定同生同灭）。
+      const claim = await this.modelCommand("ai.take_intents", {});
+      // 逐席失败已经被模型面收进 failures，不会中断别席。席位没了是正常结果，其余记账。
+      for (const failure of claim.body?.result?.failures ?? []) {
+        if (SEAT_GONE_CODES.includes(failure?.code)) continue;
+        this.driveErrors.push({ at: this.now(), code: failure?.code ?? "take_intents_failed" });
+        if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
+      }
+      // 刻意不检查 `claim.ok`。
+      //
+      // 写过那么一段：!claim.ok 就记一笔然后 return。它恒假——takeIntents 无条件回
+      // ok:true，逐席失败全部收进上面那个 failures 数组，而 modelCommand 只在
+      // ModelSurfaceError 时回 ok:false，那需要「命令不在模型面上」或「自带席位身份」，
+      // 两者在这个调用点都不可能（命令是字面量，参数是空对象）。
+      //
+      // 恒假的分支与恒真的断言是同一类问题：都不读现实，都不会变红。变异测试正是这么
+      // 暴露出来的——把整个分支换成 if (false)，没有一条测试变红。真的实现缺陷让它抛，
+      // 由 startDriver 的 catch 记账。
+      for (const intent of claim.body?.result?.intents ?? []) {
+        // claim_token 由模型面按 intent_id 补回（F5 世代围栏）。这里刻意不碰它：它是
+        // 本宿主的领取凭证，经过这一层只会多一条搬运路径，而搬运途中可能改、可能忘。
+        const startResult = await this.modelCommand("ai.start", { intent_id: intent.intent_id });
+        if (!startResult.ok) {
+          // 起回合失败是这一席的确定性结果，不是驱动故障：记一笔，继续下一席。
+          this.driveErrors.push({
+            at: this.now(),
+            code: startResult.body?.code ?? "start_failed",
+          });
+          if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
+          continue;
+        }
+        const turn = startResult.body.result.started;
+        started += 1;
+
+          // 推理运行时要知道自己在替哪一席说话，而意图里没有 seat_id（模型面摘掉了它）。
+          // 从协调器自己的会话表里 join——句柄由模型面按 intent_id 记着。
+          const seatId = this.seatIdForHandle(this.modelSurface.handleForId(turn.turn_id));
+
+        // 适配器只看到权威给的上下文。它拿不到对手底牌，因为上下文是权威组装的。
+        //
+        // 三种失败在这里收敛成同一种结果：抛错、超时、返回畸形结构，全都落成一次 silent。
+        // 理由是活性而不是整洁——回合悬着会一直占着 active_turn，该席在整个租约期内
+        // 不可能再有第二次发言机会；而 driveOnce 是一个 for 循环，一席抛出会带走同一轮
+        // 里后面所有席位，那些席位的回合压根没起来，权威侧的租约救不了它们。
+        let decision;
         try {
-          claimed = (await this.core.dispatch(
-            "ai.take_intents",
-            this.injected("ai.take_intents", session, {}),
-          )).intents;
+          decision = await withTimeout(
+            this.modelAdapter.evaluate({
+              seat_id: seatId,
+              turn_id: turn.turn_id,
+              context: intent.context,
+            }),
+            this.adapterTimeoutMs,
+          );
         } catch (error) {
-          // 席位可能已被释放或凭据已吊销。这不是驱动的错误，跳过即可。
-          if (SEAT_GONE_CODES.includes(error?.code)) continue;
-          throw error;
+          decision = {
+            decision: "silent",
+            failure: error?.code === "adapter_timeout"
+              ? "adapter_timeout"
+              : error?.message ?? "adapter_failed",
+          };
         }
 
-        for (const intent of claimed) {
-          // claim_token 原样带回（F5 世代围栏）。不带的话本驱动就是那个「旧 claimant」：
-          // 领走之后自己卡了 30 秒，租约到期被别人接手，回来还能把工作项抢走。
-          const turn = (await this.core.dispatch(
-            "ai.start",
-            this.injected("ai.start", session, {
-              intent_id: intent.intent_id,
-              ...(intent.claim_token === undefined ? {} : { claim_token: intent.claim_token }),
-            }),
-          )).started;
-          started += 1;
+        // 归一化。模型返回的是自由结构，所以「不是我认识的形状」必须当成 silent 而不是
+        // 原样转发：转发过去权威会拒，回合按 F5 的判断留在原地，于是这一席要等满租约
+        // 才回到 IDLE——有界，但那两分钟里它一直显示在思考，而它其实早就没救了。
+        const normalized = normalizeDecision(decision);
+        if (normalized.failure !== undefined) {
+          this.driveErrors.push({ at: this.now(), code: normalized.failure });
+          if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
+        }
 
-          // 适配器只看到权威给的上下文。它拿不到对手底牌，因为上下文是权威组装的。
-          //
-          // 三种失败在这里收敛成同一种结果：抛错、超时、返回畸形结构，全都落成一次 silent。
-          // 理由是活性而不是整洁——回合悬着会一直占着 active_turn，该席在整个租约期内
-          // 不可能再有第二次发言机会；而 driveOnce 是一个 for 循环，一席抛出会带走同一轮
-          // 里后面所有席位，那些席位的回合压根没起来，权威侧的租约救不了它们。
-          let decision;
-          try {
-            decision = await withTimeout(
-              this.modelAdapter.evaluate({
-                seat_id: intent.seat_id,
-                turn_id: turn.turn_id,
-                context: intent.context,
-              }),
-              this.adapterTimeoutMs,
-            );
-          } catch (error) {
-            decision = {
-              decision: "silent",
-              failure: error?.code === "adapter_timeout"
-                ? "adapter_timeout"
-                : error?.message ?? "adapter_failed",
-            };
-          }
-
-          // 归一化。模型返回的是自由结构，所以「不是我认识的形状」必须当成 silent 而不是
-          // 原样转发：转发过去权威会拒，回合按 F5 的判断留在原地，于是这一席要等满租约
-          // 才回到 IDLE——有界，但那两分钟里它一直显示在思考，而它其实早就没救了。
-          const normalized = normalizeDecision(decision);
-          if (normalized.failure !== undefined) {
-            this.driveErrors.push({ at: this.now(), code: normalized.failure });
-            if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
-          }
-
-          const params = { turn_id: turn.turn_id, decision: normalized.decision };
+        const params = { turn_id: turn.turn_id, decision: normalized.decision };
           if (normalized.decision === "public_speech") params.text = normalized.text;
-          try {
-            await this.core.dispatch("ai.resolve", this.injected("ai.resolve", session, params));
-            resolved += 1;
-          } catch (error) {
-            // 回填被权威拒绝（额度耗尽、迟到跨手、文本超长）是正常的确定性结果，
-            // 不是驱动故障。记录下来供诊断，不重试——重试会再消耗一次配额判定。
-            this.driveErrors.push({ at: this.now(), code: error?.code ?? "resolve_failed" });
-            if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
-          }
+        const resolveResult = await this.modelCommand("ai.resolve", params);
+        if (resolveResult.ok) {
+          resolved += 1;
+        } else {
+          // 回填被权威拒绝（额度耗尽、迟到跨手、文本超长）是正常的确定性结果，
+          // 不是驱动故障。记录下来供诊断，不重试——重试会再消耗一次配额判定。
+          this.driveErrors.push({
+            at: this.now(),
+            code: resolveResult.body?.code ?? "resolve_failed",
+          });
+          if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
         }
       }
     } finally {
