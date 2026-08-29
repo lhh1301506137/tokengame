@@ -30,21 +30,29 @@ const { ModelCommandSurface } = require("./model-command-surface.cjs");
 
 const ROLE = "seat_model";
 
+// 默认剖面。这份参考实现按 Codex CLI 那一侧写，因为只有它有实机产物
+// （0.145.0 桥探针，docs/HOST-PROBE-CHECKLIST.md）。
+//
+// 传 claude_desktop 进来会在协商时被拒——那个剖面一项能力都没验证过，包括必需的
+// command_dispatch。那不是缺陷，是本机没装 Claude Desktop 这件事在合同层的准确表达。
+const DEFAULT_PROFILE = "codex_cli";
+
 // 本适配器声明的能力。
 //
-// proactive_wake 刻意不在这里，而且不是「暂时没实现」：它在两个宿主上都未验证
+// proactive_wake 刻意不在这里，而且不是「暂时没实现」：任何剖面都没验证过它
 // （SAME_VISIBLE_TASK_SPIKE_V1 未执行）。声明它等于把一个未验证的能力写成已具备，
 // 而协商结果会据此不给出降级路径——后果是宿主不轮询，牌局静默停住。
 //
 // structured_ui / private_hand_view / persistent_session 都是真人面的事，模型面本来
-// 就不该声明。
+// 就不该声明。现在合同也这么要求了（ADAPTER_ROLES.seat_model.allowed_capabilities），
+// 所以这句不再只是本文件的自律。
 const DECLARED_CAPABILITIES = Object.freeze(["command_dispatch"]);
 
 class SeatModelAdapter {
   // custody：SeatCustody 实例。
   // dispatch(command, params) -> result：打到核心的那一跳。与 ModelCommandSurface 的
   //   request 签名不同（那边要 { ok, status, body }），转换在下面 makeRequest 里。
-  constructor({ custody, dispatch, capabilities = DECLARED_CAPABILITIES } = {}) {
+  constructor({ custody, dispatch, capabilities = DECLARED_CAPABILITIES, profile = DEFAULT_PROFILE } = {}) {
     // custody 的校验不在这里：ModelCommandSurface 的构造函数已经查了，而且报的是同一个
     // 码和同一个字段名（invalid_field / custody）。曾经这里也查一遍，一次变异证明那份
     // 检查不可观测——两条路径的可见结果完全相同，只有异常类名不同，而没有任何调用点按
@@ -57,6 +65,7 @@ class SeatModelAdapter {
       throw new ContractError("invalid_field", { field: "dispatch" });
     }
     this.role = ROLE;
+    this.profile = profile;
     this.capabilities = capabilities;
     this.state = "created";
     this.negotiation = null;
@@ -95,6 +104,7 @@ class SeatModelAdapter {
   inspectableState() {
     return {
       role: this.role,
+      profile: this.profile,
       state: this.state,
       // 冻结的副本。给出内部数组等于给出一条可写路径，调用方 push 一个能力名就能让
       // 之后的协商结果变样。
@@ -118,6 +128,7 @@ class SeatModelAdapter {
     this.state = nextLifecycleState(this.state, "negotiated");
     this.negotiation = negotiate({
       role: this.role,
+      profile: this.profile,
       contract_version: CONTRACT_VERSION,
       capabilities: this.capabilities,
     });
@@ -248,4 +259,4 @@ class SeatModelAdapter {
   }
 }
 
-module.exports = { DECLARED_CAPABILITIES, SeatModelAdapter };
+module.exports = { DECLARED_CAPABILITIES, DEFAULT_PROFILE, SeatModelAdapter };

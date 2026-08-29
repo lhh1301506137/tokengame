@@ -13,8 +13,8 @@
     {
       "id": "version-defaults-to-current",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "function negotiate({ role, contract_version: version, capabilities = [] } = {}) {",
-      "replace": "function negotiate({ role, contract_version: version = CONTRACT_VERSION, capabilities = [] } = {}) {",
+      "find": "function negotiate({ role, profile, contract_version: version, capabilities = [] } = {}) {",
+      "replace": "function negotiate({ role, profile, contract_version: version = CONTRACT_VERSION, capabilities = [] } = {}) {",
       "note": "缺版本号时默认成当前版本。一个忘了填的适配器会看起来协商成功。"
     },
     {
@@ -48,9 +48,9 @@
     {
       "id": "wake-marked-verified",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "    verified_on_any_host: false,\n    degrade_to: \"polling\",",
-      "replace": "    verified_on_any_host: true,\n    degrade_to: \"polling\",",
-      "note": "把主动唤醒记成已验证。目标里的原话：真实 Gate 5 必须标记 unverified，主动唤醒不得写成已验证。"
+      "find": "    verified_on: Object.freeze([]),\n    degrade_to: \"polling\",",
+      "replace": "    verified_on: Object.freeze([\"web_table\"]),\n    degrade_to: \"polling\",",
+      "note": "把主动唤醒标成 web_table 验证过，而没有任何实机产物。判据是数据，改数据就等于伪造实测。（2026-08-29 A3：判据从全局布尔 verified_on_any_host 换成逐剖面清单，查找串随之重写。）"
     },
     {
       "id": "wake-degrades-to-nothing",

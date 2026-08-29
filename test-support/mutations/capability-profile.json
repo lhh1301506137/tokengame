@@ -1,0 +1,92 @@
+{
+  "name": "能力协商按角色 + 具体宿主剖面验证",
+  "note": "A3。旧设计用一个全局布尔 verified_on_any_host，名字本身就是缺陷：它记录「有没有任何宿主验证过」，而合同要回答的是「这个宿主验证过没有」。Codex 侧真跑通一次实机 Gate 5 之后把它翻成 true，Claude 侧的同一项声明立刻也合法——而 Claude 那边什么都没验证过。一次实机证据授权了另一个宿主。",
+  "test": "test/capability-profile.test.cjs",
+  "mutations": [
+    {
+      "id": "profile-optional",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  const profileSpec = HOST_PROFILES[profile];\n  if (profileSpec === undefined) {",
+      "replace": "  const profileSpec = HOST_PROFILES[profile] ?? { role };\n  if (false) {",
+      "note": "剖面可省，缺失时按「随便哪个宿主」处理。允许不说自己是谁，于是任何一处实机证据都会授权它——这正是 A3 要消灭的状态。"
+    },
+    {
+      "id": "unknown-profile-silently-unverified",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    throw new ContractError(\"unknown_host_profile\", {\n      profile: profile ?? null,\n      known: Object.keys(HOST_PROFILES),\n    });",
+      "replace": "    return Object.freeze({ contract_version: CONTRACT_VERSION, role, profile, actor: spec.actor, commands: spec.commands, holds_seat_handle: spec.holds_seat_handle, granted: Object.freeze([]), degradations: Object.freeze([]), lifecycle_state: \"negotiated\" });",
+      "note": "认不出的剖面名静默当成「什么都没验证过」。一处拼写错误于是和一个诚实的未验证宿主长得一模一样，而前者该改代码、后者该去跑实机。"
+    },
+    {
+      "id": "profile-role-mismatch-allowed",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  if (profileSpec.role !== role) {",
+      "replace": "  if (false) {",
+      "note": "允许拿真人面的剖面协商模型角色。两个剖面的权限不重叠正是二分的全部意义，允许这种组合就把二分作废了。"
+    },
+    {
+      "id": "verification-checked-globally",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  const unverified = declared.filter((name) => !CAPABILITIES[name].verified_on.includes(profile));",
+      "replace": "  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on.length === 0);",
+      "note": "退回全局判据：只要有任何剖面验证过就放行。这是 A3 的缺陷本体——Codex 的实机证据授权 Claude。"
+    },
+    {
+      "id": "verification-reason-omits-profile",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    throw new ContractError(\"capability_not_verified\", { profile, unverified });",
+      "replace": "    throw new ContractError(\"capability_not_verified\", { unverified });",
+      "note": "拒收理由不带剖面名。读的人会以为这项能力全局不可用，而实际问的是「你这个宿主验证过没有」。"
+    },
+    {
+      "id": "role-capability-check-removed",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  const notForRole = declared.filter((name) => !spec.allowed_capabilities.includes(name));",
+      "replace": "  const notForRole = [];",
+      "note": "模型剖面可以声明真人面的 UI 能力。它连 view.hand 都没有，声明「我能只给本人看底牌」不可能为真。"
+    },
+    {
+      "id": "role-capability-check-does-not-throw",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  if (notForRole.length > 0) {\n    throw new ContractError(\"capability_not_for_role\", { role, rejected: notForRole });\n  }",
+      "replace": "",
+      "note": "算出来了但不拒。一份算过又扔掉的判据比没有更坏，它让人以为这里有把关。"
+    },
+    {
+      "id": "model-role-allowed-ui-capability",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    allowed_capabilities: Object.freeze([\"command_dispatch\", \"proactive_wake\"]),",
+      "replace": "    allowed_capabilities: Object.freeze([\"command_dispatch\", \"proactive_wake\", \"private_hand_view\"]),",
+      "note": "从允许集这一侧开口子。改数据和改判断的后果相同，所以两边都要有人盯。"
+    },
+    {
+      "id": "profile-not-returned",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    role,\n    profile,\n    actor: spec.actor,",
+      "replace": "    role,\n    actor: spec.actor,",
+      "note": "协商结果不带回剖面。调用方于是无法确认合同认下的是哪个剖面，两边对不上时读不出来。"
+    },
+    {
+      "id": "claude-profile-marked-verified",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    verified_on: Object.freeze([\"codex_cli\", \"web_table\"]),",
+      "replace": "    verified_on: Object.freeze([\"codex_cli\", \"web_table\", \"claude_desktop\"]),",
+      "note": "把 claude_desktop 标成验证过必需能力，而本机没装、探针从未开始执行。这条等于伪造实测。"
+    },
+    {
+      "id": "profile-registry-role-unchecked",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  claude_desktop: Object.freeze({\n    role: \"seat_model\",",
+      "replace": "  claude_desktop: Object.freeze({\n    role: \"host_command\",",
+      "note": "登记表里把 Claude 侧写成真人面。剖面与角色的对应关系是数据，写错了协商就会放行不该放行的组合。"
+    },
+    {
+      "id": "old-global-flag-restored",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    verified_on: Object.freeze([]),\n    degrade_to: \"polling\",",
+      "replace": "    verified_on: Object.freeze([]),\n    verified_on_any_host: false,\n    degrade_to: \"polling\",",
+      "note": "把旧的全局标志加回能力表。留着它的代价是下一个人会去读它，而它给出的答案恰好是 A3 要否定的那个。"
+    }
+  ],
+  "excluded": []
+}

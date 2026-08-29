@@ -6,44 +6,44 @@
     {
       "id": "unverified-capability-accepted",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on_any_host !== true);",
+      "find": "  const unverified = declared.filter((name) => !CAPABILITIES[name].verified_on.includes(profile));",
       "replace": "  const unverified = [];",
       "note": "退回旧行为：声明未验证能力照常通过。宿主据此不轮询，而那个能力并不存在，牌局停在某一席上而读不出原因。"
     },
     {
       "id": "unverified-check-does-not-throw",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "  if (unverified.length > 0) {\n    throw new ContractError(\"capability_not_verified\", { unverified });\n  }",
+      "find": "  if (unverified.length > 0) {\n    throw new ContractError(\"capability_not_verified\", { profile, unverified });\n  }",
       "replace": "",
       "note": "算出来了但不拒：一份算过又扔掉的判据比没有更坏，它让人以为这里有把关。"
     },
     {
       "id": "unverified-check-inverted",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "CAPABILITIES[name].verified_on_any_host !== true",
-      "replace": "CAPABILITIES[name].verified_on_any_host === true",
+      "find": "!CAPABILITIES[name].verified_on.includes(profile)",
+      "replace": "CAPABILITIES[name].verified_on.includes(profile)",
       "note": "判据反过来：已验证的能力被拒，未验证的放行。结构化控件、私有底牌、持久会话全都声明不了，宿主只能一路降级。"
     },
     {
       "id": "unverified-reason-omits-which",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "    throw new ContractError(\"capability_not_verified\", { unverified });",
+      "find": "    throw new ContractError(\"capability_not_verified\", { profile, unverified });",
       "replace": "    throw new ContractError(\"capability_not_verified\", {});",
       "note": "不说是哪一项。只说协商失败的话，最省事的修法是把整份能力清单删空，而那会让所有降级路径一起消失。"
     },
     {
       "id": "hardcodes-the-capability-name",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on_any_host !== true);",
+      "find": "  const unverified = declared.filter((name) => !CAPABILITIES[name].verified_on.includes(profile));",
       "replace": "  const unverified = declared.filter((name) => name === \"proactive_wake\");",
       "note": "把名字写死而不读字段。今天行为相同，下一个未验证能力加进来时不会红，而它同样会被静默接受。"
     },
     {
       "id": "wake-flag-flipped-without-evidence",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "    verified_on_any_host: false,\n    degrade_to: \"polling\",",
-      "replace": "    verified_on_any_host: true,\n    degrade_to: \"polling\",",
-      "note": "把标志翻成 true 而没有任何实机证据。这一条与 adapter-contract.json 里那条同源，但杀它的测试不同：这里要求翻转时把断言方向一起改。"
+      "find": "    verified_on: Object.freeze([]),\n    degrade_to: \"polling\",",
+      "replace": "    verified_on: Object.freeze([\"web_table\"]),\n    degrade_to: \"polling\",",
+      "note": "把主动唤醒标成 web_table 验证过，而没有任何实机产物。这是本文件最要紧的一条：判据是数据，改数据就等于伪造实测。"
     },
     {
       "id": "error-code-unclassified",

@@ -156,20 +156,55 @@ Plan Tree 里 `TG-EU-HOST-ADAPTER-CONTRACT` 的节点名本来就是单数。这
 它，判成失败会逼人为了让套件绿而少声明一项」。
 
 那个顾虑是真的，但它不适用于现在这道检查，因为判据不是「你这个宿主做不到」，而是
-**至今没有任何宿主验证过它**（`verified_on_any_host: false`）。`negotiate()` 现在拒收任何
-这样的声明，错误码 `capability_not_verified`，details 里说出是哪一项。
+**没有任何剖面验证过它**（`verified_on: []`）。`negotiate()` 现在拒收任何这样的声明，错误码
+`capability_not_verified`，details 里说出是哪一项、以及是哪个剖面在声明。
 
-换掉旧设计的理由是后果不对称。`negotiate()` 返回的 `degradations` 是宿主决定要不要轮询的
-**唯一依据**：声明了 `proactive_wake`，`polling` 那一条就不在清单里，于是宿主不轮询，而那个
-能力实际上并不存在。表现正是这一节开头说的那件事——牌局停在那里，谁都不知道是在等模型还是
-已经死了。一份「合规但被标注」的报告挡不住它，因为标注在报告里，而轮询决定在宿主里。
+换掉旧设计的理由是后果不对称。`negotiate()` 返回的 `degradations` 将是宿主决定要不要轮询的
+依据：声明了 `proactive_wake`，`polling` 那一条就不在清单里，于是宿主不轮询，而那个能力实际上
+并不存在。表现正是这一节开头说的那件事——牌局停在那里，谁都不知道是在等模型还是已经死了。
+一份「合规但被标注」的报告挡不住它，因为标注在报告里，而轮询决定在宿主里。
 
-这道检查会自己退休：真有一次实机 Gate 5 通过之后，把 `verified_on_any_host` 翻成 `true`，
-声明立刻合法。所以它不是「永久禁止」，而是「未验证之前不许声明」。翻转那个标志必须有实机
-证据支撑，而 `test/capability-honesty.test.cjs` 最后一条会在翻转时提醒把断言方向一起改。
+这道检查会自己退休：某个剖面真跑通一次实机 Gate 5 之后，把它的名字加进那一项的 `verified_on`，
+**该剖面**的声明立刻合法。所以它不是「永久禁止」，而是「你没验证过之前不许声明」。加名字必须
+有实机证据支撑，而 `test/capability-honesty.test.cjs` 最后一条会在改动时提醒把断言方向一起改。
 
 检查按字段走，不把 `proactive_wake` 的名字写死——写死名字的实现在下一个未验证能力加进来时
 不会红，而它同样会被静默接受。
+
+### 2026-08-29 修正之二：判据从全局布尔改为逐剖面清单
+
+这道检查原先读的是 `verified_on_any_host`，一个全局布尔。名字本身就是那个缺陷：它记录的是
+「有没有**任何**宿主验证过」，而合同要回答的问题是「**这个**宿主验证过没有」。Codex 侧真跑通
+一次实机 Gate 5、把标志翻成 `true` 之后，Claude 侧的同一项声明立刻也变成合法的——而 Claude
+那边什么都没验证过。一次实机证据于是授权了另一个宿主。
+
+现在的形状：
+
+- `HOST_PROFILES` 登记表，每一项写明「哪个宿主的哪一侧」以及它的验证状态来自哪份产物。
+- 每项能力带 `verified_on`，值是剖面名的清单；空清单意思是「没有任何剖面验证过」。
+- `negotiate()` 必传 `profile`。省略、拼错、或拿真人面的剖面去协商模型角色，都直接不成立
+  （`unknown_host_profile` / `profile_role_mismatch`）。**允许省略等于允许「不说自己是谁」，
+  而那正是这次要消灭的状态。**
+- 角色另有 `allowed_capabilities`：`seat_model` 不许声明 `structured_ui` /
+  `private_hand_view` / `persistent_session`——那三项描述的是真人面的表面，而模型面连
+  `view.hand` 都没有，声明「我能只给本人看底牌」不可能为真（`capability_not_for_role`）。
+
+已登记剖面与它们的验证状态：
+
+| 剖面 | 角色 | 验证过 | 依据 |
+| --- | --- | --- | --- |
+| `codex_cli` | `seat_model` | `command_dispatch` | 0.145.0 桥探针，`docs/HOST-PROBE-CHECKLIST.md` |
+| `claude_desktop` | `seat_model` | 无 | 本机没装，探针从未开始执行（`docs/ACCEPTANCE-EVIDENCE.md` 的 Blocked evidence） |
+| `web_table` | `host_command` | `command_dispatch`、`structured_ui`、`private_hand_view`、`persistent_session` | 多轮浏览器验收 |
+
+`claude_desktop` 连必需能力都没验证过，后果是**那个剖面现在协商不过去**。这不是疏漏：那一侧
+从来没有把一条命令发给核心再拿回信封过。一个登记了但用不了的剖面比一个假装能用的剖面有用
+——前者让「还差一次实机」变成机器可判定的事实，后者只会在第一次真的接上时才暴露。
+
+宿主中立的口径也跟着精确了一次。原来写「合同不引用 Codex / Claude」，现在是**合同不以宿主
+名字做判断**：名字只出现在登记表与 `verified_on` 里（那是事实清单，加一个宿主是加一行数据），
+任何 `if` / `switch` / 三元 / 等值比较以宿主名字为条件都不许出现，连「先把比较结果存进变量再
+分支」也不行。源码断言的射程比原来大：整个 `src/` 都查，不只查合同文件。
 
 ## 本轮实现到哪一步
 

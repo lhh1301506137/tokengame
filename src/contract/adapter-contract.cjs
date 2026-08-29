@@ -1,7 +1,16 @@
 "use strict";
 
-// 两个宿主适配器共享的合同。宿主中立：本文件不引用 Codex / Claude / MCP / Hook /
-// 浏览器，一个专有判断都不许出现——这条由 test/adapter-contract.test.cjs 的源码断言守着。
+// 两个宿主适配器共享的合同。宿主中立的口径在 2026-08-29（A3）精确了一次，这里说清。
+//
+// 原来写的是「本文件不引用 Codex / Claude / MCP / Hook / 浏览器」。那句话现在不成立了，
+// 而且不该成立：A3 要求能力协商按「角色 + 具体宿主剖面」验证，而「哪个宿主验证过哪一项」
+// 不写宿主名字就无法表达。不表达它的代价是具体的——一个宿主跑通一次实机 Gate 5 就会连带
+// 授权另一个宿主，而后者什么都没验证过。
+//
+// 现在的口径是：**本文件不以宿主名字做判断**。宿主名字只出现在下面的 HOST_PROFILES 登记表
+// 与各能力的 verified_on 里，那些是事实清单——加一个宿主是加一行数据。任何 if / switch /
+// 三元 / 等值比较以宿主名字为条件都不许出现，连「先把比较结果存进变量再分支」也不行。
+// 这条由 test/adapter-contract.test.cjs 的源码断言守着，射程比原来大：整个 src/ 都查。
 //
 // 结构是**一套 HostAdapter 协议 + 两个权限剖面**：`host_command` 与 `seat_model`。
 //
@@ -110,6 +119,10 @@ const ERROR_CLASSES = Object.freeze({
   ]),
   // 身份或授权不成立。适配器要么补身份，要么走恢复流程；不能靠重试。
   identity: Object.freeze([
+    // 浏览器发来一条不在允许清单里的命令。归 identity 而不是 http_request：这一条问的是
+    // 「你这一侧有没有资格发这条命令」，与 command_not_host_facing / command_not_model_facing
+    // 同类。未知命令与不允许的命令刻意共用这一个码，区分它们会把那个出口变成命令面的探测口。
+    "action_not_permitted",
     "authority_token_rejected",
     // 两面各一个码，刻意不合成一个 command_out_of_face。合成之后日志里读不出是哪一面
     // 越界了，而两个方向的严重性差得很远：真人面越界是宿主自己的路由表写错了，
@@ -183,9 +196,45 @@ const ERROR_CLASSES = Object.freeze({
   ]),
   // 传输层。核心不可达或答非所问。这一类是唯一「原样重试有意义」的。
   transport: Object.freeze([
+    // adapter_timeout 与 core_unavailable 是「对面没答」，重试有意义。
+    // 前者出在 table-web-host 的模型适配器超时，后者出在插件 MCP 连不上核心。
+    "adapter_timeout",
     "core_request_failed",
     "core_response_not_json",
+    "core_unavailable",
     "core_unreachable",
+  ]),
+  // 例行 HTTP 状况。客户端问的方式不对，不是本地缺陷。
+  //
+  // 这一类是 A4 补上的。此前它们一个都没归类，全落 unknown——而 unknown 的处置是
+  // 「当缺陷、弹给用户」，于是一次拼错的 URL 会在用户面前变成一条「程序出错了」。
+  //
+  // 单列一类而不是并入 invalid_request：后者说的是「这次调用的参数不对」，处置里
+  // is_defect 为真（调用方写错了代码）；这一类是「这个地址/方法/大小不对」，多数时候
+  // 是浏览器或脚本在探路，不该记成缺陷。
+  http_request: Object.freeze([
+    "method_not_allowed",
+    "not_found",
+    "request_body_too_large",
+    "unknown_route",
+  ]),
+  // 失败关闭的安全把关。命中就整份扣下，绝不重试。
+  //
+  // 这两条此前也是 is_defect: true，但那是 unknown 兜底的结果而不是归类的结果。差别在
+  // 哪天有人把兜底改宽——比如让 unknown 可重试以「提高健壮性」——它们会跟着变宽，而一次
+  // 重试的凭据泄漏检测等于把泄漏又发一次。
+  security_fail_closed: Object.freeze([
+    "credential_leak",
+    "response_withheld_secret_detected",
+  ]),
+  // 本地缺陷。走到这里说明有代码路径没考虑到，重试和换参数都没用。
+  //
+  // invalid_core_response 归这里而不是 transport：对面确实答了，只是答的不是 JSON。
+  // 重发同一条请求会得到同一份坏响应，所以它不可重试——这是它与 core_unavailable 的
+  // 分界，两者读起来都像「对面有问题」，处置却相反。
+  internal: Object.freeze([
+    "internal_error",
+    "invalid_core_response",
   ]),
   // 合同本身没谈成。全是接线错误：版本不匹配、角色名不认、能力名拼错、生命周期乱跳。
   // 一条都不该在正常运行时出现，所以处置与 unknown 相同（当缺陷、不重试）——它们不是
@@ -199,6 +248,18 @@ const ERROR_CLASSES = Object.freeze({
     "required_capability_missing",
     "unknown_adapter_role",
     "unknown_capability",
+    // 剖面相关的三条归这里而不是 invalid_request：它们说的都是「你我谈的不是同一份合同」
+    // ——剖面名不认、剖面与角色对不上、这个角色不该声明这项能力。换参数重来没用，得改代码。
+    //
+    // capability_not_verified 是唯一的例外，它在 invalid_request 里：那一条说的是「这次
+    // 声明超出了你已验证的范围」，而跑一次实机 Gate 5 之后同一次调用就成立了。它是可以
+    // 通过外部动作变绿的，所以不属于「接错线」。
+    "unknown_host_profile",
+    "profile_role_mismatch",
+    "capability_not_for_role",
+    // 请求信封缺版本号。归 contract 而不是 invalid_request：缺的不是一个参数，是
+    // 「你我谈的是哪一份合同」这件事本身，换参数重来没用。
+    "contract_version_missing",
   ]),
 });
 
@@ -213,6 +274,15 @@ const ERROR_DISPOSITIONS = Object.freeze({
   conflict: Object.freeze({ retryable: false, user_visible: false, is_defect: false }),
   transport: Object.freeze({ retryable: true, user_visible: true, is_defect: false }),
   contract: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),
+  // 例行 HTTP 状况。不记缺陷（多数是浏览器或脚本在探路），但要让调用方看见——
+  // 一次静默的 404 会让人以为请求成功了。
+  http_request: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),
+  // 失败关闭的安全把关。当缺陷、绝不重试。retryable 为假是这一档最要紧的一位：
+  // 重试一条凭据泄漏检测等于把泄漏再发一次。
+  security_fail_closed: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),
+  // 本地缺陷。与 unknown 的处置相同，但分开命名有意义：unknown 是「没归类」，
+  // internal 是「归了类，结论就是这里有 bug」。混在一起会让覆盖检查读不出缺口。
+  internal: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),
   unknown: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),
 });
 
@@ -312,38 +382,79 @@ function nextLifecycleState(from, to) {
 //
 // 每一项都写明「缺了它宿主该怎么退」。没有降级路径的能力不该出现在这张表里：那种能力
 // 缺失时只会表现为卡住，而卡住读不出原因。
+// ---- 宿主剖面 ----
+//
+// 「哪个宿主的哪一侧」。这份登记表存在的理由是一句在旧设计里不可表达的话：**这个**宿主
+// 验证过这项能力没有。
+//
+// 旧设计用一个全局布尔 `verified_on_any_host`，而名字本身就是那个缺陷。它记录「有没有
+// 任何宿主验证过」，于是 Codex 侧真跑通一次实机 Gate 5、把标志翻成 true 之后，Claude 侧
+// 的同一项声明立刻也变成合法的——而 Claude 那边什么都没验证过。一次实机证据授权了另一个
+// 宿主，这正是不能发生的事。
+//
+// 剖面名进 CAPABILITIES.verified_on 的数组里，所以「验证过什么」是逐剖面记录的事实清单，
+// 翻一项只影响一个剖面。
+const HOST_PROFILES = Object.freeze({
+  codex_cli: Object.freeze({
+    role: "seat_model",
+    note: "Codex CLI 的座位 AI 侧。0.145.0 上跑过桥探针（docs/HOST-PROBE-CHECKLIST.md），"
+      + "命令派发这条路径有实机产物；界面支持仍是未关闭的 U-TG-CODEX-UI-SUPPORT。",
+  }),
+  claude_desktop: Object.freeze({
+    role: "seat_model",
+    note: "Claude Desktop / Cowork 的座位 AI 侧。本机没有装，探针从未开始执行——"
+      + "见 docs/ACCEPTANCE-EVIDENCE.md 的 Blocked evidence。所以它一项能力都没验证过，"
+      + "包括必需的 command_dispatch：这个剖面现在协商不过去，而那是准确的。",
+  }),
+  web_table: Object.freeze({
+    role: "host_command",
+    note: "浏览器牌桌，真人操作面。浏览器验收跑过多轮（结构化控件、逐席私有底牌视图、"
+      + "掉线后 seat.recover），所以它的 UI 能力有实测支撑。",
+  }),
+});
+
+// 每一项都写明「缺了它宿主该怎么退」。没有降级路径的能力不该出现在这张表里：那种能力
+// 缺失时只会表现为卡住，而卡住读不出原因。
+//
+// verified_on 是剖面名的清单，空数组意思是「没有任何剖面验证过」。往里加一项必须有实机
+// 产物支撑，不是有人觉得应该能行。
 const CAPABILITIES = Object.freeze({
   proactive_wake: Object.freeze({
     required: false,
-    verified_on_any_host: false,
+    verified_on: Object.freeze([]),
     degrade_to: "polling",
     note: "无点击主动唤醒。缺失时宿主必须退回轮询，并在 UI 上说明该席在等待唤醒——"
-      + "静默不动作会让牌局停住而读不出原因。两个宿主都未验证（SAME_VISIBLE_TASK_SPIKE_V1 未执行）。",
+      + "静默不动作会让牌局停住而读不出原因。任何剖面都未验证（SAME_VISIBLE_TASK_SPIKE_V1 未执行）。",
   }),
   structured_ui: Object.freeze({
     required: false,
-    verified_on_any_host: true,
+    verified_on: Object.freeze(["web_table"]),
     degrade_to: "text_commands",
     note: "结构化控件（按钮、表单）。缺失时退回文本命令。章程要求真人的筹码动作由结构化"
       + "控件提交，所以缺失时 hand.act 必须显式不可用，不能改成让模型代下。",
   }),
   private_hand_view: Object.freeze({
     required: false,
-    verified_on_any_host: true,
+    verified_on: Object.freeze(["web_table"]),
     degrade_to: "public_only",
     note: "能只给本人看底牌。缺失时退回只显示公开信息——绝不许退成「给所有人看」。",
   }),
   persistent_session: Object.freeze({
     required: false,
-    verified_on_any_host: true,
+    verified_on: Object.freeze(["web_table"]),
     degrade_to: "recover_on_reconnect",
     note: "跨重启保持会话。缺失时走 seat.recover。注意保留窗只有 120 秒，"
       + "而协调器重启会连同凭据一起丢，那种情况下恢复不了，按正常释放处理。",
   }),
   // 必需项。缺了它适配器根本没法参与，所以没有 degrade_to。
+  //
+  // claude_desktop 不在 verified_on 里，后果是那个剖面现在协商不过去。这不是疏漏：本机没有
+  // 装 Claude Desktop，那一侧从来没有把一条命令发给核心再拿回信封过。一个登记了但用不了的
+  // 剖面比一个假装能用的剖面有用——前者让「还差一次实机」变成机器可判定的事实，后者只会在
+  // 第一次真的接上时才暴露。
   command_dispatch: Object.freeze({
     required: true,
-    verified_on_any_host: true,
+    verified_on: Object.freeze(["codex_cli", "web_table"]),
     degrade_to: null,
     note: "能把一条命令发给核心并拿回信封。这是唯一的必需能力。",
   }),
@@ -369,17 +480,37 @@ const REQUIRED_CAPABILITIES = Object.freeze(
 // 清单不在这里重写一遍，直接引 host-surface.cjs——那里已经逐条写明了每条命令归谁以及
 // 为什么。按对象身份引用，不复制：抄一份的后果是两处会漂移，而漂移的方向一定是模型面
 // 变宽（「新命令默认落到真人面」这条规则只写在那一边）。
+// allowed_capabilities 是「这个角色声明哪些能力才有意义」。
+//
+// 三项 UI 能力对模型剖面不可能为真：它们描述的是真人面的表面，而模型面里连 view.hand 都
+// 没有——声明「我能只给本人看底牌」时，它连底牌出口都不持有。
+//
+// 危害按实情说，不夸大。今天 degradations 与 granted 只有测试在读，产品代码里还没有消费者
+// （B7 的轮询兜底未建），所以现在的后果是「合同接受了一句永远不可能为真的声明，并把它记进
+// granted」。等 B7 把 degradations 接成轮询与 UI 提示的依据之后，同一句假声明就会变成「该退
+// 的降级没退」。趁没有消费者的时候关掉比等它长出消费者再关便宜。
+//
+// proactive_wake 对模型剖面是有意义的（被叫起来说话），所以它在允许集里——它过不去是因为
+// 另一道检查：任何剖面都还没验证过它。两道门各管一件事，别合并。
 const ADAPTER_ROLES = Object.freeze({
   host_command: Object.freeze({
     actor: "human",
     commands: HUMAN_COMMANDS,
     holds_seat_handle: true,
+    allowed_capabilities: Object.freeze([
+      "command_dispatch",
+      "persistent_session",
+      "private_hand_view",
+      "proactive_wake",
+      "structured_ui",
+    ]),
     note: "真人操作面 + UI。筹码动作、Ready、隐私确认、亮牌都在这一侧。",
   }),
   seat_model: Object.freeze({
     actor: "model",
     commands: MODEL_COMMANDS,
     holds_seat_handle: false,
+    allowed_capabilities: Object.freeze(["command_dispatch", "proactive_wake"]),
     note: "该席 AI 的参赛回路 + 公开读取。一张句柄也没有。",
   }),
 });
@@ -396,10 +527,31 @@ function commandsForRole(role) {
 //
 // 返回值刻意不含 boolean 之外的裁决理由聚合（比如「总体可用性评分」）：一个分数会诱使
 // 调用方用阈值判断，而这里每一项的降级路径都不一样，平均不出任何有意义的东西。
-function negotiate({ role, contract_version: version, capabilities = [] } = {}) {
+function negotiate({ role, profile, contract_version: version, capabilities = [] } = {}) {
   const spec = ADAPTER_ROLES[role];
   if (spec === undefined) {
     throw new ContractError("unknown_adapter_role", { role: role ?? null });
+  }
+  // 剖面必传。允许省略等于允许「不说自己是谁」，而那正是这一节要消灭的状态：一个不报剖面的
+  // 适配器只能按「随便哪个宿主」处理，于是任何一处实机证据都会授权它。
+  //
+  // 认不出的剖面名报错而不是当成「哪里都没验证过」：静默降级会让一处拼写错误和一个诚实的
+  // 未验证宿主长得一模一样，而前者该改代码、后者该去跑实机。
+  const profileSpec = HOST_PROFILES[profile];
+  if (profileSpec === undefined) {
+    throw new ContractError("unknown_host_profile", {
+      profile: profile ?? null,
+      known: Object.keys(HOST_PROFILES),
+    });
+  }
+  if (profileSpec.role !== role) {
+    // 拿真人面的剖面协商模型角色，等于声称「我这一侧既是那个宿主的真人面又是模型面」。
+    // 两个剖面的权限不重叠正是二分的全部意义，允许这种组合就把二分作废了。
+    throw new ContractError("profile_role_mismatch", {
+      profile,
+      role,
+      profile_role: profileSpec.role,
+    });
   }
   if (version !== CONTRACT_VERSION) {
     // 版本不同直接不成立，不做「向后兼容」推断。见 CONTRACT_VERSION 的注释。
@@ -417,25 +569,35 @@ function negotiate({ role, contract_version: version, capabilities = [] } = {}) 
     // 而适配器那边以为自己声明过了。两边都不会有人发现。
     throw new ContractError("unknown_capability", { unknown });
   }
-  // 尚未在任何宿主上验证过的能力，声明即拒。
+  // 这个角色声明这项能力有没有意义。按角色的允许集走，不把能力名写死：下一项 UI 能力加进来
+  // 时，写死名字的实现不会红，而它同样会被模型剖面静默接受——与从前写死 proactive_wake 那次
+  // 是同一类。
+  //
+  // 这道检查在验证检查之前。顺序有意义：一项对该角色根本无意义的能力，报「你这个角色不该
+  // 声明它」比报「这个剖面还没验证过它」准确——后者会让人以为跑一次实机就能拿到。
+  const notForRole = declared.filter((name) => !spec.allowed_capabilities.includes(name));
+  if (notForRole.length > 0) {
+    throw new ContractError("capability_not_for_role", { role, rejected: notForRole });
+  }
+  // 这个剖面还没验证过的能力，声明即拒。
   //
   // 此前「绝不声明 proactive_wake」这条规则只写在每个适配器自己的 DECLARED_CAPABILITIES
   // 里，而这里从不检查。两份参考适配器都恰好做对了，于是没有任何东西要求过这件事——
   // 与 policy epoch 那一处同形：规则只在记得它的地方成立。
   //
-  // 后果不是「多了一条声明」。下面的 degradations 是宿主决定要不要轮询的唯一依据：
-  // 声明了 proactive_wake，polling 那一条就不在清单里，于是宿主不轮询，而那个能力实际上
-  // 并不存在。表现是牌局停在某一席上，谁都不知道是在等模型还是已经死了。
+  // 后果不是「多了一条声明」。下面的 degradations 将是宿主决定要不要轮询的依据：声明了
+  // proactive_wake，polling 那一条就不在清单里，于是宿主不轮询，而那个能力实际上并不存在。
+  // 表现是牌局停在某一席上，谁都不知道是在等模型还是已经死了。
   //
-  // 按 verified_on_any_host 走，不把名字写死：下一个未验证能力加进来时，写死名字的实现
-  // 不会红，而它同样会被静默接受。
+  // 按 verified_on 逐剖面判，不看全局：一个宿主的实机证据不该授权另一个宿主。
   //
-  // 这道检查会自己退休。真有一次实机 Gate 5 通过之后把那个标志翻成 true，声明就合法了
-  // ——所以它不是「永久禁止」，而是「未验证之前不许声明」。翻转标志必须有实机证据支撑，
-  // 而 test/capability-honesty.test.cjs 最后一条会在翻转时提醒把断言方向一起改。
-  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on_any_host !== true);
+  // 这道检查会自己退休。某个剖面真跑通一次实机 Gate 5 之后把它加进那一项的 verified_on，
+  // 该剖面的声明就合法了——所以它不是「永久禁止」，而是「你没验证过之前不许声明」。加名字
+  // 必须有实机产物支撑，而 test/capability-honesty.test.cjs 最后一条会在翻转时提醒把断言
+  // 方向一起改。
+  const unverified = declared.filter((name) => !CAPABILITIES[name].verified_on.includes(profile));
   if (unverified.length > 0) {
-    throw new ContractError("capability_not_verified", { unverified });
+    throw new ContractError("capability_not_verified", { profile, unverified });
   }
   const missingRequired = REQUIRED_CAPABILITIES.filter((name) => !declared.includes(name));
   if (missingRequired.length > 0) {
@@ -458,6 +620,7 @@ function negotiate({ role, contract_version: version, capabilities = [] } = {}) 
   return Object.freeze({
     contract_version: CONTRACT_VERSION,
     role,
+    profile,
     actor: spec.actor,
     commands: spec.commands,
     holds_seat_handle: spec.holds_seat_handle,
@@ -472,6 +635,7 @@ function negotiate({ role, contract_version: version, capabilities = [] } = {}) 
 module.exports = {
   ADAPTER_ROLES,
   CAPABILITIES,
+  HOST_PROFILES,
   CONTRACT_VERSION,
   ContractError,
   ERROR_CLASSES,

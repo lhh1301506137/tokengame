@@ -53,18 +53,76 @@ function isSuperseded(source) {
   return /^\/\/ SUPERSEDED_BY_/m.test(source);
 }
 
-test("核心与合同里不出现 Claude / Codex / MCP 专有判断", () => {
+test("核心与合同里不以宿主名字做判断", () => {
   // 目标里点名的边界。整个 src/ 都查，不只查合同文件：合同再中立，只要核心某处
   // if (host === "claude") 就已经破了。
+  //
+  // 断言在 2026-08-29（A3）从「可执行代码里不出现宿主名字」改成「不以宿主名字做判断」。
+  // 理由：A3 要求「能力协商按角色 + 具体宿主剖面验证」，而「哪个宿主验证过哪一项」这件事
+  // 不写宿主名字就无法表达——不表达它，一个宿主的实机证据就会继续授权另一个宿主，那正是
+  // A3 要消灭的缺陷。
+  //
+  // 原来那条禁名字的写法是真边界的先行指标（「合同里若开始出现宿主名字，下一步就是代码
+  // 分支」），不是边界本身。边界是分支：一张登记表加一行是数据，一个 if 加一支是语义。
+  // 所以现在直接盯分支，而且比原来严——原来只在 table-store.cjs 那一处查过「没有 if」，
+  // 现在整个 src/ 都查。
   const offenders = [];
   for (const file of SOURCES) {
     const raw = fs.readFileSync(file, "utf8");
     if (isSuperseded(raw)) continue;
-    if (HOST_SPECIFIC.test(executablePart(raw))) {
-      offenders.push(path.relative(ROOT, file).replace(/\\/g, "/"));
-    }
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    const lines = executablePart(raw).split("\n");
+    lines.forEach((line, index) => {
+      if (!HOST_SPECIFIC.test(line)) return;
+      // 一：宿主名字和条件关键字出现在同一行。
+      if (/\b(if|switch|case)\b|\?/.test(line)) {
+        offenders.push(`${rel}:${index + 1} 以宿主名字做条件：${line.trim()}`);
+        return;
+      }
+      // 二：先把比较结果存进变量再分支。`const isCodex = profile === "codex_cli"` 那一行
+      // 没有任何条件关键字，但它就是一个宿主分支，只是拆成了两步。
+      if (/[=!]==?\s*["'][^"']*(claude|codex|cowork|anthropic)/i.test(line)
+        || /(claude|codex|cowork|anthropic)[^"']*["']\s*[=!]==?/i.test(line)) {
+        offenders.push(`${rel}:${index + 1} 拿宿主名字做等值比较：${line.trim()}`);
+      }
+    });
   }
-  assert.deepEqual(offenders, [], `以下文件的可执行代码里出现了宿主专有名字：${offenders}`);
+  assert.deepEqual(offenders, [], `以宿主名字做判断：\n${offenders.join("\n")}`);
+});
+
+test("宿主名字只出现在剖面登记与默认剖面这两处", () => {
+  // 上一条盯的是分支，这一条盯射程。允许写名字之后，最容易发生的下一件事不是加 if，
+  // 而是名字开始往别的模块渗——一处渗进去就多一个「这个文件也知道宿主是谁」的地方，
+  // 而每一处都是将来加分支的落点。
+  //
+  // 这条会随剖面登记表的实现位置改变而需要更新，那是对的：搬家应当有人看一眼。
+  const allowed = new Map([
+    ["src/contract/adapter-contract.cjs", /HOST_PROFILES|verified_on/],
+    ["src/host/seat-model-adapter.cjs", /DEFAULT_PROFILE/],
+  ]);
+  const offenders = [];
+  for (const file of SOURCES) {
+    const raw = fs.readFileSync(file, "utf8");
+    if (isSuperseded(raw)) continue;
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    const lines = executablePart(raw).split("\n");
+    lines.forEach((line, index) => {
+      if (!HOST_SPECIFIC.test(line)) return;
+      const permitted = allowed.get(rel);
+      if (permitted === undefined) {
+        offenders.push(`${rel}:${index + 1} 这个文件不该知道宿主叫什么：${line.trim()}`);
+        return;
+      }
+      // 允许的文件里也不是随处可写：必须落在登记表或默认剖面那一段的上下文里。
+      // 窗口取前 20 行：一条登记项的 note 是多行拼接串，最后一行离 HOST_PROFILES 那个
+      // 标识可以有十几行远。窗口太窄会把正当的 note 判成越界，那是假红。
+      const context = lines.slice(Math.max(0, index - 20), index + 1).join("\n");
+      if (!permitted.test(context)) {
+        offenders.push(`${rel}:${index + 1} 宿主名字出现在登记表之外：${line.trim()}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [], `宿主名字越出允许范围：\n${offenders.join("\n")}`);
 });
 
 test("带已替代标记的模块清单是钉死的", () => {
@@ -113,14 +171,46 @@ test("已替代模块里的宿主名字只是展示串，不是判断", () => {
   }
 });
 
-test("合同文件连注释里也只把宿主名字当反例提", () => {
-  // 弱一点的一条，但值得钉：合同里若开始出现 "Claude 需要……" 这类注释，下一步就是代码。
+test("合同里提到宿主名字的每一处都说清了验证状态", () => {
+  // 这一条替掉了原先「注释里也只把宿主名字当反例提」。
+  //
+  // 原来那条的用意是防「合同里出现 Claude 需要…… 这类注释，下一步就是代码」。A3 之后
+  // 合同必须记录「哪个宿主验证过哪一项」，反例式措辞不再够用——一条登记项要说的正是
+  // 这个宿主本身的事实。
+  //
+  // 换成一条更贴近危害的要求：凡是提到宿主名字的地方，都要能读出它的验证状态。这一节
+  // 最容易出的错不是「提了名字」，而是「登记了一个剖面却没说它验证过什么」——那种登记项
+  // 读起来像是已经能用了。
   const source = fs.readFileSync(
     path.join(SRC, "contract", "adapter-contract.cjs"), "utf8");
-  const mentions = source.split("\n").filter((line) => /claude|codex/i.test(line));
-  for (const line of mentions) {
-    assert.match(line, /不引用|不许|禁止|两个宿主|专有/,
-      `合同里提到宿主名字的这一行读不出「这是反例」：${line.trim()}`);
+  const lines = source.split("\n");
+  const offenders = [];
+  lines.forEach((line, index) => {
+    if (!/claude|codex/i.test(line)) return;
+    // 该行或紧邻的注释里要出现验证状态的说法。范围取前后各 6 行：一条登记项的 note
+    // 通常紧跟在 role 后面，而解释性注释在它上面。
+    const context = lines.slice(Math.max(0, index - 6), index + 7).join("\n");
+    if (!/验证|未验证|实机|探针|没有装|Blocked|verified_on/i.test(context)) {
+      offenders.push(`${index + 1}: ${line.trim()}`);
+    }
+  });
+  assert.deepEqual(offenders, [],
+    `合同里提到宿主名字但读不出验证状态：\n${offenders.join("\n")}`);
+});
+
+test("每个剖面都写明它验证过什么、没验证过什么", () => {
+  // 上一条按文本查，这一条按数据查——文本可以写得很漂亮而数据是空的。
+  const { HOST_PROFILES, CAPABILITIES } = contract;
+  for (const [name, spec] of Object.entries(HOST_PROFILES)) {
+    const verified = Object.entries(CAPABILITIES)
+      .filter(([, cap]) => cap.verified_on.includes(name))
+      .map(([capName]) => capName);
+    // 一项都没验证过是允许的（claude_desktop 就是），但那时 note 必须说清为什么，
+    // 否则读的人会以为是漏填。
+    if (verified.length === 0) {
+      assert.match(spec.note, /没有装|未验证|从未|Blocked|阻塞/,
+        `${name} 一项能力都没验证过，note 必须说清为什么：${spec.note}`);
+    }
   }
 });
 
@@ -148,46 +238,18 @@ test("合同不 require 任何宿主实现", () => {
 });
 
 // ---- 2. 错误码全覆盖 ----
-
-test("源码里每一个错误码都被归类，没有落到 unknown 的", () => {
-  const codes = new Set();
-  const pattern = /(?:CoreError|ProbeError|ModelSurfaceError|CustodyError|ContractError)\(\s*"([a-z_]+)"/g;
-  for (const file of SOURCES) {
-    const source = fs.readFileSync(file, "utf8");
-    for (const match of source.matchAll(pattern)) codes.add(match[1]);
-  }
-  assert.ok(codes.size >= 60, `扫到的错误码只有 ${codes.size} 个，正则大概失效了`);
-  const unclassified = [...codes].filter((code) => contract.classifyError(code) === "unknown").sort();
-  assert.deepEqual(unclassified, [],
-    `以下错误码没有归类，会被当成缺陷弹给用户：${unclassified.join(" ")}`);
-});
-
-test("归类表里没有源码不存在的码", () => {
-  // 反向对账。留着不存在的码本身无害，但它说明有人删了实现却没删分类——而下一个人会
-  // 以为那条路还在。
-  const codes = new Set();
-  const pattern = /(?:CoreError|ProbeError|ModelSurfaceError|CustodyError|ContractError)\(\s*"([a-z_]+)"/g;
-  for (const file of SOURCES) {
-    for (const match of fs.readFileSync(file, "utf8").matchAll(pattern)) codes.add(match[1]);
-  }
-  // core_request_failed 是 HTTP 客户端的兜底默认值（body?.code ?? "core_request_failed"），
-  // 不经由 new CoreError("core_request_failed") 产生，所以正则扫不到它。
-  const byDefault = new Set(["core_request_failed"]);
-  const stale = Object.values(contract.ERROR_CLASSES).flat()
-    .filter((code) => !codes.has(code) && !byDefault.has(code)).sort();
-  assert.deepEqual(stale, [], `归类表里这些码源码里已经没有了：${stale.join(" ")}`);
-});
-
-test("一个码只属于一类", () => {
-  const seen = new Map();
-  for (const [name, codes] of Object.entries(contract.ERROR_CLASSES)) {
-    for (const code of codes) {
-      assert.equal(seen.has(code), false,
-        `${code} 同时在 ${seen.get(code)} 与 ${name} 里。分类要能推出唯一处置。`);
-      seen.set(code, name);
-    }
-  }
-});
+//
+// 三条检查（正向覆盖、反向对账、一码一类）在 2026-08-29（A4）搬到
+// test/error-code-registry.test.cjs，那边严格更强，不是换了个地方写同一件事：
+//
+//   - 本文件当时只扫错误**构造器**（`new CoreError("x")` 这种形状），而项目里还有三条别的
+//     出码路径——HTTP 响应体字面量、插件 MCP 响应体、挂在 Error 对象上的 code 字段。那些码
+//     一个都没进视野，于是十二个码全部落到 unknown，而 unknown 的处置是「当缺陷、弹给用户」。
+//     `not_found` / `method_not_allowed` / `unknown_route` 这些例行 HTTP 状况因此都被当成缺陷。
+//   - 新文件扫三种形状，范围含 plugins/，并且额外钉住每一档的处置对不对（例行 HTTP 不记
+//     缺陷、安全失败关闭绝不可重试、core_unavailable 可重试而 invalid_core_response 不可）。
+//
+// 留在这里的是与合同结构直接相关的几条（处置表的射程、兜底的保守性），不重复覆盖检查。
 
 test("每一类都有处置，每个处置都有类", () => {
   for (const name of Object.keys(contract.ERROR_CLASSES)) {
@@ -374,13 +436,15 @@ test("状态名写错时报的是哪个字段", () => {
 
 // ---- 6. 能力协商 ----
 
-test("协商成功后给出角色、命令面与降级清单", () => {
+test("协商成功后给出角色、剖面、命令面与降级清单", () => {
   const result = contract.negotiate({
     role: "host_command",
+    profile: "web_table",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: ["command_dispatch", "structured_ui", "private_hand_view"],
   });
   assert.equal(result.actor, "human");
+  assert.equal(result.profile, "web_table", "协商结果要带回是哪个剖面");
   assert.equal(result.commands, hostSurface.HUMAN_COMMANDS);
   assert.equal(result.lifecycle_state, "negotiated");
   const degraded = result.degradations.map((d) => d.capability).sort();
@@ -393,6 +457,7 @@ test("缺主动唤醒时给出的降级路径是轮询，而不是静默", () =>
   // 读不出原因：谁都不知道是在等模型还是已经死了。
   const result = contract.negotiate({
     role: "seat_model",
+    profile: "codex_cli",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: ["command_dispatch"],
   });
@@ -402,10 +467,24 @@ test("缺主动唤醒时给出的降级路径是轮询，而不是静默", () =>
   assert.match(wake.note, /轮询/);
 });
 
-test("主动唤醒在合同里明确记为两个宿主都未验证", () => {
+test("主动唤醒在合同里明确记为任何剖面都未验证", () => {
   // 不许有人把它写成已验证。目标里的原话：真实 Gate 5 必须标记 unverified。
-  assert.equal(contract.CAPABILITIES.proactive_wake.verified_on_any_host, false);
+  //
+  // 判据从一个全局布尔换成了逐剖面的清单（A3）：空数组的意思比 false 强——false 只说
+  // 「没有任何宿主验证过」，空清单还顺带说明「问的是哪些宿主」。
+  assert.deepEqual(contract.CAPABILITIES.proactive_wake.verified_on, []);
   assert.equal(contract.CAPABILITIES.proactive_wake.required, false);
+  // 逐剖面再问一遍。上面那条只看清单是空的，这条钉住「空清单真的让每个剖面都不通过」。
+  for (const [name, spec] of Object.entries(contract.HOST_PROFILES)) {
+    assert.throws(() => contract.negotiate({
+      role: spec.role,
+      profile: name,
+      contract_version: contract.CONTRACT_VERSION,
+      capabilities: ["command_dispatch", "proactive_wake"],
+    }), (error) => error.code === "capability_not_verified"
+      || error.code === "capability_not_for_role",
+    `${name} 竟然能声明主动唤醒`);
+  }
 });
 
 test("每个非必需能力都有降级路径，必需能力没有", () => {
@@ -435,6 +514,7 @@ test("结构化控件缺失时 hand.act 显式不可用，不改成让模型代�
 test("缺必需能力直接不成立", () => {
   assert.throws(() => contract.negotiate({
     role: "host_command",
+    profile: "web_table",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: [],
   }), (error) => error.code === "required_capability_missing"
@@ -444,6 +524,7 @@ test("缺必需能力直接不成立", () => {
 test("版本不同直接不成立，不做向后兼容推断", () => {
   assert.throws(() => contract.negotiate({
     role: "host_command",
+    profile: "web_table",
     contract_version: contract.CONTRACT_VERSION - 1,
     capabilities: ["command_dispatch"],
   }), (error) => error.code === "contract_version_mismatch"
@@ -451,6 +532,7 @@ test("版本不同直接不成立，不做向后兼容推断", () => {
   // 缺版本号也不放过。默认成当前版本会让一个忘了填的适配器看起来协商成功了。
   assert.throws(() => contract.negotiate({
     role: "host_command",
+    profile: "web_table",
     capabilities: ["command_dispatch"],
   }), { code: "contract_version_mismatch" });
 });
@@ -460,6 +542,7 @@ test("认不出的能力名报错而不是忽略", () => {
   // 两边都不会有人发现。
   assert.throws(() => contract.negotiate({
     role: "seat_model",
+    profile: "codex_cli",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: ["command_dispatch", "proactive_wakeup"],
   }), (error) => error.code === "unknown_capability"
@@ -469,6 +552,7 @@ test("认不出的能力名报错而不是忽略", () => {
 test("角色名不认时报错，并带上原值", () => {
   assert.throws(() => contract.negotiate({
     role: "admin",
+    profile: "codex_cli",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: ["command_dispatch"],
   }), (error) => error.code === "unknown_adapter_role" && error.details.role === "admin");
@@ -481,6 +565,7 @@ test("协商结果不含总体可用性评分", () => {
   // 有意义的东西。
   const result = contract.negotiate({
     role: "seat_model",
+    profile: "codex_cli",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: ["command_dispatch"],
   });
@@ -494,6 +579,7 @@ test("协商不替调用方改生命周期状态", () => {
   // 只回下一个状态名。在这里替它改会让「谁持有状态」变得含糊，而适配器实例才是持有者。
   const result = contract.negotiate({
     role: "seat_model",
+    profile: "codex_cli",
     contract_version: contract.CONTRACT_VERSION,
     capabilities: ["command_dispatch"],
   });

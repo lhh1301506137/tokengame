@@ -16,8 +16,17 @@ const {
   runConformance, CHECKS, requiredCheckIds,
 } = require("../test-support/adapter-conformance.cjs");
 const { BROKEN, SimulatedAdapter } = require("../test-support/adapter-simulator.cjs");
+const { ADAPTER_ROLES, CAPABILITIES } = require("../src/contract/adapter-contract.cjs");
 
 const ROLES = ["host_command", "seat_model"];
+
+// 与模拟器里那份同源。这里不 require 它是因为模拟器只导出 BROKEN 与 SimulatedAdapter，
+// 而给它加一个导出只为测试读一份映射，会让「模拟器的公开面」多一样东西。两处相等由下面
+// 「模拟器挑的剖面与这里一致」那条对账。
+const PROFILE_FOR_ROLE = Object.freeze({
+  host_command: "web_table",
+  seat_model: "codex_cli",
+});
 
 function make(role, overrides = {}) {
   return () => new SimulatedAdapter({
@@ -44,6 +53,17 @@ function makeObserved(role, overrides = {}) {
   };
 }
 
+test("模拟器挑的剖面与本文件用的那份一致", () => {
+  // 上面那份 PROFILE_FOR_ROLE 是抄的，抄的东西会漂。这条对账让漂移当场红：
+  // 模拟器换了剖面而这里没跟，「降级清单是余集」那条就会拿错剖面算余集，
+  // 而它仍然可能碰巧通过。
+  for (const role of ROLES) {
+    const adapter = new SimulatedAdapter({ role });
+    assert.equal(adapter.profile, PROFILE_FOR_ROLE[role],
+      `模拟器给 ${role} 挑的是 ${adapter.profile}，本文件按 ${PROFILE_FOR_ROLE[role]} 算`);
+  }
+});
+
 for (const role of ROLES) {
   test(`参考适配器过一致性套件：${role}`, async () => {
     const { factory, observeDispatch } = makeObserved(role);
@@ -64,22 +84,39 @@ for (const role of ROLES) {
     }
   });
 
-  test(`声明了全部已验证能力时只剩主动唤醒一条降级项：${role}`, async () => {
-    // 断言方向在 2026-08-29 改过一次，理由要写清楚。
+  test(`降级清单恰好是该剖面诚实声明之外的余集：${role}`, async () => {
+    // 断言改过两次，两次的理由都写在这里。
     //
-    // 旧版把 proactive_wake 也塞进声明里，断言「报告仍全绿但留下一条不可验证项」。
-    // 那个组合现在协商就过不去：合同拒收任何 verified_on_any_host 为假的声明，
-    // 因为 negotiate 的 degradations 是宿主决定要不要轮询的唯一依据——声明了它，
-    // polling 就不在清单里，宿主不轮询，而那个能力实际上并不存在。
+    // 第一版把 proactive_wake 也塞进声明里，断言「报告仍全绿但留下一条不可验证项」。
+    // 那个组合后来协商就过不去了：合同拒收未验证能力的声明，因为 degradations 是宿主
+    // 决定要不要轮询的依据——声明了它，polling 就不在清单里，宿主不轮询，而那个能力
+    // 实际上并不存在。
     //
-    // 新版声明四项已验证的，于是降级清单里恰好只剩主动唤醒那一条。这比旧版强：
-    // 谎称有主动唤醒不再是「合规但被标注」，而是根本协商不成。
-    const declarable = [
-      "command_dispatch", "structured_ui", "private_hand_view", "persistent_session",
-    ];
+    // 第二版（2026-08-29 A3）写死了四项「已验证能力」，那假定了两个角色对称。剖面隔离
+    // 之后不对称了：web_table 验证过三项 UI 能力，codex_cli 一项都没有，而模型角色连
+    // 声明 UI 能力的资格都没有（allowed_capabilities）。写死清单于是对 seat_model 变成
+    // 假的。
+    //
+    // 现在按合同算出「这个剖面能诚实声明什么」，再断言降级清单恰好是它的余集。这比写死
+    // 清单强两处：不假定对称，也不会在加进新能力时悄悄过期。
+    const declarable = ADAPTER_ROLES[role].allowed_capabilities.filter(
+      (name) => CAPABILITIES[name].verified_on.includes(PROFILE_FOR_ROLE[role]),
+    );
+    assert.ok(declarable.includes("command_dispatch"),
+      `${role} 的剖面必须验证过必需能力，否则这条测不出东西`);
     const { factory, observeDispatch } = makeObserved(role, { capabilities: declarable });
     const report = await runConformance(factory, { role, observeDispatch });
     assert.deepEqual(report.failures, []);
+    // 降级清单直接问合同，不给一致性报告加字段。这条断言问的是 negotiate 的返回值，
+    // 而报告是「套件跑完的结论」——为了一条断言往报告里加个出口会让两者的职责糊在一起。
+    const adapter = factory();
+    const degraded = adapter.negotiate().degradations.map((d) => d.capability).sort();
+    const expected = Object.keys(CAPABILITIES).filter((n) => !declarable.includes(n)).sort();
+    assert.deepEqual(degraded, expected,
+      "降级清单必须恰好是没声明的那些——多一条会让宿主白退，少一条会让它不该省的省了");
+    // 主动唤醒无论如何都在余集里：任何剖面都没验证过它。
+    assert.ok(degraded.includes("proactive_wake"),
+      "主动唤醒必须始终出现在降级清单里");
     // 没声明主动唤醒，所以那一条记 not_run（没这个能力，无需实机验证），不是 unverifiable。
     assert.deepEqual(report.unverifiable.map((e) => e.check_id), []);
     assert.equal(report.fully_verified, false,

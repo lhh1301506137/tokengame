@@ -21,16 +21,32 @@ const {
   okEnvelope,
 } = require("../src/contract/adapter-contract.cjs");
 
+// 按角色挑一个已验证 command_dispatch 的剖面。
+//
+// 只在这份模拟器里推，合同不提供「替我猜剖面」的 API：真适配器知道自己是哪个宿主，各自
+// 写死一个 DEFAULT_PROFILE（seat-model-adapter 是 codex_cli，host-command-adapter 是
+// web_table）。给合同加一个猜的入口会把「适配器必须说明自己是谁」这件事削回去。
+//
+// 模拟器不同，它是按角色参数化的——一致性套件对两个角色跑同一批检查，不该为了剖面名多传
+// 一个参数。claude_desktop 刻意不选：那个剖面连必需能力都没验证过，一致性套件会全线红，
+// 而那不是套件要测的东西。
+const PROFILE_FOR_ROLE = Object.freeze({
+  host_command: "web_table",
+  seat_model: "codex_cli",
+});
+
 // 参考实现。两个角色共用一个类：差别全在协商结果里，而那正是合同的意思——
 // 「怎么说话」共享，「能说什么」由角色决定。
 class SimulatedAdapter {
   constructor({
     role,
+    profile = PROFILE_FOR_ROLE[role],
     capabilities = ["command_dispatch"],
     // 假核心。真适配器这里是 HttpCoreClient / InProcessCoreClient。
     dispatch = async () => ({}),
   } = {}) {
     this.role = role;
+    this.profile = profile;
     this.capabilities = capabilities;
     this.state = "created";
     this.dispatchImpl = dispatch;
@@ -52,6 +68,7 @@ class SimulatedAdapter {
   inspectableState() {
     return {
       role: this.role,
+      profile: this.profile,
       state: this.state,
       capabilities: this.capabilities,
       // 报数目，不报值。数目足够让套件确认「这一侧确实在管这些东西、释放时确实清了」，
@@ -79,6 +96,7 @@ class SimulatedAdapter {
     this.state = nextLifecycleState(this.state, "negotiated");
     this.negotiation = negotiate({
       role: this.role,
+      profile: this.profile,
       contract_version: CONTRACT_VERSION,
       capabilities: this.capabilities,
     });
@@ -163,6 +181,10 @@ const BROKEN = Object.freeze({
       this.state = "negotiated";
       this.negotiation = negotiate({
         role: this.role,
+        // 剖面照传。这个破坏项要破坏的只有「released 是终态」这一条，漏掉 profile 会让它
+        // 连协商都过不去，于是套件抓到的是 negotiate_succeeds 而不是
+        // no_renegotiate_after_release——一个破坏项测出了另一件事，那条检查就没被验证过。
+        profile: this.profile,
         contract_version: CONTRACT_VERSION,
         capabilities: this.capabilities,
       });

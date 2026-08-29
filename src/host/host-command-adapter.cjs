@@ -38,19 +38,24 @@ const ROLE = "host_command";
 
 // 本适配器声明的能力。
 //
-// proactive_wake 刻意不在这里，而且不是「暂时没实现」：它在两个宿主上都未验证
+// proactive_wake 刻意不在这里，而且不是「暂时没实现」：任何剖面都没验证过它
 // （SAME_VISIBLE_TASK_SPIKE_V1 未执行）。声明它等于把一个未验证的能力写成已具备，
 // 而协商结果会据此不给出降级路径——后果是宿主不轮询，牌局静默停住。
 //
 // structured_ui 也不声明。真人面确实有 UI，但那个 UI 是 TableWebHost 的 HTTP 页面，
 // 不是本适配器提供的。声明一个自己不提供的能力，与声明一个未验证的能力是同一种错。
+// 注意区别：合同**允许** host_command 声明它（那一侧确实有 UI，web_table 剖面也验证过），
+// 拒绝声明是本适配器自己的判断，因为提供者不是它。
 const DECLARED_CAPABILITIES = Object.freeze(["command_dispatch"]);
+
+// 默认剖面。真人操作面这一侧就是浏览器牌桌，而浏览器验收跑过多轮，所以它的能力有实测支撑。
+const DEFAULT_PROFILE = "web_table";
 
 class HostCommandAdapter {
   // custody：SeatCustody 实例。真人面持有句柄，所以这一侧**必须**有托管层——
   //   句柄进不了托管层的话，凭据原文就得由本适配器自己拿着，而那正是 F6 要禁的。
   // dispatch(command, params) -> result：打到核心的那一跳。成功回 result，失败抛 CoreError。
-  constructor({ custody, dispatch, capabilities = DECLARED_CAPABILITIES } = {}) {
+  constructor({ custody, dispatch, capabilities = DECLARED_CAPABILITIES, profile = DEFAULT_PROFILE } = {}) {
     // 两样都在这里查，且理由不同。
     //
     // dispatch：少了这一条，真正的失败会推迟到第一次调用时，而那时的报错指向调用点内部，
@@ -67,6 +72,7 @@ class HostCommandAdapter {
       throw new ContractError("invalid_field", { field: "custody" });
     }
     this.role = ROLE;
+    this.profile = profile;
     this.capabilities = capabilities;
     this.state = "created";
     this.negotiation = null;
@@ -101,6 +107,7 @@ class HostCommandAdapter {
   inspectableState() {
     return {
       role: this.role,
+      profile: this.profile,
       state: this.state,
       // 冻结的副本。给出内部数组等于给出一条可写路径，调用方 push 一个能力名就能让之后的
       // 协商结果变样。
@@ -127,6 +134,7 @@ class HostCommandAdapter {
     this.state = nextLifecycleState(this.state, "negotiated");
     this.negotiation = negotiate({
       role: this.role,
+      profile: this.profile,
       contract_version: CONTRACT_VERSION,
       capabilities: this.capabilities,
     });
@@ -248,4 +256,4 @@ class HostCommandAdapter {
   }
 }
 
-module.exports = { DECLARED_CAPABILITIES, HostCommandAdapter };
+module.exports = { DECLARED_CAPABILITIES, DEFAULT_PROFILE, HostCommandAdapter };
