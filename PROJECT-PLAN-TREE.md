@@ -863,11 +863,13 @@ Project Intelligence 刷新门禁已通过（`STATUS.md#project_intelligence`，
 
 `TG-EU-SINGLE-STACK-WEB-TABLE` 已完成：新 UI 在 `web/table/`，经协调器连同一份宿主中立内核，入口 `npm run web`；四个隔离 Chromium 上下文的 80 条断言全过、控制台错误 0、连续打到第 3 手。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为已替代历史证据，不再是产品路径。
 
-下一恢复点是 `TG-EU-HOST-ADAPTER-CONTRACT`：先把两个宿主共享的 HostAdapter 合同写成文，再实现任一侧适配器，不把 Claude 特例写进核心。
+`TG-EU-HOST-ADAPTER-CONTRACT` 已完成（2026-08-29 校准）：合同成文在 `docs/HOST-ADAPTER-CONTRACT.md`，实现在 `src/contract/adapter-contract.cjs`，两侧参考适配器都在——`SeatModelAdapter`（`src/host/seat-model-adapter.cjs`）与 `HostCommandAdapter`（`src/host/host-command-adapter.cjs`，`0542c1c`）。能力按「角色 + 具体宿主剖面」协商，宿主名字只进登记表不进判断。
+
+下一恢复点是 **B6 单一协调器**：消除「Web Table 自持 SeatCustody」与「Host/SeatModel Adapter 参考实现」两套不相交路径，让真人命令、模型命令、席位绑定、公开时间线和凭据保管服务于同一牌局。约束是不得只增加第三层抽象。之后是 B7（各宿主实际支持的 create/join/status/leave 入口，缺失能力给可见的轮询或手动唤醒兜底，不许静默卡住）。
 
 产品闭环成立不等于 MVP 可玩已通过：`TG-EU-PLAYABILITY-GATE` 的两层都还没跑（自动化层要求至少 10 手、故障矩阵与隐私金丝雀，现有验收只到第 3 手；真人层要四个真人 45 分钟签字），而浏览器验收用的是 `simulated: true` 的脚本适配器。它证明 UI 到权威这条链路，不证明任何真实宿主能力。
 
-明确保留为未验证、不得按已通过对待：`TG-EU-HOST-ADAPTER-CONTRACT`（共享合同未成文）、`TG-EU-CLAUDE-HOST-ADAPTER`（按用户指令暂缓，本环境无 Claude Desktop / Cowork 界面，跑不了实机门禁）、`TG-EU-PROACTIVE-WAKE-SPIKE`（`SAME_VISIBLE_TASK_SPIKE_V1` 未执行，两个宿主的无点击主动唤醒都未验证）、`TG-EU-PLAYABILITY-GATE`（自动化层与四真人试玩层均未执行）。既有 Codex 桥接与旧牌桌气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主能力、跨宿主私人房或事件驱动主动唤醒已经交付。
+明确保留为未验证、不得按已通过对待：`TG-EU-CLAUDE-HOST-ADAPTER`（本环境无 Claude Desktop / Cowork 界面，跑不了实机门禁；合同层已把它登记为 `claude_desktop` 剖面且**一项能力都没验证过**，所以那个剖面现在协商不过去——这是准确的表达，不是缺陷）、`TG-EU-PROACTIVE-WAKE-SPIKE`（`SAME_VISIBLE_TASK_SPIKE_V1` 未执行，任何剖面的无点击主动唤醒都未验证，合同层直接拒收该声明）、`TG-EU-PLAYABILITY-GATE`（自动化层已到第 13 手，四真人试玩层未执行）。既有 Codex 桥接与旧牌桌气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主能力、跨宿主私人房或事件驱动主动唤醒已经交付。
 
 ## 本地探针执行结论
 
