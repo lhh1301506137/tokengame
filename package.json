@@ -11,7 +11,7 @@
     "web": "node src/run-table-web.cjs",
     "bridge": "node src/bridge/server.cjs",
     "test": "node --test --test-concurrency=1 test/*.test.cjs",
-    "gate": "bash test-support/gate.sh"
+    "gate": "node test-support/gate.cjs"
   },
   "engines": {
     "node": ">=22"
