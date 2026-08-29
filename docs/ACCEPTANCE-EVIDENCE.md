@@ -418,6 +418,21 @@ node test-support/table-web-acceptance.mjs artifacts/table-web-acceptance
 
 已验证：本地单栈产品闭环、四上下文隔离、控制台零错误。未验证：真实宿主适配器、无点击主动唤醒、四真人 45 分钟试玩签字、`PLAYABILITY_GATE_V1` 的自动化层（要求至少 10 手与故障矩阵、隐私金丝雀，本次只到第 3 手）、生产鉴权与远程部署。本机桥接鉴权仍是未闭合未知项 `U-TG-LOCAL-BRIDGE-AUTH`。
 
+### Blocked evidence（2026-08-29）：Claude Desktop / Cowork 实机探针未执行
+
+如实记一条「没跑」，而不是省略。省略与「跑过且没问题」在读者那里区不开，而这一条恰好是
+Gate 5 唯一的证据来源。
+
+- **未执行的是什么**：Claude Desktop / Cowork 上的无点击主动唤醒实机验证
+  （`SAME_VISIBLE_TASK_SPIKE_V1`），以及 Claude 侧宿主适配器本体的任何实机门禁。
+- **缺的外部条件**：本会话运行在终端 Claude Code 内，本机没有 Claude Desktop / Cowork 界面。
+  这不是一次失败的探针，是一次没有开始的探针——没有产物、没有截图、没有退出码。
+- **不因此声明任何东西**：`proactive_wake` 的 `verified_on_any_host` 仍为 `false`，两个角色的
+  `fully_verified` 仍为 `false`，两份参考适配器都不声明该能力。自 2026-08-29 起合同**拒收**
+  这个声明（`capability_not_verified`），所以「未验证」不再只是文档里的一句话。
+- **本轮在这个方向上做完的是**：让「能力不确定时诚实降级」由合同强制，而不是靠适配器作者
+  记得。那一条与宿主无关，所以它能在没有实机的环境里验证——但它没有让 Gate 5 前进一步。
+
 ### 勘误与补记（2026-08-29，提交 `4456a4c`）：重新确认那三条测的是渲染，不是判定
 
 §1c 的三条重新确认断言（`public_limits_changed` / `new_room_binding` / `table_rules_changed`）
