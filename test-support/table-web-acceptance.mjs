@@ -56,8 +56,23 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const PLAYERS = ["alice", "bob", "carol", "dave"];
+// 发牌种子。挑它的过程见下面 §9d 的注释：要的是一个能让「有人跟的全下真的把一席打到 0」
+// 这条分支稳定走到的牌路，而不是随便一个常量。
+const DECK_SEED = "tokengame-acceptance-v1";
 const steps = [];
 const failures = [];
+
+// 当前测试阶段。每条证据都记下它，否则一条偶发的 403 只能看出「有人 403 了」，
+// 看不出它落在哪一段——而落在断网窗口内与落在窗口关闭之后是完全不同的两件事，
+// 前者是被测行为，后者是缺陷。
+//
+// 模块级单值而不是逐条传参：证据是在事件回调里收的，回调拿不到调用栈。
+let currentPhase = "启动";
+
+function phase(name) {
+  currentPhase = name;
+  return name;
+}
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -84,6 +99,82 @@ function check(name, condition, detail = "") {
   return condition;
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 「客户端自己放弃的请求」这一类，与网络/服务端故障分开计。
+//
+// 为什么这不是「按文本白名单过滤」。判据是错误语义，不是错误长相：
+//
+//   net::ERR_ABORTED 的含义是**发起方撤回了这次请求**。它只有两个来源：导航把飞行中的
+//   请求带走（pagehide 的 beacon），以及代码显式 AbortController.abort()。
+//   服务端与网络的故障是另一组码——ERR_CONNECTION_REFUSED、ERR_CONNECTION_RESET、
+//   ERR_TIMED_OUT、ERR_NAME_NOT_RESOLVED、ERR_NETWORK_CHANGED——它们一条都不在这一类里，
+//   所以「服务进程死了」「路由被掐了」照样进合计。
+//
+// 而这个仓库里客户端只在两处放弃请求，两处都是设计如此：
+//
+//   1. /api/session/disconnect —— pagehide 的 beacon。web/table/table.js 把它明确写成
+//      best effort：不保证送达、没有错误处理可写，真正的掉线判定是服务端的连接租约
+//      （test/connection-lease.test.cjs 的「不发 beacon 也会到期断线」钉的就是这条）。
+//   2. /api/view —— 终结转换时 stopPolling() 掐掉飞行中的那次轮询。这一条正是 B.2 修的
+//      根因：不掐的话它带着即将作废的凭据撞 403，或者把刚掉的线重新接上。
+//
+// 所以下面查两件事：原因必须是撤回，路径必须是这两处之一。第二个条件是收窄——
+// 客户端在别处开始放弃请求，这里会红，而那确实该有人看一眼。
+//
+// 只作用于 requestfailed，完全不碰 badResponses：收到 4xx 是「连上了但被拒」，
+// 那是 response 事件，走另一条路，一条都不豁免。
+const CLIENT_ABORT_REASON = "net::ERR_ABORTED";
+const CLIENT_CANCELS_BY_DESIGN = Object.freeze([
+  "/api/session/disconnect",
+  "/api/view",
+]);
+
+function isClientCancellation(item) {
+  if (item.kind !== "requestfailed") return false;
+  if (item.reason !== CLIENT_ABORT_REASON) return false;
+  if (typeof item.url !== "string") return false;
+  return CLIENT_CANCELS_BY_DESIGN.includes(new URL(item.url).pathname);
+}
+
+// 一份证据报告，两处使用（§12 与 finally）。第一版在两处各写一遍，
+// 于是两份可以悄悄长得不一样——而不一致的两份证据比一份都不如。
+function buildEvidenceReport(players) {
+  const perPlayer = players.map((player) => ({
+    player: player.name,
+    consoleErrors: player.consoleErrors,
+    pageErrors: player.pageErrors,
+    // 故意断网窗口内的错误单列。不并入合计，但必须出现在证据里——否则「合计为 0」这句话
+    // 就变成了「除了我不想算的那些之外为 0」，而读证据的人看不出差别。
+    duringDeliberateFailure: player.expectedFailures,
+    // 网络证据按「窗口内 / 窗口外」分开，判据是条目自己记下的 expected 字段，
+    // 不是事后按文本猜。窗口在事件发生的那一刻是开还是关，只有那一刻知道。
+    requestFailures: player.requestFailures.filter(
+      (e) => !e.expected && !isClientCancellation(e)),
+    badResponses: player.badResponses.filter((e) => !e.expected),
+    requestFailuresExpected: player.requestFailures.filter((e) => e.expected),
+    badResponsesExpected: player.badResponses.filter((e) => e.expected),
+    // 客户端自己撤回的那些单列。不并入合计，但必须出现在证据里——理由与故意失败窗口
+    // 那条相同：「合计为 0」不能悄悄变成「除了我不想算的那些之外为 0」。
+    clientCancellations: player.requestFailures.filter(
+      (e) => !e.expected && isClientCancellation(e)),
+  }));
+  const sum = (key) => perPlayer.reduce((total, entry) => total + entry[key].length, 0);
+  return {
+    perPlayer,
+    totalConsole: sum("consoleErrors") + sum("pageErrors"),
+    totalExpectedConsole: sum("duringDeliberateFailure"),
+    totalNetwork: sum("requestFailures") + sum("badResponses"),
+    totalExpectedNetwork: sum("requestFailuresExpected") + sum("badResponsesExpected"),
+    totalClientCancellations: sum("clientCancellations"),
+    // 窗口外的网络问题按 phase 汇总，好一眼看出偶发落在哪一段。
+    networkByPhase: perPlayer.flatMap((entry) => [...entry.requestFailures, ...entry.badResponses])
+      .reduce((acc, item) => {
+        const key = `${item.phase} / ${item.status ?? item.reason ?? "?"}`;
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {}),
+  };
+}
 
 // 轮询等待。UI 是 700 毫秒一次的拉取，权威的到期驱动是 250 毫秒一跳，所以任何跨席
 // 可见的变化都有一个天然延迟。等待上限给够，但超时必须报成失败而不是继续往下走——
@@ -116,6 +207,13 @@ function startServer() {
       TOKENGAME_WEB_HOST: "127.0.0.1",
       // 确定性脚本适配器。它自报 simulated:true 且不可覆盖。
       TOKENGAME_MODEL_ADAPTER: path.join("test-support", "scripted-model-adapter.cjs"),
+      // 确定性发牌。为的是让「关键牌局分支」不随机漂移：全下被跟之后短码破不破产取决于
+      // 摊牌，而那一条分支决定两条断言在不在，于是项数在 200/201 之间跳。
+      // 一条看牌运气的覆盖比没有覆盖更坏——它会教人重跑到绿。
+      //
+      // 允许外部覆盖（换个种子好探别的牌路），但不允许关掉：空种子会让项数重新漂移，
+      // 而那正是这一节要消除的东西。
+      TOKENGAME_DECK_SEED: process.env.TOKENGAME_DECK_SEED || DECK_SEED,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -160,16 +258,95 @@ async function newPlayer(browser, origin, name) {
   // 窗口由脚本显式打开与关闭，不按错误文本猜——按文本过滤会顺手滤掉真实的缺陷，而且
   // 「409」这种文本恰好也是真实幂等缺陷的样子。
   const expectedFailures = [];
+  // 网络证据。分两条：requestfailed 是连不上（掐路由、DNS、abort），
+  // response 是连上了但状态码不对。两者的根因完全不同，混成一条读不出来。
+  //
+  // 每条都带上 player、phase、method、url、status。少了 phase 的话，
+  // 一条偶发的 403 只能看出「有人 403 了」——而它落在断网窗口内是被测行为，
+  // 落在窗口关闭之后是缺陷，这个区别正是 B.2 要查的东西。
+  const requestFailures = [];
+  const badResponses = [];
   const player = {
     name, context, page, consoleErrors, pageErrors, expectedFailures,
+    requestFailures, badResponses,
     expectFailures: false,
   };
+  // 证据条目的统一形状。所有出口共用一份构造，不各写一遍。
+  const entry = (extra) => ({
+    player: name,
+    phase: currentPhase,
+    at: new Date().toISOString(),
+    expected: player.expectFailures,
+    ...extra,
+  });
   page.on("console", (message) => {
     if (message.type() !== "error") return;
-    (player.expectFailures ? expectedFailures : consoleErrors).push(message.text());
+    const item = entry({ kind: "console", text: message.text() });
+    // location() 给出的是打日志那行的位置，不是请求的 URL；两者都留着。
+    const loc = message.location?.();
+    if (loc?.url) item.source = `${loc.url}:${loc.lineNumber ?? "?"}`;
+    (player.expectFailures ? expectedFailures : consoleErrors).push(item);
   });
   page.on("pageerror", (error) => {
-    (player.expectFailures ? expectedFailures : pageErrors).push(error.message);
+    (player.expectFailures ? expectedFailures : pageErrors).push(
+      entry({ kind: "pageerror", text: error.message }));
+  });
+  // 请求发出那一刻的窗口状态。
+  //
+  // 这是测试自己的一条竞态，与产品无关，而它的表现和产品竞态一模一样：一条偶发的 403。
+  //
+  // requestfailed 与 response 是**响应到达时**触发的，而窗口是脚本按步骤开关的。
+  // 一条在窗口内发出、窗口关掉之后才被回答的请求，如果按事件时刻取窗口状态，
+  // 就会被记成「窗口外」——于是一条本该单列的失败混进了合计。
+  //
+  // 判据改成请求发出的时刻。Playwright 的 request 对象在 request / requestfailed /
+  // response 三个事件之间是同一个身份，所以拿它当键。
+  //
+  // 用 WeakMap 而不是 Map：请求对象由 Playwright 持有，页面跑一整轮有几千条，
+  // 强引用会把它们全钉在内存里。
+  const issuedAt = new WeakMap();
+  page.on("request", (request) => {
+    issuedAt.set(request, { phase: currentPhase, expected: player.expectFailures });
+  });
+  // 没记到就退回事件时刻的状态。理论上不该发生（request 一定先于 response），
+  // 但退回一个已知值比读出 undefined 好——后者会让 expected 变成假值，
+  // 于是一条窗口内的失败被算进合计，而那看起来正好像一个产品缺陷。
+  const atIssue = (request) => issuedAt.get(request)
+    ?? { phase: currentPhase, expected: player.expectFailures };
+
+  page.on("requestfailed", (request) => {
+    const origin = atIssue(request);
+    requestFailures.push(entry({
+      kind: "requestfailed",
+      method: request.method(),
+      url: request.url(),
+      status: null,
+      reason: request.failure()?.errorText ?? null,
+      phase: origin.phase,
+      expected: origin.expected,
+      phaseAtEvent: currentPhase,
+    }));
+  });
+  page.on("response", (response) => {
+    const status = response.status();
+    // 只留非 2xx/3xx。全留的话每次运行几千条轮询响应，证据文件会大到没人看，
+    // 而「没人看的证据」等于没有证据。
+    //
+    // 刻意不按「403」之类的文本白名单过滤：按文本挑等于预先决定了哪些错误值得看见，
+    // 而真实缺陷恰好长成同一个样子。判据是状态码区间，与内容无关。
+    if (status < 400) return;
+    const origin = atIssue(response.request());
+    badResponses.push(entry({
+      kind: "response",
+      method: response.request().method(),
+      url: response.url(),
+      status,
+      phase: origin.phase,
+      expected: origin.expected,
+      // 事件时刻的阶段也留着。两者不同就说明这条请求跨过了一次阶段边界，
+      // 而那正是「测试窗口竞态」的指纹——留着它才能把两种竞态分开读。
+      phaseAtEvent: currentPhase,
+    }));
   });
   // 离桌要过一次 window.confirm。不接对话框的话点击会一直挂着。
   page.on("dialog", (dialog) => dialog.accept());
@@ -505,6 +682,16 @@ async function main() {
     banner.model_adapter?.simulated === true,
     `model_adapter=${JSON.stringify(banner.model_adapter)}`);
   check("自带内核时到期驱动在本进程", banner.due_work_owned_here === true);
+  // 种子必须由服务端确认生效，不能只看本脚本设过环境变量。
+  //
+  // 少了这一条，一次「种子悄悄没生效」的运行仍然会通过：项数重新随发牌漂移，
+  // 而读证据的人看到的还是「确定性发牌」这个前提。设过与生效是两件事。
+  check("服务确认确定性发牌已生效（否则项数会重新随发牌漂移）",
+    typeof banner.deterministic_deck?.seed_fingerprint === "string",
+    `deterministic_deck=${JSON.stringify(banner.deterministic_deck)}`);
+  // 种子原文不该出现在启动输出里。任何读到日志的人都能据此预测这一桌的发牌。
+  check("启动输出里没有种子原文",
+    JSON.stringify(banner).includes(DECK_SEED) === false);
 
   const browser = await playwright.chromium.launch({
     headless: true,
@@ -524,6 +711,7 @@ async function main() {
 
   try {
     // ---- 1. 建房、邀请码加入、逐席公开范围确认 ----
+    phase("1 建房、邀请码加入、逐席公开范围确认");
     const alice = await newPlayer(browser, banner.origin, "alice");
     players.push(alice);
 
@@ -597,6 +785,7 @@ async function main() {
       aliceSeesEve.bubbles.every((bubble) => !(bubble.who ?? "").includes("eve")));
 
     // ---- 1b. 入口幂等：丢响应之后重试回到同一个座位 ----
+    phase("1b 入口幂等：丢响应之后重试回到同一个座位");
     //
     // 真实场景是「请求到了、座位建了、响应没回来」。浏览器里没法真的把一个已完成请求的
     // 响应弄丢，所以这里直接用同一个 entry_key 发两次：第二次就是重试要走的那条路。
@@ -628,6 +817,7 @@ async function main() {
       `room_id=${JSON.stringify(roomIds)}`);
 
     // ---- 1c. 绑房 / 桌规 / 发言限制版本变化 -> 重新确认 ----
+    phase("1c 绑房 / 桌规 / 发言限制版本变化 -> 重新确认");
     //
     // 三个维度在真实服务上都不可能在一局中途发生：桌规版本在建房时定下且没有改它的命令，
     // 换绑要另建一个房而 room.create 会撞 room_already_exists，发言限制版本整仓只有一个
@@ -723,6 +913,7 @@ async function main() {
     artifacts.push(await shot(alice, "02-four-seated"));
 
     // ---- 2. Ready 与倒计时 ----
+    phase("2 Ready 与倒计时");
     const beforeReady = await readTable(alice.page);
     check("未全部准备时开局原因来自权威",
       ["等待其他人准备", "在座人数不足"].some((w) => beforeReady.startReason.startsWith(w)),
@@ -749,6 +940,7 @@ async function main() {
       && firstHand.seats.some((s) => s.tags.includes("大盲")));
     check("开手即有底池（盲注已入池）", firstHand.pot > 0, `pot=${firstHand.pot}`);
     // ---- 3. 底牌隔离：这是整个验收里最要紧的一条 ----
+    phase("3 底牌隔离：这是整个验收里最要紧的一条");
     //
     // 四页各自按 700ms 轮询、起点互不相同，所以「alice 见到第一手」不等于四页都见到了。
     // 上面那个 until 只看 alice，早期版本紧接着就读四页，于是在稍慢的机器上 bob /
@@ -826,6 +1018,7 @@ async function main() {
     // 这一组交叉核对刻意放在翻牌前、任何摊牌之前。摊牌或自愿亮牌之后别人的底牌
     // 本来就该出现在我的页面上，那时再搜就会把正确行为报成泄漏。
     // ---- 4. 公开聊天：一个人说，四个人看见 ----
+    phase("4 公开聊天：一个人说，四个人看见");
     const chatText = "我先看看牌面 🙂";
     await alice.page.fill("#say-text", chatText);
     await alice.page.click("#say-submit");
@@ -859,6 +1052,7 @@ async function main() {
     await alice.page.fill("#say-text", "");
 
     // ---- 5. 打完第一手 ----
+    phase("5 打完第一手");
     // 第一个人加注、下一个人弃牌，剩下的走 check/call。这样一手里同时覆盖了
     // 需要金额的动作、弃牌、以及「目标总额」这个参数语义。
     let flopShot = null;
@@ -877,6 +1071,7 @@ async function main() {
     check("第一手里有人弃牌", handOneActions.some((a) => a.action === "fold"));
     artifacts.push(await shot(alice, "05-hand-one-played"));
     // ---- 6. 座位旁 AI 的公开发言 ----
+    phase("6 座位旁 AI 的公开发言");
     // 唤醒源是权威的行动窗口事件，所以第一手打下来应该已经有 AI 说过话。
     const withAi = await until("出现座位 AI 的公开发言", async () => {
       const table = await readTable(alice.page);
@@ -930,6 +1125,7 @@ async function main() {
     artifacts.push(await shot(alice, "06-ai-bubble"));
 
     // ---- 6b. 座位旁聊天：DOM 归属 ----
+    phase("6b 座位旁聊天：DOM 归属");
     //
     // 这一节查的是「归属」，而归属必须是 DOM 父子关系，不是气泡里那行名字。
     // 只查 class 存在等于没查：一个把所有气泡塞进同一个容器再写上名字的实现也能通过。
@@ -984,6 +1180,7 @@ async function main() {
       `时间线 ${twoRegions.timeline} 条，座位旁 ${twoRegions.seatSide} 条`);
 
     // ---- 6c. 座位旁聊天：桌面与窄屏的真实几何 ----
+    phase("6c 座位旁聊天：桌面与窄屏的真实几何");
     //
     // 查的是矩形相交，不是 class 存在。「气泡不遮挡牌面」这句话只能这样验证：
     // 拿到 getBoundingClientRect 再算重叠。class 查得再细也证明不了两块东西没有叠在一起。
@@ -1081,6 +1278,7 @@ async function main() {
     await alice.page.waitForTimeout(300);
 
     // ---- 6d. 座位旁聊天：约 10 秒后退出 ----
+    phase("6d 座位旁聊天：约 10 秒后退出");
     //
     // 单元测试已经钉了投影层的阈值，但那是拿注入时钟算的。这里要证明真浏览器里它真的
     // 会消失：轮询把新的 view 拿回来，气泡随之退出。盯一条具体的文本而不是盯条数——
@@ -1118,6 +1316,7 @@ async function main() {
         exited.inTimeline === true, JSON.stringify(exited));
     }
     // ---- 7. 连续多手：筹码跨手结转 ----
+    phase("7 连续多手：筹码跨手结转");
     // 守恒量是「各席筹码 + 底池」，不是各席筹码。
     //
     // 只加筹码会有竞态：手序号刚变成 2 的那一瞬间，盲注可能还没从筹码里扣到底池。
@@ -1182,6 +1381,7 @@ async function main() {
     artifacts.push(await shot(alice, "07b-hand-two-done"));
 
     // ---- 8. 本地隐藏：只改这一个查看者的画面 ----
+    phase("8 本地隐藏：只改这一个查看者的画面");
     const bobPlayer = players.find((p) => p.name === "bob");
     const bobText = "这句话只有 alice 会看不到";
     await bobPlayer.page.fill("#say-text", bobText);
@@ -1258,6 +1458,7 @@ async function main() {
       `seat=${restored.seats[bobSeatIndex].name}`);
 
     // ---- 8b. 自愿亮牌：成功、重复、陈旧版本号 ----
+    phase("8b 自愿亮牌：成功、重复、陈旧版本号");
     //
     // 规则 4：只有 all_others_folded 的赢家可自愿亮牌。之前这个按钮从来没有成功过一次——
     // 客户端只发 hand_id，而核心要 hand_id + expected_revision + idempotency_key 三样，
@@ -1428,6 +1629,7 @@ async function main() {
     }
 
     // ---- 8c. 连续打到第 10 手以上：多人局、全下与边池、单挑 ----
+    phase("8c 连续打到第 10 手以上：多人局、全下与边池、单挑");
     //
     // 前面几节各自钉一条不变量，但都只在头两三手里。跨十手要暴露的是另一类问题：
     // 累积的状态错误。筹码结转、按钮位轮转、边池归属、手序号，这些在第二手上对，
@@ -1580,6 +1782,7 @@ async function main() {
     artifacts.push(await shot(alice, "8c-after-ten-hands"));
 
     // ---- 8d. 畸形模型输出：浏览器里的有界降级 ----
+    phase("8d 畸形模型输出：浏览器里的有界降级");
     //
     // 单元层已经覆盖了投影降级（test/view-model-degradation.test.cjs）与模型输出降级
     // （test/model-output-degradation.test.cjs），但那两层都在进程内。这一节要的是
@@ -1709,6 +1912,7 @@ async function main() {
     artifacts.push(await shot(projectionViewer, "8d-after-malformed-projections"));
 
     // ---- 9. 掉线与 120 秒保留窗内恢复 ----
+    phase("9 掉线与 120 秒保留窗内恢复");
     const dave = players.find((p) => p.name === "dave");
     const daveIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "dave");
     await dave.page.click("#simulate-disconnect");
@@ -1742,6 +1946,7 @@ async function main() {
     ok("掉线后在保留窗内恢复，座位与身份未变");
 
     // ---- 9b. 真实 reload：按 F5 不该丢席位 ----
+    phase("9b 真实 reload：按 F5 不该丢席位");
     //
     // 与上面那个「模拟掉线」按钮是两件事。按钮走的是协调器的 disconnect/resume，页面本身
     // 一直活着，内存里的会话令牌没丢；reload 会把整个 JS 世界扔掉重建，所以它检验的是
@@ -1808,6 +2013,7 @@ async function main() {
     artifacts.push(await shot(dave, "09b-after-reload"));
 
     // ---- 9c. 网络中断：不发任何通知，纯靠连接租约判掉线 ----
+    phase("9c 网络中断：不发任何通知，纯靠连接租约判掉线");
     //
     // 这一条和「点掉线按钮」的区别是整件事的要点：按钮会明确告诉服务端「我走了」，而真实
     // 断网什么都发不出去。租约是唯一还能发现这件事的机制，所以这里把路由全掐掉，一个字节
@@ -1846,102 +2052,182 @@ async function main() {
     ok("网络中断纯靠连接租约判掉线，恢复后回到原席");
 
     // ---- 9d. 有人跟的全下摊牌，以及筹码归零之后 ----
+    phase("9d 有人跟的全下摊牌，以及筹码归零之后");
     //
     // 第 8c 节的全下刻意没人跟，理由写在那里：跟注的全下会按牌力把一席打到 0，而破产
     // 的是谁取决于发牌，那会把下游几节的前置条件打掉。这一节把那条路补上。
     //
     // 谁承担破产风险是选定的，不是碰运气：
-    //   全下方 = alice / bob / dave 里筹码最少的一席。最少的一席全下，跟注方覆盖得住，
-    //            所以只有全下方自己可能归零。
-    //   跟注方 = 筹码最多的一席。它跟一个比自己小的全下，不可能被打到 0。
-    //   carol  = 一律弃牌。第 10 节要她「排定本手后暂离」，一个已经在 sit out 里的席位
-    //            走不出那条断言，所以她不承担任何风险。
-    const seatsNow = (await readTable(alice.page)).seats
-      .filter((s) => Number.isFinite(s.stack) && s.stack > 0);
-    const riskable = seatsNow
-      .filter((s) => s.name !== "carol")
-      .sort((a, b) => a.stack - b.stack);
-    const richest = [...seatsNow].sort((a, b) => b.stack - a.stack)[0];
-    const allInName = riskable[0]?.name ?? null;
-    const callerName = richest?.name === allInName ? riskable[1]?.name ?? null : richest?.name ?? null;
-    check("能选出全下方与跟注方，且两者不是同一席",
-      allInName !== null && callerName !== null && allInName !== callerName,
-      `全下方=${allInName} 跟注方=${callerName}，`
-        + `筹码 ${JSON.stringify(seatsNow.map((s) => ({ name: s.name, stack: s.stack })))}`);
-
-    const showdownHand = (await readTable(alice.page)).handIndex;
-    const totalBeforeShowdown = seatsNow.reduce((sum, s) => sum + s.stack, 0);
-    let allInPlaced = false;
-    let callPlaced = false;
+    //   全下方 = alice / bob / dave 里筹码最少的一席。跟注方覆盖得住，所以这一手里
+    //            只有全下方自己可能归零。carol 不进这个池子：第 10 节要她「排定本手后
+    //            暂离」，一个已经归零的席位走不出那条断言。
+    //   跟注方 = 除全下方外筹码最多的一席。可以是 carol——跟一个比自己小的全下，
+    //            最坏也只是输掉那么多，不可能被打到 0。
+    //   其余   = 一律弃牌。
+    //
+    // 为什么是循环而不是一手。破不破产取决于摊牌牌力，而确定性发牌只保证「每次运行
+    // 一样」，不保证「这一次走到了破产」：第一版种子就正好让全下方赢了（95→194），
+    // 于是破产路径被**稳定地**跳过。稳定缺失比随机缺失更坏——随机缺失下一次运行还有
+    // 机会暴露，稳定缺失不会再暴露，而报告上写着「确定性发牌，两次名单一致」。
+    //
+    // 所以这里重复「短码全下、大码跟、其余弃」直到真有一席归零。预算用尽就红，不给
+    // 「本轮未走到」这种恒真的收尾。断言条数与循环了几轮无关：失败都收集到循环外，
+    // 循环后一次性判定，否则项数会重新随发牌漂移——那正是这一节要消除的东西。
+    const BUST_BUDGET = 8;
+    const selectionFailures = [];
+    const coverFailures = [];
+    const shapeFailures = [];
+    const conservationFailures = [];
+    const rounds = [];
+    let bustedNames = null;
+    let bustHandIndex = null;
     let tagOnScreen = false;
-    const showdownActions = [];
-    for (let guard = 0; guard < 40; guard += 1) {
-      if ((await readTable(alice.page)).handIndex > showdownHand) break;
-      let holder;
-      try {
-        holder = await findActor(players, `全下摊牌（第 ${showdownHand} 手）`);
-      } catch {
+    let attempts = 0;
+
+    let settled = null;
+    while (bustedNames === null && attempts < BUST_BUDGET) {
+      attempts += 1;
+      const label = `第 ${attempts} 轮`;
+      const withChips = (await readTable(alice.page)).seats
+        .filter((s) => Number.isFinite(s.stack) && s.stack > 0);
+      const riskable = withChips
+        .filter((s) => s.name !== "carol")
+        .sort((a, b) => a.stack - b.stack);
+      const allInSeat = riskable[0] ?? null;
+      const callerSeat = [...withChips]
+        .filter((s) => s.name !== allInSeat?.name)
+        .sort((a, b) => b.stack - a.stack)[0] ?? null;
+      if (allInSeat === null || callerSeat === null) {
+        selectionFailures.push(`${label}：选不出两席，筹码 `
+          + JSON.stringify(withChips.map((s) => ({ name: s.name, stack: s.stack }))));
         break;
       }
-      if ((await readTable(holder.player.page)).handIndex > showdownHand) break;
-      const who = holder.player.name;
-      // 只在轮到指定的那一席时才下指定的动作。takeAction 只从权威给的按钮里选，
-      // 所以「想让谁全下」永远不会变成替他构造一个权威没给的动作。
-      const want = who === allInName && !allInPlaced
-        ? ["all_in"]
-        : who === callerName
-          ? ["call", "check"]
-          : ["fold", "check"];
-      const acted = await takeAction(holder, want);
-      showdownActions.push(acted);
-      if (acted.action === "all_in" && who === allInName) allInPlaced = true;
-      if (acted.action === "call" && who === callerName && allInPlaced) callPlaced = true;
-      const seen = await readTable(holder.player.page);
-      if (seen.seats.some((s) => s.tags.includes("全下"))) tagOnScreen = true;
-      await sleep(300);
-    }
-    check("指定的一席真的全下了，另一席真的跟了——这一手是有人跟的全下",
-      allInPlaced && callPlaced,
-      `全下=${allInPlaced} 跟注=${callPlaced}，动作 ${JSON.stringify(showdownActions)}`);
-    check("全下标记在这一手里画到了屏幕上", tagOnScreen);
-
-    const settled = await until("全下摊牌收尾", async () => {
-      const table = await readTable(alice.page);
-      return table.handIndex > showdownHand || table.street === "—" ? table : false;
-    }, { timeout: 40_000 });
-    // 摊牌之后筹码只在桌内搬动。这里能用等式：读的是手间的账本值，池已经分完。
-    const totalAfterShowdown = settled.seats
-      .filter((s) => Number.isFinite(s.stack))
-      .reduce((sum, s) => sum + s.stack, 0);
-    check("有人跟的全下结算后，桌上筹码总额与摊牌前一致",
-      totalAfterShowdown === totalBeforeShowdown,
-      `摊牌前 ${totalBeforeShowdown} 摊牌后 ${totalAfterShowdown}，`
-        + `逐席 ${JSON.stringify(settled.seats.map((s) => ({ name: s.name, stack: s.stack })))}`);
-    // 有人归零就顺带验一条 F1：归零的席位不能带着 0 筹码被塞进下一手。
-    const busted = settled.seats.filter((s) => s.stack === 0);
-    if (busted.length === 0) {
-      ok("这一手没有人归零（全下方赢了或平分），破产路径本轮未走到",
-        `全下方=${allInName}`);
-    } else {
-      const bustedNames = busted.map((s) => s.name);
-      const nextHand = await until("归零之后仍能开出下一手", async () => {
-        const table = await readTable(alice.page);
-        return table.handIndex > showdownHand ? table : false;
-      }, { timeout: 40_000 }).catch(() => null);
-      if (nextHand === null) {
-        ok("归零之后桌上不足两家有筹码，按名单没开下一手（这是正确收尾）",
-          `归零 ${JSON.stringify(bustedNames)}`);
-      } else {
-        const stillIn = nextHand.seats
-          .filter((s) => bustedNames.includes(s.name) && s.hole.length > 0);
-        check("筹码归零的席位没有带着 0 筹码进下一手",
-          stillIn.length === 0,
-          `归零 ${JSON.stringify(bustedNames)}，`
-            + `下一手仍在牌里的 ${JSON.stringify(stillIn.map((s) => s.name))}`);
+      // 跟注方必须覆盖得住全下方。覆盖不住的话这一手可能把跟注方也打到 0，而下游
+      // 三节各自依赖 carol / bob / dave 还在席，那会让失败出现在与根因无关的地方。
+      if (callerSeat.stack < allInSeat.stack) {
+        coverFailures.push(`${label}：跟注方 ${callerSeat.name}=${callerSeat.stack} `
+          + `覆盖不住全下方 ${allInSeat.name}=${allInSeat.stack}`);
+        break;
       }
-      ok("有人跟的全下把一席打到 0，破产路径在浏览器层真的走过",
-        `归零 ${JSON.stringify(bustedNames)}`);
+      const allInName = allInSeat.name;
+      const callerName = callerSeat.name;
+
+      const showdownHand = (await readTable(alice.page)).handIndex;
+      const totalBefore = withChips.reduce((sum, s) => sum + s.stack, 0);
+      let allInPlaced = false;
+      let callPlaced = false;
+      const showdownActions = [];
+      for (let guard = 0; guard < 40; guard += 1) {
+        if ((await readTable(alice.page)).handIndex > showdownHand) break;
+        let holder;
+        try {
+          holder = await findActor(players, `全下摊牌（第 ${showdownHand} 手）`);
+        } catch {
+          break;
+        }
+        if ((await readTable(holder.player.page)).handIndex > showdownHand) break;
+        const who = holder.player.name;
+        // 只在轮到指定的那一席时才下指定的动作。takeAction 只从权威给的按钮里选，
+        // 所以「想让谁全下」永远不会变成替他构造一个权威没给的动作。
+        const want = who === allInName && !allInPlaced
+          ? ["all_in"]
+          : who === callerName
+            ? ["call", "check"]
+            : ["fold", "check"];
+        const acted = await takeAction(holder, want);
+        showdownActions.push(acted);
+        if (acted.action === "all_in" && who === allInName) allInPlaced = true;
+        if (acted.action === "call" && who === callerName && allInPlaced) callPlaced = true;
+        const seen = await readTable(holder.player.page);
+        if (seen.seats.some((s) => s.tags.includes("全下"))) tagOnScreen = true;
+        await sleep(300);
+      }
+      if (!(allInPlaced && callPlaced)) {
+        shapeFailures.push(`${label}：全下=${allInPlaced} 跟注=${callPlaced}，`
+          + `动作 ${JSON.stringify(showdownActions)}`);
+        break;
+      }
+
+      settled = await until(`全下摊牌收尾（${label}）`, async () => {
+        const table = await readTable(alice.page);
+        return table.handIndex > showdownHand || table.street === "—" ? table : false;
+      }, { timeout: 40_000 });
+      // 摊牌之后筹码只在桌内搬动。这里能用等式：读的是手间的账本值，池已经分完。
+      const totalAfter = settled.seats
+        .filter((s) => Number.isFinite(s.stack))
+        .reduce((sum, s) => sum + s.stack, 0);
+      if (totalAfter !== totalBefore) {
+        conservationFailures.push(`${label}：摊牌前 ${totalBefore} 摊牌后 ${totalAfter}，`
+          + `逐席 ${JSON.stringify(settled.seats.map((s) => ({ name: s.name, stack: s.stack })))}`);
+      }
+      const busted = settled.seats.filter((s) => s.stack === 0);
+      rounds.push({
+        round: attempts,
+        allIn: allInName,
+        caller: callerName,
+        before: totalBefore,
+        after: totalAfter,
+        busted: busted.map((s) => s.name),
+      });
+      if (busted.length > 0) {
+        bustedNames = busted.map((s) => s.name);
+        // 记下打出破产的那一手。settled 有可能已经读到了下一手，拿它当基准会多等一手。
+        bustHandIndex = showdownHand;
+      } else await sleep(600);
     }
+
+    check("每一轮都能选出全下方与跟注方", selectionFailures.length === 0,
+      selectionFailures.length === 0
+        ? `${attempts} 轮`
+        : selectionFailures.join("；"));
+    check("每一轮的跟注方都覆盖得住全下方（只有全下方可能归零）",
+      coverFailures.length === 0,
+      coverFailures.length === 0 ? `${attempts} 轮` : coverFailures.join("；"));
+    check("每一轮都真的是有人跟的全下", shapeFailures.length === 0,
+      shapeFailures.length === 0
+        ? `${attempts} 轮：${JSON.stringify(rounds.map((r) => `${r.allIn}全下/${r.caller}跟`))}`
+        : shapeFailures.join("；"));
+    check("全下标记画到了屏幕上", tagOnScreen);
+    check("每一轮结算后桌上筹码总额都不变", conservationFailures.length === 0,
+      conservationFailures.length === 0
+        ? JSON.stringify(rounds.map((r) => `${r.before}→${r.after}`))
+        : conservationFailures.join("；"));
+    // 这一条是这一节存在的理由。预算用尽还没人归零就红——不给「本轮未走到」这种
+    // 恒真收尾，否则一次「破产路径从来没走过」的运行照样是绿的。
+    check("有人跟的全下把一席打到 0，破产路径在浏览器层真的走过",
+      bustedNames !== null,
+      bustedNames === null
+        ? `${attempts} 轮全下都没打出破产（预算 ${BUST_BUDGET}）；`
+          + `逐轮 ${JSON.stringify(rounds)}`
+        : `第 ${attempts} 轮归零 ${JSON.stringify(bustedNames)}；`
+          + `逐轮 ${JSON.stringify(rounds.map((r) => `${r.allIn}全下`))}`);
+
+    // 归零之后必须还有两家有筹码，下一手才开得出来。这一节只让「最少的一席」承担
+    // 风险，所以三家有筹码时归零一席之后必然还剩两家；剩不下两家说明有别的席位也被
+    // 打到了 0，那与「只有全下方可能归零」矛盾，红在这里而不是红在下游某一节。
+    const survivors = settled === null
+      ? []
+      : settled.seats.filter((s) => Number.isFinite(s.stack) && s.stack > 0);
+    check("归零之后仍有至少两家有筹码（只有全下方承担了风险）",
+      bustedNames === null || survivors.length >= 2,
+      `有筹码 ${JSON.stringify(survivors.map((s) => ({ name: s.name, stack: s.stack })))}`);
+    // F1：归零的席位不能带着 0 筹码被塞进下一手。上一条已经保证开得出下一手，
+    // 所以这里不再留「没开下一手也算对」的分支——那个分支会吞掉真正的缺陷。
+    const nextHand = bustedNames === null || survivors.length < 2
+      ? null
+      : await until("归零之后仍能开出下一手", async () => {
+        const table = await readTable(alice.page);
+        return table.handIndex > bustHandIndex ? table : false;
+      }, { timeout: 40_000 }).catch(() => null);
+    const stillIn = nextHand === null
+      ? []
+      : nextHand.seats.filter((s) => bustedNames.includes(s.name) && s.hole.length > 0);
+    check("筹码归零的席位没有带着 0 筹码进下一手",
+      nextHand !== null && stillIn.length === 0,
+      nextHand === null
+        ? `归零 ${JSON.stringify(bustedNames)}，但没开出下一手`
+        : `归零 ${JSON.stringify(bustedNames)}，`
+          + `下一手仍在牌里的 ${JSON.stringify(stillIn.map((s) => s.name))}`);
     artifacts.push(await shot(alice, "9d-called-all-in-showdown"));
 
     // 真实关闭上下文那一条放在第 11 节之后（11b）：它会让一席进入保留窗，而保留窗里的
@@ -1949,6 +2235,7 @@ async function main() {
     // 那样它们即使有缺陷也可能因为「人不够所以本来就不开牌」而看不出来。
 
     // ---- 10. 暂离 ----
+    phase("10 暂离");
     const carol = players.find((p) => p.name === "carol");
     const carolIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "carol");
     await carol.page.click("#sitout-toggle");
@@ -1967,6 +2254,7 @@ async function main() {
       await carol.page.evaluate(() => document.getElementById("ready-toggle").disabled === false));
     artifacts.push(await shot(carol, "10-carol-sitout"));
     // ---- 11. 离桌 ----
+    phase("11 离桌");
     await dave.page.click("#leave-btn");
     const afterLeave = await until("dave 离桌在同桌画面上生效", async () => {
       const table = await readTable(alice.page);
@@ -2011,6 +2299,7 @@ async function main() {
       `seats=${stillPlayable.seats.length} start=${stillPlayable.startReason}`);
 
     // ---- 11b. 真实关闭上下文：连接租约兜底 ----
+    phase("11b 真实关闭上下文：连接租约兜底");
     //
     // 关掉整个 browser context 等于关掉标签页。pagehide 有机会发出一次 beacon，但那只是
     // 加速：这里不区分「beacon 送到了」和「没送到」，两条路都必须导致掉线。9c 已经单独
@@ -2037,24 +2326,54 @@ async function main() {
     artifacts.push(await shot(alice, "11b-bob-context-closed"));
     ok("真实关闭上下文后席位进入掉线与保留窗，不是无限在线");
 
-    // ---- 12. 控制台必须干净 ----
-    const consoleReport = players.map((player) => ({
-      player: player.name,
-      consoleErrors: player.consoleErrors,
-      pageErrors: player.pageErrors,
-      // 故意断网窗口内的错误单列。不并入合计，但必须出现在证据里——否则「合计为 0」这句话
-      // 就变成了「除了我不想算的那些之外为 0」，而读证据的人看不出差别。
-      duringDeliberateFailure: player.expectedFailures,
-    }));
-    const totalConsole = consoleReport.reduce(
-      (sum, entry) => sum + entry.consoleErrors.length + entry.pageErrors.length, 0);
-    const expectedTotal = consoleReport.reduce(
-      (sum, entry) => sum + entry.duringDeliberateFailure.length, 0);
+    // ---- 12. 控制台与网络都必须干净 ----
+    phase("12 控制台与网络结账");
+    const evidence = buildEvidenceReport(players);
+    const consoleReport = evidence.perPlayer;
+    const totalConsole = evidence.totalConsole;
     check("四个上下文的控制台错误合计为 0（故意制造失败的窗口除外，单列在证据里）",
       totalConsole === 0,
       totalConsole === 0
-        ? `0；故意失败窗口内 ${expectedTotal} 条已单列`
+        ? `0；故意失败窗口内 ${evidence.totalExpectedConsole} 条已单列`
         : JSON.stringify(consoleReport));
+    // 网络证据是新的一条，而且它比控制台严：浏览器不会为每个 4xx 都打一条 console error
+    // （fetch 拿到 403 是「成功收到响应」，不打日志），所以只查控制台的话，
+    // 一整类「请求发出去了但被拒」的问题从来不会让这个脚本红。
+    //
+    // 判据是窗口外的非 2xx/3xx 条数为 0，不按状态码文本挑。
+    check("四个上下文的窗口外网络失败合计为 0（断网窗口内的单列）",
+      evidence.totalNetwork === 0,
+      evidence.totalNetwork === 0
+        ? `0；窗口内 ${evidence.totalExpectedNetwork} 条已单列`
+        : `${evidence.totalNetwork} 条，按阶段 ${JSON.stringify(evidence.networkByPhase)}；`
+          + `明细 ${JSON.stringify(evidence.perPlayer.map((e) => ({
+            player: e.player,
+            requestFailures: e.requestFailures,
+            badResponses: e.badResponses,
+          })).filter((e) => e.requestFailures.length + e.badResponses.length > 0))}`);
+    // 反面：断网那一节必须真的产生过网络证据。窗口内条数为 0 说明掐路由没生效，
+    // 而那会让 9c 整节变成在正常网络下跑——通过了也什么都没证明。
+    check("断网窗口内确实记到了网络失败（否则掐路由没生效）",
+      evidence.totalExpectedNetwork > 0, `窗口内 ${evidence.totalExpectedNetwork} 条`);
+    // 客户端撤回这一类必须窄：原因是撤回，路径是设计上会撤回的那两条。
+    // 客户端在别处开始放弃请求，这里会红。
+    const cancelled = evidence.perPlayer.flatMap((e) => e.clientCancellations);
+    check("被单列的只有客户端自己撤回的请求，且落在设计上会撤回的两条路径上",
+      cancelled.every(isClientCancellation),
+      `${cancelled.length} 条：${JSON.stringify(cancelled.map(
+        (e) => ({ phase: e.phase, url: new URL(e.url).pathname, reason: e.reason })))}`);
+    // 跨阶段边界的请求单独报出来。它们不算失败——按发出时刻归类本来就是对的——
+    // 但数目要可见：这是「测试窗口竞态」的指纹，而那一类竞态与产品缺陷长得一模一样。
+    // 不可见的话，下一个人看到偶发 403 只能猜是哪一种。
+    const crossed = players.flatMap((p) => [...p.requestFailures, ...p.badResponses])
+      .filter((e) => e.phaseAtEvent !== undefined && e.phaseAtEvent !== e.phase);
+    ok("跨阶段边界的网络事件已按发出时刻归类",
+      crossed.length === 0
+        ? "0 条"
+        : `${crossed.length} 条：${JSON.stringify(crossed.map((e) => ({
+          player: e.player, from: e.phase, to: e.phaseAtEvent,
+          status: e.status ?? e.reason, expected: e.expected,
+        })))}`);
     // 窗口必须全部关上。留着开的窗口会把它之后的所有错误都吞掉。
     check("所有故意失败窗口都已关闭（否则后续错误会被吞掉）",
       players.every((player) => player.expectFailures === false),
@@ -2062,6 +2381,7 @@ async function main() {
     consoleChecked = true;
 
     // ---- 13. 证据自身的可信度 ----
+    phase("13 证据自身的可信度");
     // 状态指纹不同而图像字节相同，说明截图没有反映当时的页面。那样整份 PNG 证据都
     // 不能用，而这件事从图片本身是看不出来的，所以在这里查。
     const stale = [];
@@ -2092,17 +2412,19 @@ async function main() {
     // 结果无条件落盘，包括脚本中途抛错的情况。第一版把写入放在 try 里，于是一次
     // 异常终止之后我手上只有 "通过 77，失败 3" 这一行、没有失败项——诊断只能靠重跑。
     // 证据文件的价值恰恰在失败的那次。
-    const consoleReport = players.map((player) => ({
-      player: player.name,
-      consoleErrors: player.consoleErrors,
-      pageErrors: player.pageErrors,
-      duringDeliberateFailure: player.expectedFailures,
-    }));
-    const totalConsole = consoleReport.reduce(
-      (sum, entry) => sum + entry.consoleErrors.length + entry.pageErrors.length, 0);
+    const evidence = buildEvidenceReport(players);
+    const consoleReport = evidence.perPlayer;
+    const totalConsole = evidence.totalConsole;
     if (!consoleChecked) {
       check("四个上下文的控制台错误合计为 0", totalConsole === 0,
         totalConsole === 0 ? "0" : JSON.stringify(consoleReport));
+      // 中途抛错时网络证据一样要结账。少了这一条，一次在 §12 之前就崩掉的运行会把
+      // 所有网络失败带进坟墓——而崩掉的那次恰恰最需要这份证据。
+      check("四个上下文的窗口外网络失败合计为 0（中途终止时的结账）",
+        evidence.totalNetwork === 0,
+        evidence.totalNetwork === 0
+          ? "0"
+          : `${evidence.totalNetwork} 条，按阶段 ${JSON.stringify(evidence.networkByPhase)}`);
     }
     const summaryInput = {
       banner,
@@ -2113,6 +2435,12 @@ async function main() {
       failures,
       consoleReport,
       totalConsole,
+      // 网络证据进 result.json。留在内存里等于没收集：偶发要靠跨多次运行比对
+      // networkByPhase 才看得出规律，而那必须落盘。
+      totalNetwork: evidence.totalNetwork,
+      totalExpectedNetwork: evidence.totalExpectedNetwork,
+      totalClientCancellations: evidence.totalClientCancellations,
+      networkByPhase: evidence.networkByPhase,
       aborted,
     };
     const result = buildResult(summaryInput);

@@ -31,6 +31,9 @@ const state = {
   seatId: null,
   view: null,
   polling: null,
+  // 当前那次轮询的中止句柄。stopPolling 要掐的不只是「下一次」，还有「这一次」——
+  // 理由写在 stopPolling 里。
+  pollAbort: null,
   disconnected: false,
   // 上一次渲染时时间线的长度，用来决定要不要把滚动条推到底。
   lastMessageCount: 0,
@@ -86,11 +89,12 @@ function graphemeLength(text) {
 
 // ---- 与协调器通信 ----
 
-async function post(route, body) {
+async function post(route, body, { signal } = {}) {
   const response = await fetch(route, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    ...(signal === undefined ? {} : { signal }),
   });
   let payload;
   try {
@@ -233,10 +237,38 @@ function stopPolling() {
   if (state.polling === null) return;
   clearInterval(state.polling);
   state.polling = null;
+  // 已经在飞的那一次也要掐掉。只 clearInterval 拦得住「下一次」，拦不住「这一次」，
+  // 而出问题的恰恰是这一次：
+  //
+  // 离桌是 await act("seat.leave") 然后 returnToEntry()。那个 await 期间 700 毫秒的
+  // interval 会照常触发一次 refresh，它带的凭据正是这次离桌要作废的那一份。等它到达
+  // 服务端时凭据已经没了，于是 403，而浏览器为每个 4xx 自己打一条控制台错误。
+  //
+  // 这就是那个「偶发 403」：撞不撞上取决于点击落在 700 毫秒周期的哪个位置，
+  // 所以它时有时无。用 2.5 秒的慢响应把窗口撑开之后每次必现。
+  //
+  // 修的是根因而不是证据：页面自己请求作废凭据之后就不该再拿它去问。
+  if (state.pollAbort !== null) {
+    state.pollAbort.abort();
+    state.pollAbort = null;
+  }
 }
 
 async function refresh() {
   if (state.sessionToken === null) return;
+  // 每次轮询自带一个可中止句柄，但**这里不掐上一次**。
+  //
+  // 重叠确实要处理：服务端慢下来时两次拉取会同时在飞，而哪一条先回来是不定的，
+  // 后到的旧响应会把新画面覆盖回去。处理办法是下面 await 之后那道围栏，不是中止。
+  //
+  // 为什么不中止：一条已经发出去的轮询同时是心跳，让它自然完成对服务端有用；
+  // 而中止它只换来一条 net::ERR_ABORTED——那是噪声，而噪声会淹掉真的网络失败。
+  // 围栏丢掉它的响应就够了，代价是零。
+  //
+  // 需要中止的只有终结转换（离桌、掉线），那时请求本身对服务端有副作用，
+  // 不能让它到达。见 stopPolling。
+  const controller = new AbortController();
+  state.pollAbort = controller;
   try {
     // 每次轮询都带 connection_id：这一条请求同时是心跳。不另发一种心跳，理由写在
     // table-web-host.cjs 的 touchConnection 上——两条不同节流特性的请求会让一个正常
@@ -244,11 +276,17 @@ async function refresh() {
     const result = await post("/api/view", {
       session_token: state.sessionToken,
       connection_id: state.connectionId,
-    });
+    }, { signal: controller.signal });
+    // 回来之后再确认一次会话还在。中止只保证 fetch 会拒，不保证「已经解析出结果的那次」
+    // 不往下走；而这一跳之后要动的是全局画面。
+    if (state.sessionToken === null || state.pollAbort !== controller) return;
     state.view = result.view;
     clearError(el("global-error"));
     render(result.view);
   } catch (error) {
+    // 自己掐的不算错误。AbortError 是「这条结果已经没人要了」，不是故障——
+    // 把它当故障显示会在离桌与掉线时闪一条无意义的红字。
+    if (error?.name === "AbortError") return;
     // 会话终结要停下来，否则会一秒一次地刷同一个错误——每一次还是一条控制台 403。
     // seat_credential_revoked 不只在自愿离桌时出现：掉线满 120 秒后座位被释放，
     // 那个还开着的标签页会一直撞在这个码上。两种情况的正确收尾都是回到入口。
@@ -922,32 +960,53 @@ wireControl("reveal-btn", () => {
 el("leave-btn").addEventListener("click", async () => {
   // 离桌是不可逆的（座位会被释放，凭据作废），所以要一次确认。
   if (!window.confirm("离桌后这个座位会被释放，筹码结算按当前状态处理。确定离桌？")) return;
+  // 先停轮询，再发离桌。顺序要紧。
+  //
+  // 反过来写的话，await 期间 interval 还会触发一次 refresh，它带的凭据正是这次离桌要
+  // 作废的那一份，到达服务端时已经无效——403，外加浏览器自己打的一条控制台错误。
+  // 撞不撞上取决于点击落在 700 毫秒周期的哪个位置，所以它表现为偶发。
+  //
+  // 停在这里是安全的：离桌成功就 returnToEntry（本来也要停），失败则在下面恢复。
+  stopPolling();
   try {
     await act("seat.leave", {});
     // 离桌之后本机会话手里的席位凭据立刻作废，再拉视图只会拿到 403。所以这里必须
-    // 收摊回入口，而不是 refresh()——后者会让页面停在一份不再更新的旧快照上，
-    // 并且每 700 毫秒往控制台打一条 403。
+    // 收摊回入口，而不是 refresh()——后者会让页面停在一份不再更新的旧快照上。
     returnToEntry("你已离桌。");
   } catch (error) {
+    // 没离成就得把轮询接回去，否则页面从此静止，而玩家看到的是一张不再更新的牌桌
+    // ——比报错更糟：它看起来是正常的。
     showError(el("global-error"), error);
+    startPolling();
   }
 });
 
 // 掉线与恢复。真实掉线是关掉标签页，但那样就没法在同一个页面里演示 120 秒保留窗，
 // 所以给一个显式按钮：它调的是协调器真正的 disconnect/resume，不是画一个假状态。
 el("simulate-disconnect").addEventListener("click", async () => {
+  // 同样先停轮询再发请求，而这里的后果比离桌那条更坏。
+  //
+  // 轮询带着 connection_id，而那条请求同时是心跳：table-web-host.cjs 的 touchConnection
+  // 对一个已被摘掉的连接 id 会**重新建连**（那是拔网线场景要的行为，见那里的注释）。
+  // 所以 await 期间飞出去的一次 refresh 不是打一条 403 就完了——它会把刚刚的掉线撤销，
+  // 同桌看到的掉线标记闪一下就没了，而保留窗根本没开始走。
+  //
+  // 这条竞态用 refresh 里的中止围栏挡不住：请求已经到了服务端，连接已经重建，
+  // 丢掉响应改变不了这个事实。只有顺序能修。
+  stopPolling();
   try {
     await post("/api/session/disconnect", {
       session_token: state.sessionToken,
       connection_id: state.connectionId,
     });
     state.disconnected = true;
-    stopPolling();
     setConnState("offline", "已掉线（保留窗内可恢复）");
     el("simulate-disconnect").hidden = true;
     el("simulate-reconnect").hidden = false;
   } catch (error) {
+    // 没断成就把轮询接回去，理由同离桌那条：一张不再更新的牌桌看起来是正常的。
     showError(el("global-error"), error);
+    startPolling();
   }
 });
 

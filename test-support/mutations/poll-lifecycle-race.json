@@ -1,0 +1,87 @@
+{
+  "name": "轮询生命周期竞态",
+  "note": "B.2 的根因修复。三处产品事实：post 能接可中止句柄、stopPolling 掐掉在飞的那一次、终结转换（离桌 / 掉线）在发请求之前停轮询。变异要证明的是「反过来写会红」——这三处原先都是反过来写的，而表现是偶发 403，撞不撞上取决于点击落在 700 毫秒周期的哪个位置。\n\nweb/table/table.js 是 classic script，任何单元测试都 require 不进来，所以断言分两层：这里由 test/poll-lifecycle-race.test.cjs 的源码断言杀，浏览器层由 test-support/table-web-acceptance.mjs 的网络证据兜（窗口外非 2xx/3xx 必须为 0）。源码断言比行为断言弱，代价记在 excluded 里。",
+  "test": "test/poll-lifecycle-race.test.cjs",
+  "mutations": [
+    {
+      "id": "post-drops-signal",
+      "file": "web/table/table.js",
+      "find": "    ...(signal === undefined ? {} : { signal }),",
+      "replace": "",
+      "note": "post 收下 signal 但不往 fetch 传。中止句柄从此是装饰：stopPolling 里的 abort() 调得到、也不报错，但在飞的那次请求照样到达服务端。这是最危险的一种——所有中止代码看上去都还在。"
+    },
+    {
+      "id": "post-signal-always-undefined",
+      "file": "web/table/table.js",
+      "find": "async function post(route, body, { signal } = {}) {",
+      "replace": "async function post(route, body, { signal: _ignored } = {}) {\n  const signal = undefined;",
+      "note": "同上的另一种写法：签名里还接着，值被丢掉。"
+    },
+    {
+      "id": "stop-polling-only-clears-interval",
+      "file": "web/table/table.js",
+      "find": "  if (state.pollAbort !== null) {\n    state.pollAbort.abort();\n    state.pollAbort = null;\n  }",
+      "replace": "",
+      "note": "只 clearInterval，不掐在飞的那一次。clearInterval 拦得住「下一次」，拦不住「这一次」，而出问题的恰恰是这一次——它带的凭据正是这次离桌要作废的那一份。"
+    },
+    {
+      "id": "refresh-aborts-previous-poll",
+      "file": "web/table/table.js",
+      "find": "  const controller = new AbortController();\n  state.pollAbort = controller;",
+      "replace": "  if (state.pollAbort !== null) state.pollAbort.abort();\n  const controller = new AbortController();\n  state.pollAbort = controller;",
+      "note": "反方向的变异：在 refresh 里掐上一次。这看起来更严格，实际是错的——一条已发出的轮询同时是心跳，让它自然完成对服务端有用，而中止它只换来一条 net::ERR_ABORTED。噪声会淹掉真的网络失败，而窗口外网络失败必须为 0 是验收的判据之一。重叠由 await 之后那道围栏处理，代价为零。这一条我自己写过一版，验收里冒出两条 ERR_ABORTED 才发现。"
+    },
+    {
+      "id": "refresh-drops-fence",
+      "file": "web/table/table.js",
+      "find": "    if (state.sessionToken === null || state.pollAbort !== controller) return;",
+      "replace": "",
+      "note": "去掉 await 之后那道围栏。中止只保证 fetch 会拒，不保证「已经解析出结果的那一次」不往下走；而这一跳之后要动的是全局画面，于是后到的旧响应会把新画面覆盖回去。"
+    },
+    {
+      "id": "refresh-fence-ignores-controller-identity",
+      "file": "web/table/table.js",
+      "find": "    if (state.sessionToken === null || state.pollAbort !== controller) return;",
+      "replace": "    if (state.sessionToken === null) return;",
+      "note": "围栏只查会话还在，不查这次轮询还是不是当前那一次。重叠拉取里旧的那条同样满足「会话还在」。"
+    },
+    {
+      "id": "abort-error-shown-as-failure",
+      "file": "web/table/table.js",
+      "find": "    if (error?.name === \"AbortError\") return;",
+      "replace": "",
+      "note": "把自己掐的当故障显示。离桌与掉线时会闪一条无意义的红字，而那条红字对玩家的含义是「出错了」。"
+    },
+    {
+      "id": "leave-stops-polling-after-request",
+      "file": "web/table/table.js",
+      "find": "  stopPolling();\n  try {\n    await act(\"seat.leave\", {});",
+      "replace": "  try {\n    await act(\"seat.leave\", {});\n    stopPolling();",
+      "note": "离桌：先发请求再停轮询。await 期间 interval 照常触发一次 refresh，它带的凭据到达服务端时已经作废——403 加一条控制台错误。这就是那个偶发 403 的一半。"
+    },
+    {
+      "id": "disconnect-stops-polling-after-request",
+      "file": "web/table/table.js",
+      "find": "  stopPolling();\n  try {\n    await post(\"/api/session/disconnect\", {",
+      "replace": "  try {\n    await post(\"/api/session/disconnect\", {",
+      "note": "掉线：先发请求再停轮询。这一半比离桌那一半更坏：轮询带着 connection_id，而 touchConnection 对一个已被摘掉的连接 id 会重新建连（拔网线场景要的行为），于是飞出去的那次 refresh 会把刚刚的掉线撤销——同桌看到掉线标记闪一下就没了，保留窗根本没开始走。这条竞态用响应围栏挡不住：请求已经到了服务端。只有顺序能修。"
+    },
+    {
+      "id": "leave-failure-leaves-page-frozen",
+      "file": "web/table/table.js",
+      "find": "    showError(el(\"global-error\"), error);\n    startPolling();\n  }\n});\n\n// 掉线与恢复。",
+      "replace": "    showError(el(\"global-error\"), error);\n  }\n});\n\n// 掉线与恢复。",
+      "note": "离桌失败之后不把轮询接回去。页面从此静止，而玩家看到的是一张不再更新的牌桌——比报错更糟，它看起来是正常的。这是「先停轮询」这个顺序带来的义务：停了就得在失败路径上恢复。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "poll-interval-700ms",
+      "note": "改轮询周期（700 → 5000）杀不掉，也不该有测试杀它。它是一个调优参数，不是行为契约；把它写进断言等于以后调周期就红。竞态与周期长短无关——周期只决定撞上的概率，而这一节修的是「撞上时会发生什么」。"
+    },
+    {
+      "id": "client-behavioural-coverage",
+      "note": "这一份里九条中的大部分只由源码断言杀，不由行为断言杀：web/table/table.js 是 classic script，没有测试能把它 require 进来，而 Playwright 层要复现这些竞态需要 2.5 秒慢响应那种人为窗口（artifacts/probe-leave-403.mjs 做的正是这件事，但它是探针不是回归测试）。已知代价：这些断言查的是代码长什么样，不是它做了什么，改写成等价的另一种写法会误红。行为侧的兜底只有验收脚本那条「窗口外非 2xx/3xx 为 0」——它能抓住 leave/disconnect 那两条顺序变异真的打出 403，抓不住其余几条。"
+    }
+  ]
+}

@@ -354,7 +354,69 @@ test("全下方取筹码最少的一席、跟注方取最多的一席——只�
   const source = fs.readFileSync(MJS, "utf8");
   assert.match(source, /\.sort\(\(a, b\) => a\.stack - b\.stack\)/, "全下方按升序取最少");
   assert.match(source, /\.sort\(\(a, b\) => b\.stack - a\.stack\)\[0\]/, "跟注方按降序取最多");
-  assert.match(source, /allInName !== callerName/, "两者不能是同一席");
+  // 两者不同现在是构造出来的，不是事后断言：跟注方从「除全下方之外」里选。
+  assert.match(source, /\.filter\(\(s\) => s\.name !== allInSeat\?\.name\)/,
+    "跟注方必须从全下方之外的席位里选");
+  // 跟注方覆盖得住全下方。覆盖不住时这一手可能把跟注方也打到 0，而下游三节各自
+  // 依赖 carol / bob / dave 还在席，那会让失败出现在与根因无关的地方。
+  assert.match(source, /callerSeat\.stack < allInSeat\.stack/,
+    "必须检查跟注方覆盖得住全下方");
+});
+
+test("破产分支是必须走到的，不是「本轮碰巧走到了」", () => {
+  // 这一条是 B.3 真正要钉的东西，而它在旧写法下无法表达。
+  //
+  // 旧写法把「没人归零」写成 ok(...)：一次运行里全下方赢了，脚本就报一条
+  // 「破产路径本轮未走到」然后通过。加上确定性发牌之后情况更坏——第一版种子正好让
+  // 全下方赢（95→194），于是破产路径被**稳定地**跳过，而报告上写着「确定性发牌，
+  // 两次名单一致」。稳定缺失比随机缺失更坏：随机缺失下一次运行还有机会暴露。
+  //
+  // 现在改成重复「短码全下、大码跟、其余弃」直到真有一席归零，预算用尽就红。
+  const source = fs.readFileSync(MJS, "utf8");
+  assert.match(source, /破产路径在浏览器层真的走过/);
+  assert.match(source, /bustedNames !== null/, "归零必须是判定条件，不是分支条件");
+  assert.doesNotMatch(source, /破产路径本轮未走到/,
+    "不能留「本轮未走到」这种恒真收尾——那会让一次从没走过破产的运行照样是绿的");
+  assert.doesNotMatch(source, /归零之后桌上不足两家有筹码/,
+    "「没开下一手也算对」这个分支会吞掉真正的缺陷；"
+    + "现在由「归零之后仍有至少两家有筹码」保证开得出下一手");
+  assert.match(source, /BUST_BUDGET/, "循环必须有预算，不能无界");
+});
+
+test("破产循环里的失败都收集到循环外，断言条数与循环了几轮无关", () => {
+  // 循环里直接 check() 的话，项数会随「第几轮打出破产」变化——那正是这一节要
+  // 消除的漂移，只是换了个来源。
+  const source = fs.readFileSync(MJS, "utf8");
+  // 断言的是 check 的**条件位**，不是这个串在文件里出现过。
+  //
+  // 每条 check 的 detail 里也有一个 `xxxFailures.length === 0 ? ... : ...` 三元，
+  // 所以只查「出现过」的话，把条件位换成 true 仍然满足——收集照做、判定没了，
+  // 而这件事没有任何语法迹象。第一版就是这么写的，是变异存活把它指出来的。
+  for (const [collector, name] of [
+    ["selectionFailures", "每一轮都能选出全下方与跟注方"],
+    ["coverFailures", "每一轮的跟注方都覆盖得住全下方（只有全下方可能归零）"],
+    ["shapeFailures", "每一轮都真的是有人跟的全下"],
+    ["conservationFailures", "每一轮结算后桌上筹码总额都不变"],
+  ]) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(source,
+      new RegExp(`check\\("${escaped}",\\s*\\n?\\s*${collector}\\.length === 0,`),
+      `${collector} 必须出现在「${name}」这条 check 的条件位上，不只是在 detail 里`);
+  }
+});
+
+test("破产循环的预算大于一轮，归零之后的幸存者数目要查", () => {
+  const source = fs.readFileSync(MJS, "utf8");
+  // 预算等于 1 就退回了旧行为：一手全下，赢了就算了。只钉判定不钉预算的话，
+  // 把预算改回 1 会让判定在牌运不好的种子下红，而那看起来像产品缺陷。
+  const budget = source.match(/const BUST_BUDGET = (\d+);/);
+  assert.notEqual(budget, null, "找不到 BUST_BUDGET");
+  assert.ok(Number(budget[1]) >= 2,
+    `预算是 ${budget[1]}，至少要 2——等于 1 意味着不重试`);
+  // 归零之后剩不下两家，说明有别的席位也被打到了 0，与「只有全下方可能归零」矛盾。
+  // 不查的话下一条会以「没开出下一手」的形式红，而那指向错误的根因。
+  assert.match(source, /bustedNames === null \|\| survivors\.length >= 2,/,
+    "归零之后必须查还剩几家有筹码");
 });
 
 test("第 8c 节的全下刻意没人跟，避免打掉下游几节的前置条件", () => {
@@ -366,7 +428,11 @@ test("全下摊牌之后验的是筹码总额等式，不是双边界", () => {
   // 这里读的是手间的账本值、池已经分完，所以等式成立。8c 循环里读的是手内值，
   // 只能用双边界。两处用同一种判据必然有一处误报。
   const source = fs.readFileSync(MJS, "utf8");
-  assert.match(source, /totalAfterShowdown === totalBeforeShowdown/);
+  // 循环里记差异、循环外一次性判定，所以等式以否定形式出现在收集处。
+  assert.match(source, /totalAfter !== totalBefore/, "手间账本值用等式，不是双边界");
+  assert.match(source, /conservationFailures\.length === 0/, "循环外一次性判定");
+  assert.doesNotMatch(source, /totalAfter <= totalBefore|totalAfter >= totalBefore/,
+    "手间账本值不该用双边界——那是 8c 循环里读手内值时才需要的判据");
 });
 
 test("有人归零时验一条 F1：归零的席位不带着 0 筹码进下一手", () => {

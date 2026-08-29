@@ -1,0 +1,88 @@
+{
+  "name": "确定性发牌与种子入口守卫",
+  "note": "B.3 的两块新代码：可重复随机源（src/game/seeded-random.cjs）与入口那三道「谁能开种子」的约束（src/run-table-web.cjs）。变异分两类：把随机源退化成看起来还随机的坏实现，以及把入口守卫拆掉。前一类的要点是坏实现必须仍然跑得通——一个抛错的随机源任何测试都能杀，杀不掉的是「输出还像随机、但可预测或有偏」。",
+  "test": "test/deterministic-deck.test.cjs",
+  "mutations": [
+    {
+      "id": "drop-seed-extra-mix",
+      "file": "src/game/seeded-random.cjs",
+      "find": "    hash ^= hash >>> 15;\n    hash = Math.imul(hash, 0x2545f491) >>> 0;\n    hash ^= hash >>> 13;\n    return hash >>> 0;",
+      "replace": "    return hash >>> 0;",
+      "note": "只留 FNV-1a 不再搅一轮。\"1\" 与 \"2\" 这种只差一个字符的种子，四个状态都只差低几位。"
+    },
+    {
+      "id": "modulo-instead-of-rejection",
+      "file": "src/game/seeded-random.cjs",
+      "find": "    const limit = Math.floor(0x1_0000_0000 / maximum) * maximum;\n    for (;;) {\n      const value = next();\n      if (value < limit) return value % maximum;\n    }",
+      "replace": "    return next() % maximum;",
+      "note": "退化成取模。这一条专门用来证明「六面骰那条均匀性断言查不出取模」——2^32 对 6 的取模偏差约 1.4e-9，比那条 5% 容差小九个数量级。杀它的是上界取 3*2^30 的那一条：拒绝采样下最低段占 1/3，取模下占 1/2。"
+    },
+    {
+      "id": "rebuild-source-per-deck",
+      "file": "src/game/seeded-random.cjs",
+      "find": "  const randomInt = seededRandomInt(seed);\n  return () => shuffledDeck(randomInt);",
+      "replace": "  return () => shuffledDeck(seededRandomInt(seed));",
+      "note": "每手都从种子重建随机源。那不是确定性，那是复读——每一手发同一副牌。这一条原先指着入口那行代码，但入口不导出任何东西，于是无处可杀；把工厂提成 seededDeckFactory 之后它才有落脚点。正确写法与错误写法之差只是一层闭包，肉眼极难看出，所以这一条特别值得留着。"
+    },
+    {
+      "id": "seed-allows-remote-core",
+      "file": "src/run-table-web.cjs",
+      "find": "  if (commandOrigin !== \"\") {\n    throw new Error(\n      \"TOKENGAME_DECK_SEED 只在自带内核时有效。已设 TOKENGAME_COMMAND_ORIGIN，\"",
+      "replace": "  if (false) {\n    throw new Error(\n      \"TOKENGAME_DECK_SEED 只在自带内核时有效。已设 TOKENGAME_COMMAND_ORIGIN，\"",
+      "note": "连远端内核时不再拒绝。种子不会生效，但启动横幅仍然报「确定性发牌」——验收脚本据此断言，于是它会在一份牌序其实随机的运行上确认确定性成立。"
+    },
+    {
+      "id": "seed-allows-public-listen",
+      "file": "src/run-table-web.cjs",
+      "find": "  if (!loopback.includes(webHost)) {",
+      "replace": "  if (false) {",
+      "note": "种子 + 对外监听不再拒绝。这是唯一真正危险的组合：任何能连上的人都能预测发牌。"
+    },
+    {
+      "id": "loopback-list-accepts-anything",
+      "file": "src/run-table-web.cjs",
+      "find": "  const loopback = [\"127.0.0.1\", \"::1\", \"localhost\"];",
+      "replace": "  const loopback = [\"127.0.0.1\", \"::1\", \"localhost\", \"0.0.0.0\"];",
+      "note": "把 0.0.0.0 当回环。0.0.0.0 是「所有接口」，是对外监听里最典型的那一个写法。"
+    },
+    {
+      "id": "banner-hides-seed",
+      "file": "src/run-table-web.cjs",
+      "find": "    deterministic_deck: deckSeed === null ? null : {",
+      "replace": "    deterministic_deck: null && deckSeed === null ? null : {",
+      "note": "把 deterministic_deck 恒设为一个对象——不设种子的运行也报「确定性发牌」。反过来那一半（设了种子却不报）由「设了种子必须在启动那一行报出来」杀；这一半由「不设种子时如实报告没有确定性发牌」杀。"
+    },
+    {
+      "id": "banner-leaks-plaintext-seed",
+      "file": "src/run-table-web.cjs",
+      "find": "      seed_fingerprint: crypto.createHash(\"sha256\").update(deckSeed).digest(\"hex\").slice(0, 12),",
+      "replace": "      seed_fingerprint: deckSeed,",
+      "note": "报种子原文。任何读到日志的人都能据此预测这一桌的发牌。"
+    },
+    {
+      "id": "empty-seed-becomes-a-seed",
+      "file": "src/run-table-web.cjs",
+      "find": "  if (raw === undefined || raw === \"\") return null;",
+      "replace": "  if (raw === undefined) return null;",
+      "note": "空字符串也当种子。空种子照样是固定牌序，而调用方设空字符串的意思是「不要种子」——明确表示不要却拿到了。"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "drop-warmup-discard",
+      "note": "去掉「丢弃前 12 个输出」这一步，没有任何测试杀得掉，而且这一次是实测出来的，不是推断：相邻种子 \"1\"–\"64\" 各洗第一副牌，基线与无预热版本的三项指标都分不开——互不相同 64/64 对 64/64，前八张同位同牌 1.85% 对 1.81%（随机期望 1.92%），第一张用到的牌面 39/52 对 40/52。原因是 seedToState 里那一轮额外搅拌已经把相邻种子拆开了，预热只是第二道防线。留着它（sfc32 参考实现的通行做法，且 seedToState 若日后简化就重新有用），但不为它编一个阈值——那样的断言只会在改动无关代码时红。"
+    },
+    {
+      "id": "same-state-four-ways",
+      "note": "四个起点改成同一个（a=b=c=d），同样杀不掉，同样是实测：三项指标 64/64、1.97%、39/52，与基线无法区分。同上，额外那轮搅拌承担了实际的去相关，四个不同起点是冗余的第二道防线。可以造一条断言让它红——比如直接给 sfc32 喂一个 a=b=c=d 的状态——但那需要把 sfc32 改成接收状态数组，而产品路径永远不会产生相等的四个状态，于是测的是一条不可达的假设路径。"
+    },
+    {
+      "id": "uniformity-threshold",
+      "note": "把六面骰那条 5% 容差改宽（比如 50%）不算有效变异：它是测试自身的参数，不是产品行为。真正该防的是「用一个查不出问题的上界」，而那件事已经由 modulo-instead-of-rejection 正面证明——它在六面骰下存活，只有换成 3*2^30 的那条断言才杀得掉。"
+    },
+    {
+      "id": "stderr-human-warning",
+      "note": "去掉那行给人读的 stderr 警告，现有测试杀不掉——它们断言的是 JSON 横幅里的字段。补一条断言 stderr 文本的测试等于把提示文案写进测试，改一个字就红。这里选择不补，代价记在这里：种子提示的人类可读那一行没有回归保护。"
+    }
+  ]
+}

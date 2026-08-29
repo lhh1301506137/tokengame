@@ -265,8 +265,8 @@
     {
       "id": "mjs-allin-player-takes-largest-stack",
       "file": "test-support/table-web-acceptance.mjs",
-      "find": "const riskable = seatsNow\n      .filter((s) => s.name !== \"carol\")\n      .sort((a, b) => a.stack - b.stack);",
-      "replace": "const riskable = seatsNow\n      .filter((s) => s.name !== \"carol\")\n      .sort((a, b) => b.stack - a.stack);",
+      "find": "        .filter((s) => s.name !== \"carol\")\n        .sort((a, b) => a.stack - b.stack);",
+      "replace": "        .filter((s) => s.name !== \"carol\")\n        .sort((a, b) => b.stack - a.stack);",
       "note": "全下方改取筹码最多的一席。那样跟注方覆盖不住，跟注方也可能被打到 0，破产风险不再落在选定的那一席上。"
     },
     {
@@ -279,8 +279,8 @@
     {
       "id": "mjs-showdown-conservation-uses-bounds",
       "file": "test-support/table-web-acceptance.mjs",
-      "find": "totalAfterShowdown === totalBeforeShowdown",
-      "replace": "totalAfterShowdown <= totalBeforeShowdown",
+      "find": "if (totalAfter !== totalBefore) {",
+      "replace": "if (totalAfter > totalBefore) {",
       "note": "摊牌后的总额改成单边界。手间读的是账本值、池已分完，等式本来成立；放宽成不等式就抓不到结算少付或多付。"
     },
     {
@@ -289,6 +289,41 @@
       "find": "bustedNames.includes(s.name) && s.hole.length > 0",
       "replace": "bustedNames.includes(s.name) && false",
       "note": "不看底牌位就判「没进下一手」。一个仍在牌里的归零席位于是通过——底牌位有牌正是「他还在这手牌里」在画面上的唯一表现。"
+    },
+    {
+      "id": "mjs-bust-branch-is-optional",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "    check(\"有人跟的全下把一席打到 0，破产路径在浏览器层真的走过\",\n      bustedNames !== null,",
+      "replace": "    check(\"有人跟的全下把一席打到 0，破产路径在浏览器层真的走过\",\n      true,",
+      "note": "把「必须走到破产」放宽成恒真。这一条是这一节存在的理由：旧写法在没人归零时报一条「破产路径本轮未走到」然后通过，而加上确定性发牌之后第一版种子正好让全下方赢，于是破产路径被稳定地跳过——报告上写着「确定性发牌，两次名单一致」。稳定缺失比随机缺失更坏。"
+    },
+    {
+      "id": "mjs-bust-loop-runs-once",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "    const BUST_BUDGET = 8;",
+      "replace": "    const BUST_BUDGET = 1;",
+      "note": "预算改成 1 轮。等于退回旧行为：一手全下，赢了就算了。这一条与上一条一起钉住「重复直到真的归零」——只钉判定不钉循环的话，把预算改成 1 会让判定在牌运不好的种子下红，而那看起来像是产品缺陷。"
+    },
+    {
+      "id": "mjs-caller-need-not-cover",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "      if (callerSeat.stack < allInSeat.stack) {",
+      "replace": "      if (false) {",
+      "note": "不再检查跟注方覆盖得住全下方。覆盖不住时这一手可能把跟注方也打到 0，而下游三节各自依赖 carol / bob / dave 还在席——失败会出现在与根因无关的地方，而那种失败最难查。"
+    },
+    {
+      "id": "mjs-bust-survivors-unchecked",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "      bustedNames === null || survivors.length >= 2,",
+      "replace": "      true,",
+      "note": "不再检查归零之后还剩两家有筹码。剩不下两家说明有别的席位也被打到了 0，与「只有全下方可能归零」矛盾；不查的话下一条会以「没开出下一手」的形式红，而那指向错误的根因。"
+    },
+    {
+      "id": "mjs-conservation-collected-but-not-judged",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "    check(\"每一轮结算后桌上筹码总额都不变\", conservationFailures.length === 0,",
+      "replace": "    check(\"每一轮结算后桌上筹码总额都不变\", true,",
+      "note": "差异照记，但判定恒真。循环里收集、循环外判定这个结构的风险正在这里：收集与判定分开之后，少一条判定不会有任何语法迹象。"
     }
   ],
   "excluded": [
