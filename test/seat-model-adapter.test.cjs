@@ -16,6 +16,9 @@ const assert = require("node:assert/strict");
 const {
   runConformance, requiredCheckIds,
 } = require("../test-support/adapter-conformance.cjs");
+const {
+  CONTRACT_VERSION, commandsForRole,
+} = require("../src/contract/adapter-contract.cjs");
 const { SeatCustody } = require("../src/host/seat-custody.cjs");
 const {
   DECLARED_CAPABILITIES,
@@ -60,27 +63,93 @@ test("真实座位模型适配器过合同一致性套件", async () => {
 test("真实适配器：完整验证仍然为假，因为主动唤醒够不到", async () => {
   // conformance_passed 与 fully_verified 必须分开。合并成一个 passed 的话，
   // 一份「Gate 5 根本没验」的报告读起来像完整通过——那正是这一轮要拆的形状。
-  const report = await runConformance(
-    () => makeAdapter({ capabilities: ["command_dispatch", "proactive_wake"] }),
-    { role: "seat_model" });
+  //
+  // 声明清单在 2026-08-29 改过：旧版把 proactive_wake 塞进来，而那个组合现在协商就过不去
+  // （合同拒收 verified_on_any_host 为假的声明）。用默认声明同样够不到 fully_verified，
+  // 因为那一条会记 not_run——两条路都到不了完整验证，而这正是要钉的。
+  const report = await runConformance(() => makeAdapter(), { role: "seat_model" });
   assert.equal(report.conformance_passed, true, `不合规项：${report.failures.join(" / ")}`);
   assert.equal(report.fully_verified, false);
 });
 
-test("谎称有主动唤醒时，一致性报告仍然全绿——但会留下不可验证项", async () => {
-  // 这是套件的真实限度，也是必须写下来的一条：本套件查不了「无点击主动唤醒」是不是真的，
-  // 它只看内部一致性。所以一份全绿的一致性报告**不能**被读成 Gate 5 通过。
+test("谎称有主动唤醒的适配器协商就失败，套件不再给它一份合规报告", async () => {
+  // 这一条在 2026-08-29 换过语义，而换掉的是一段有理由的旧设计，所以两边都得说清楚。
   //
-  // 记成 unverifiable 而不是 failure：某个宿主真有这个能力时就该声明它，判成失败会逼人
-  // 为了让套件绿而少声明一项。
+  // 旧设计：声明了就记 unverifiable，报告仍判合规。理由写在当时的注释里——「某个宿主真有
+  // 这个能力时就该声明它，判成失败会逼人为了让套件绿而少声明一项」。那个顾虑是真的。
+  //
+  // 新设计：合同拒收任何 verified_on_any_host 为假的声明，于是协商这一步就抛。
+  // 旧顾虑不适用于这道新检查，因为它的判据不是「你这个宿主做不到」，而是「至今没有任何
+  // 宿主验证过它」。真有一次实机 Gate 5 通过、标志翻成 true 之后，声明立刻合法——
+  // 这道检查会自己退休，不会逼任何人少声明一项自己真有的能力。
+  //
+  // 换的理由是后果不对称：negotiate 的 degradations 是宿主决定要不要轮询的唯一依据。
+  // 声明了主动唤醒，polling 就不在清单里，宿主不轮询，而那个能力实际上不存在——牌局停在
+  // 某一席上，谁都不知道是在等模型还是已经死了。一份「合规但被标注」的报告挡不住这件事，
+  // 因为标注在报告里，而轮询决定在宿主里。
   const report = await runConformance(
     () => makeAdapter({ capabilities: ["command_dispatch", "proactive_wake"] }),
     { role: "seat_model" });
-  assert.deepEqual(report.failures, []);
-  assert.equal(report.conformance_passed, true);
+  assert.equal(report.conformance_passed, false,
+    "谎称有主动唤醒仍然拿到一份合规报告");
+  assert.ok(report.failures.some((line) => line.includes("negotiate_succeeds")),
+    `失败项里没有协商那一条：${report.failures.join(" / ")}`);
+  assert.ok(report.failures.some((line) => line.includes("capability_not_verified")),
+    "失败原因里没说是能力未验证，读报告的人无从判断该改声明还是改实现");
+  // 套件那一侧的防线仍然成立：这一条检查在任何路径上都不会说 pass。
+  const inChecks = report.checks
+    .find((item) => item.check_id === "proactive_wake_actually_works");
+  assert.notEqual(inChecks.status, "pass",
+    "套件产出了一条读起来像「主动唤醒验过了」的记录");
+});
+
+test("自己拼协商结果绕过合同的适配器，套件仍记下不可验证项", async () => {
+  // 上一条把合同那道防线钉住了，这一条钉套件那道。两者不重复，因为套件**不要求**适配器
+  // 走 contract.negotiate()——它只检视适配器报出来的东西。一个自己拼 negotiation 的适配器
+  // 完全绕过合同的拒收，而那时套件里这条 unverifiable 就是最后一道。
+  //
+  // 这也是这条分支现在唯一的到达路径：走合同的适配器已经在协商这一步被拒了。分支还活着
+  // 而不是死代码——一条只能靠「有人绕过合同」触发的记录，正是为那种情形写的。
+  //
+  // 另一条到达路径在将来：实机 Gate 5 通过、verified_on_any_host 翻成 true 之后，声明变得
+  // 合法，而套件**仍然**验不了那个能力（只有实机答得出），所以那时这条记录照样要留下。
+  const rogue = {
+    role: "seat_model",
+    capabilities: ["command_dispatch", "proactive_wake"],
+    state: "created",
+    negotiation: null,
+    holdsSeatHandle: false,
+    negotiate() {
+      this.state = "negotiated";
+      // 自己拼一份，不经合同。degradations 里没有 polling——正是「声明了就不给降级路径」。
+      this.negotiation = {
+        contract_version: CONTRACT_VERSION,
+        role: this.role,
+        actor: "model",
+        commands: commandsForRole("seat_model"),
+        degradations: [],
+      };
+      return this.negotiation;
+    },
+    inspectableState() {
+      return { role: this.role, state: this.state, tracked_id_count: 0 };
+    },
+    seedForRelease() {},
+    assertUsable() {},
+    async call() {
+      return { ok: true, status: 200, contract_version: CONTRACT_VERSION, result: null };
+    },
+    release() {
+      this.state = "released";
+      this.negotiation = null;
+    },
+  };
+
+  const report = await runConformance(() => rogue, { role: "seat_model" });
   const entry = report.unverifiable
     .find((item) => item.check_id === "proactive_wake_actually_works");
-  assert.ok(entry !== undefined, "声明了主动唤醒必须留下不可验证项");
+  assert.ok(entry !== undefined,
+    "声明了主动唤醒却没留下不可验证项：一份全绿报告会被读成 Gate 5 通过");
   assert.match(entry.reason, /只验内部一致性/);
   assert.match(entry.reason, /都未验证/);
   assert.match(entry.reason, /Gate 5/);
@@ -89,6 +158,8 @@ test("谎称有主动唤醒时，一致性报告仍然全绿——但会留下�
   const inChecks = report.checks
     .find((item) => item.check_id === "proactive_wake_actually_works");
   assert.equal(inChecks.status, "unverifiable");
+  // 完整验证必须为假。这是这条记录存在的全部意义。
+  assert.equal(report.fully_verified, false);
 });
 
 test("默认不声明时报告里没有不可验证项，但那一条也不是 pass", async () => {

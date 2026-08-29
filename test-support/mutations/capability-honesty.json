@@ -1,0 +1,64 @@
+{
+  "name": "能力协商的诚实性：未验证的能力声明即被拒",
+  "note": "缺陷本体与 policy epoch 那一处同形：「绝不声明 proactive_wake」此前只写在每个适配器自己的常量里，合同从不检查。两份参考适配器都恰好做对了，于是没有任何测试要求过这件事。后果不是多一条声明——negotiate 的 degradations 是宿主决定要不要轮询的唯一依据。",
+  "test": "test/capability-honesty.test.cjs",
+  "mutations": [
+    {
+      "id": "unverified-capability-accepted",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on_any_host !== true);",
+      "replace": "  const unverified = [];",
+      "note": "退回旧行为：声明未验证能力照常通过。宿主据此不轮询，而那个能力并不存在，牌局停在某一席上而读不出原因。"
+    },
+    {
+      "id": "unverified-check-does-not-throw",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  if (unverified.length > 0) {\n    throw new ContractError(\"capability_not_verified\", { unverified });\n  }",
+      "replace": "",
+      "note": "算出来了但不拒：一份算过又扔掉的判据比没有更坏，它让人以为这里有把关。"
+    },
+    {
+      "id": "unverified-check-inverted",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "CAPABILITIES[name].verified_on_any_host !== true",
+      "replace": "CAPABILITIES[name].verified_on_any_host === true",
+      "note": "判据反过来：已验证的能力被拒，未验证的放行。结构化控件、私有底牌、持久会话全都声明不了，宿主只能一路降级。"
+    },
+    {
+      "id": "unverified-reason-omits-which",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    throw new ContractError(\"capability_not_verified\", { unverified });",
+      "replace": "    throw new ContractError(\"capability_not_verified\", {});",
+      "note": "不说是哪一项。只说协商失败的话，最省事的修法是把整份能力清单删空，而那会让所有降级路径一起消失。"
+    },
+    {
+      "id": "hardcodes-the-capability-name",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on_any_host !== true);",
+      "replace": "  const unverified = declared.filter((name) => name === \"proactive_wake\");",
+      "note": "把名字写死而不读字段。今天行为相同，下一个未验证能力加进来时不会红，而它同样会被静默接受。"
+    },
+    {
+      "id": "wake-flag-flipped-without-evidence",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    verified_on_any_host: false,\n    degrade_to: \"polling\",",
+      "replace": "    verified_on_any_host: true,\n    degrade_to: \"polling\",",
+      "note": "把标志翻成 true 而没有任何实机证据。这一条与 adapter-contract.json 里那条同源，但杀它的测试不同：这里要求翻转时把断言方向一起改。"
+    },
+    {
+      "id": "error-code-unclassified",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    \"capability_not_verified\",\n    \"invalid_duration_ms\",",
+      "replace": "    \"invalid_duration_ms\",",
+      "note": "新错误码没归类：落到 unknown 之后，调用方按最保守一档当成 bug 显示，而它其实是一次「改声明就行」的参数问题。"
+    },
+    {
+      "id": "doc-still-says-all-green",
+      "file": "docs/HOST-ADAPTER-CONTRACT.md",
+      "find": "### 2026-08-29 修正：未验证的能力，声明即被合同拒收",
+      "replace": "### 未验证的能力（旧说法）",
+      "note": "把勘误标题拆掉。测试按位置判定「现行指导里不许有那句话，引文里可以有」，标题一没勘误段与现行指导就分不开了。"
+    }
+  ],
+  "excluded": []
+}

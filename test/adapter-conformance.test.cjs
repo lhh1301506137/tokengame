@@ -64,20 +64,42 @@ for (const role of ROLES) {
     }
   });
 
-  test(`声明了全部能力时不出现降级项：${role}`, async () => {
-    const all = [
-      "command_dispatch", "proactive_wake", "structured_ui",
-      "private_hand_view", "persistent_session",
+  test(`声明了全部已验证能力时只剩主动唤醒一条降级项：${role}`, async () => {
+    // 断言方向在 2026-08-29 改过一次，理由要写清楚。
+    //
+    // 旧版把 proactive_wake 也塞进声明里，断言「报告仍全绿但留下一条不可验证项」。
+    // 那个组合现在协商就过不去：合同拒收任何 verified_on_any_host 为假的声明，
+    // 因为 negotiate 的 degradations 是宿主决定要不要轮询的唯一依据——声明了它，
+    // polling 就不在清单里，宿主不轮询，而那个能力实际上并不存在。
+    //
+    // 新版声明四项已验证的，于是降级清单里恰好只剩主动唤醒那一条。这比旧版强：
+    // 谎称有主动唤醒不再是「合规但被标注」，而是根本协商不成。
+    const declarable = [
+      "command_dispatch", "structured_ui", "private_hand_view", "persistent_session",
     ];
-    const { factory, observeDispatch } = makeObserved(role, { capabilities: all });
+    const { factory, observeDispatch } = makeObserved(role, { capabilities: declarable });
     const report = await runConformance(factory, { role, observeDispatch });
     assert.deepEqual(report.failures, []);
-    // 声明了主动唤醒，报告里必须留下一条不可验证项，且 fully_verified 为假。
-    // 少了这一条，一份「合规」报告会被读成 Gate 5 通过。
-    assert.deepEqual(report.unverifiable.map((e) => e.check_id),
-      ["proactive_wake_actually_works"]);
+    // 没声明主动唤醒，所以那一条记 not_run（没这个能力，无需实机验证），不是 unverifiable。
+    assert.deepEqual(report.unverifiable.map((e) => e.check_id), []);
     assert.equal(report.fully_verified, false,
-      "存在不可验证的必需能力时不得判为完整验证");
+      "有 not_run 项时不得判为完整验证——Gate 5 那一条永远够不到 pass");
+  });
+
+  test(`谎称有主动唤醒的适配器协商就失败：${role}`, async () => {
+    // 上一条的正面。这一条钉住那道拒收真的在适配器路径上生效，而不只在直接调 negotiate 时。
+    const { factory, observeDispatch } = makeObserved(role, {
+      capabilities: ["command_dispatch", "proactive_wake"],
+    });
+    const report = await runConformance(factory, { role, observeDispatch });
+    assert.equal(report.conformance_passed, false,
+      "谎称有主动唤醒竟然过了一致性套件");
+    assert.ok(report.failures.some((line) => line.includes("negotiate_succeeds")),
+      `失败项里没有协商那一条：${report.failures.join(" / ")}`);
+    // 而那一条检查仍然不会说 pass——两条防线各自成立。
+    const wake = report.checks.find(
+      (entry) => entry.check_id === "proactive_wake_actually_works");
+    assert.notEqual(wake.status, "pass");
   });
 
   test(`没声明主动唤醒时那一条记 not_run，不记 pass：${role}`, async () => {

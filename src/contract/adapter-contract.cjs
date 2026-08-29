@@ -97,6 +97,9 @@ class ContractError extends Error {
 const ERROR_CLASSES = Object.freeze({
   // 参数不对。重试同样的请求不会变好，改参数才行。
   invalid_request: Object.freeze([
+    // 声明了一项尚未在任何宿主上验证过的能力。归 invalid_request 而不是 state：
+    // 重试同一份声明不会变好，改声明才行。也不归 identity——它与谁是谁无关。
+    "capability_not_verified",
     "invalid_duration_ms",
     "invalid_expected_revision",
     "invalid_field",
@@ -413,6 +416,26 @@ function negotiate({ role, contract_version: version, capabilities = [] } = {}) 
     // 认不出的能力名报错而不是忽略：忽略会让一处拼写错误表现为「这个能力没有」，
     // 而适配器那边以为自己声明过了。两边都不会有人发现。
     throw new ContractError("unknown_capability", { unknown });
+  }
+  // 尚未在任何宿主上验证过的能力，声明即拒。
+  //
+  // 此前「绝不声明 proactive_wake」这条规则只写在每个适配器自己的 DECLARED_CAPABILITIES
+  // 里，而这里从不检查。两份参考适配器都恰好做对了，于是没有任何东西要求过这件事——
+  // 与 policy epoch 那一处同形：规则只在记得它的地方成立。
+  //
+  // 后果不是「多了一条声明」。下面的 degradations 是宿主决定要不要轮询的唯一依据：
+  // 声明了 proactive_wake，polling 那一条就不在清单里，于是宿主不轮询，而那个能力实际上
+  // 并不存在。表现是牌局停在某一席上，谁都不知道是在等模型还是已经死了。
+  //
+  // 按 verified_on_any_host 走，不把名字写死：下一个未验证能力加进来时，写死名字的实现
+  // 不会红，而它同样会被静默接受。
+  //
+  // 这道检查会自己退休。真有一次实机 Gate 5 通过之后把那个标志翻成 true，声明就合法了
+  // ——所以它不是「永久禁止」，而是「未验证之前不许声明」。翻转标志必须有实机证据支撑，
+  // 而 test/capability-honesty.test.cjs 最后一条会在翻转时提醒把断言方向一起改。
+  const unverified = declared.filter((name) => CAPABILITIES[name].verified_on_any_host !== true);
+  if (unverified.length > 0) {
+    throw new ContractError("capability_not_verified", { unverified });
   }
   const missingRequired = REQUIRED_CAPABILITIES.filter((name) => !declared.includes(name));
   if (missingRequired.length > 0) {
