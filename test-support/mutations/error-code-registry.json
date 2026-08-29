@@ -1,0 +1,92 @@
+{
+  "name": "单一权威错误码注册表：核心 + HTTP + 插件响应",
+  "note": "A4。旧覆盖检查只扫错误构造器，而 HTTP 响应体字面量、插件 MCP 响应体、挂在 Error 上的 code 字段都不在视野里——十二个码因此全落 unknown，而 unknown 的处置是「当缺陷、弹给用户」。not_found / method_not_allowed / unknown_route 这些例行状况被当成缺陷；credential_leak 确实该当缺陷，但那是碰巧落在兜底里，不是归类的结果。",
+  "test": "test/error-code-registry.test.cjs",
+  "mutations": [
+    {
+      "id": "http-class-removed",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  http_request: Object.freeze([\n    \"method_not_allowed\",\n    \"not_found\",\n    \"request_body_too_large\",\n    \"unknown_route\",\n  ]),",
+      "replace": "",
+      "note": "例行 HTTP 状况回到未归类。它们落 unknown 之后被当成缺陷，一次拼错的 URL 在用户面前变成「程序出错了」。"
+    },
+    {
+      "id": "http-marked-as-defect",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  http_request: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),",
+      "replace": "  http_request: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),",
+      "note": "归了类但处置照旧当缺陷。归类不是为了让覆盖检查变绿，是为了让处置正确——这条证明那个区别有人盯。"
+    },
+    {
+      "id": "http-marked-retryable",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  http_request: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),",
+      "replace": "  http_request: Object.freeze({ retryable: true, user_visible: true, is_defect: false }),",
+      "note": "把例行 HTTP 状况标成可重试。一条 404 原样重发还是 404，重试只是把同一个错误多发几次。"
+    },
+    {
+      "id": "security-class-removed",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  security_fail_closed: Object.freeze([\n    \"credential_leak\",\n    \"response_withheld_secret_detected\",\n  ]),",
+      "replace": "",
+      "note": "安全失败关闭码回到只靠 unknown 兜底。处置字段此刻仍然相同，所以这条能不能被杀取决于测试有没有真的问「归类过没有」，而不是只问「处置对不对」。"
+    },
+    {
+      "id": "security-marked-retryable",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  security_fail_closed: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),",
+      "replace": "  security_fail_closed: Object.freeze({ retryable: true, user_visible: true, is_defect: true }),",
+      "note": "让凭据泄漏检测可重试。重试一条泄漏检测等于把泄漏再发一次——这是整档存在的理由。"
+    },
+    {
+      "id": "core-unavailable-not-transport",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    \"adapter_timeout\",\n    \"core_request_failed\",",
+      "replace": "    \"core_request_failed\",",
+      "note": "适配器超时不归传输类。它是「对面没答」，重试有意义；落到 unknown 之后不可重试，于是一次超时被当成永久失败。"
+    },
+    {
+      "id": "invalid-core-response-marked-retryable",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  internal: Object.freeze([\n    \"internal_error\",\n    \"invalid_core_response\",\n  ]),",
+      "replace": "  internal: Object.freeze([\n    \"internal_error\",\n  ]),",
+      "note": "invalid_core_response 落回未归类。它与 core_unavailable 读起来都像「对面有问题」而处置相反：对面答了，只是答的不是 JSON，重发会得到同一份坏响应。"
+    },
+    {
+      "id": "fallback-renamed",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  return \"unknown\";\n}",
+      "replace": "  return \"internal\";\n}",
+      "note": "把兜底从 unknown 改成一个已归类的名字。覆盖检查靠 classifyError() === \"unknown\" 判断缺口，兜底一变它就永远读不出缺口——一条恒真的覆盖检查。这正是 adapter-contract 里那条注释担心的事。"
+    },
+    {
+      "id": "fallback-widened-to-retryable",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "  unknown: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),",
+      "replace": "  unknown: Object.freeze({ retryable: true, user_visible: true, is_defect: true }),",
+      "note": "把兜底改成可重试「以提高健壮性」。一个新加的真错误会被静默重发，而重发一条改变状态的命令是整个项目反复在防的事。"
+    },
+    {
+      "id": "action-not-permitted-unclassified",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    \"action_not_permitted\",\n    \"authority_token_rejected\",",
+      "replace": "    \"authority_token_rejected\",",
+      "note": "浏览器发来不允许的命令回到未归类。这一条问的是「你这一侧有没有资格发这条命令」，与 command_not_host_facing 同类。"
+    },
+    {
+      "id": "contract-version-missing-unclassified",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    \"contract_version_missing\",\n  ]),",
+      "replace": "  ]),",
+      "note": "请求信封缺版本号回到未归类。缺的不是一个参数，是「你我谈的是哪一份合同」这件事本身。"
+    },
+    {
+      "id": "scan-misses-plugin-layer",
+      "file": "test/error-code-registry.test.cjs",
+      "find": "  ...walk(path.join(ROOT, \"plugins\")),",
+      "replace": "",
+      "note": "扫描范围去掉插件层——那正是 A4 之前的盲区之一。这条变异改的是测试文件本身：它证明「扫描本身没瞎」那条自检真的在把关，而不是一句摆设。"
+    }
+  ],
+  "excluded": []
+}
