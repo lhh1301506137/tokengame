@@ -483,9 +483,10 @@ plan_tree:
         - TG-EU-SINGLE-STACK-WEB-TABLE
       status: partially_implemented
       unit_kind: contract
-      summary: 先定义两个宿主共享的 HostAdapter 合同，再实现任一侧适配器；不把 Claude 特例写进核心。合同的可发命令分类已由 host-surface.cjs 划出雏形，但适配器侧契约尚未成文。
+      summary: 先定义两个宿主共享的 HostAdapter 合同，再实现任一侧适配器；不把 Claude 特例写进核心。合同已成文（src/contract/adapter-contract.cjs），两个权限剖面各有一份真实参考实现并过了一致性套件（seat_model 于 2026-08-28、host_command 于 2026-08-29）。两份都在运行路径上零个构造点，由 test/adapter-integration-truth.test.cjs 一正一反钉住——「合同可实现」已证，「产品已改用适配器」未证。
       implementation_refs:
         - src/contract/adapter-contract.cjs
+        - src/host/host-command-adapter.cjs
         - src/host/seat-model-adapter.cjs
         - test-support/adapter-conformance.cjs
         - test-support/adapter-simulator.cjs
@@ -615,13 +616,63 @@ plan_tree:
           756/756。那一轮只抓了汇总行，没抓到失败用例名，所以这里不能说它是已知的 due-work
           定时器抖动——那是猜测。如实记成「一次未定名的失败」，并保留为待查项：一次查不出名字的
           红比一次已知的抖动更值得记，因为它连「是不是同一个」都还不知道。
+      host_command_reference_adapter_2026_08_29:
+        commits: [0542c1c, b93b3d5]
+        why_it_had_to_exist: >-
+          此前 host_command 那一侧只有模拟器实现。模拟器过了只说明套件自洽——一份只有模拟器
+          实现的剖面，整个就是本轮反复撞到的那类缺陷：一段永远走不到的检查。
+        what_it_is_not: >-
+          不是 TableWebHost 的替代品。牌桌有 HTTP 路由、会话表、轮询租约、驱动定时器和
+          209 条浏览器验收，本文件一行都不碰它，也不起服务、不开定时器、不碰网络
+          （一致性套件必须能在没有核心的情况下构造它）。
+        three_judgements:
+          credential_list_not_duplicated: >-
+            第一版在本层抄了一份 CREDENTIAL_COMMANDS，而托管层的 inject 自己就按那份清单分流。
+            抄一份的后果分两个方向且都不报错：漏一条表现为某个操作偶尔不管用，多一条表现为
+            建房第一步就失败。改成句柄有就交上去，由 inject 决定用不用它。
+          never_guesses_the_handle: >-
+            「只有一席就用那一席」在单席上永远对，在多席宿主上的表现是替错的人行动，而单席
+            测试永远发现不了。托管层那条 seat_handle_required 的注释已经把这件事写死。
+          human_face_does_not_sanitize: >-
+            真人面不净化 details，模型面必须净化：两侧收件人不同。这一侧的收件人就是持有该席
+            凭据的那个真人，净化会把 seat_handle_missing 这类诊断摘掉，让掉线恢复无从排查。
+            同理 command 不过 assertNoLeak——真人面的 command 来自宿主自己的路由表。
+        characterization_protects_the_closed_table: >-
+          四条命令的注入结果与 host.injected 逐字段对账，另加一条钉住「对账通过不等于两边都
+          什么也没做」（要凭据的命令确实补上了 seat_id 与 recovery_credential）。两处各自调
+          inject 看着不可能漂移，而漂移的真实形状是有人在一侧加了「顺手补个默认值」。
+        new_error_code: >-
+          command_not_host_facing，归入 identity 类。刻意不与 command_not_model_facing 合成
+          一个码：合成之后日志里读不出是哪一面越界，而模型面越界意味着模型可能拿到下注权限。
+          这一条是 test/adapter-contract.test.cjs 的「每个错误码都被归类」当场抓出来的。
+        own_test_holes_found_by_mutation:
+          - 没有断言本地拒绝**不**推进 degraded（把它算成降级会让宿主一次伪造参数就退回轮询）
+          - 没有测 rememberHandle 拒空串（收下空句柄后 seat_handle_count 报了个数而句柄用不了）
+          first_run: 19_total_17_killed_2_survived
+        zero_construction_points_is_now_a_test: >-
+          「运行路径上零个构造点」此前只写在提交信息里。一正一反两条对账钉住它：反面是七个
+          运行路径文件里零个 new HostCommandAdapter，正面是 TableWebHost 仍自己持 SeatCustody
+          并自己调 inject。少了正面那条，反面读起来像「真人面根本没有实现」，而那是错的。
+          变异方向是「给产品加 require，由这条对账杀掉」——削弱测试里的断言永远杀不掉，
+          因为削弱后的断言自己就是绿的，限制记在该规格的 excluded 里。
+        measured_2026_08_29_e1:
+          host_command_adapter_tests: 20_of_20
+          integration_truth_tests: 8_of_8
+          new_mutation_spec: host-command-adapter_20_of_20
+          npm_test: 778_pass_0_fail_0_skipped
+          mutation_gate: 430_killed_0_survived_0_skipped_GATE_PASS
+          browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+        claim_limit_e1: >-
+          可声称「合同的真人剖面有一份真实实现并过了一致性套件」。不得声称产品已改用它：
+          运行路径上零个构造点，TableWebHost 仍是真人面的产品实现。
       not_done:
-        - id: host_command_adapter
+        - id: host_command_extracted_from_table_web_host
           reason: >-
-            要动 src/host/table-web-host.cjs，而那是一张已经闭合的单栈牌桌。措辞项（「两份合同」
-            拆成两份还是合成一份带角色字段）已于 2026-08-29 关闭：统一为「一套 HostAdapter 协议、
-            host_command 与 seat_model 两个权限剖面」，与本节点的单数名一致；关闭的是说法与结构
-            不符，不是改了结构。是否把 host_command 从 table-web-host.cjs 里拆出来仍待裁决。
+            参考适配器已于 2026-08-29 落地（见上），但是否把 host_command 从
+            src/host/table-web-host.cjs 里**拆出来**、让牌桌改经适配器走，仍待裁决。
+            那是一张已经闭合、有 209 条浏览器验收看着的单栈牌桌，拆它属于改动已确认的
+            产品结构。措辞项（「两份合同」拆两份还是合成一份带角色字段）已于同日关闭：
+            统一为「一套 HostAdapter 协议、host_command 与 seat_model 两个权限剖面」。
       claim_limit: >-
         底座与模型面适配器可声称已实现并过自动化一致性套件。不得声称 HostCommandAdapter 已存在，
         也不得声称主动唤醒（Gate 5）已验证——一致性套件只验内部一致性，谎称有这个能力它仍然全绿，

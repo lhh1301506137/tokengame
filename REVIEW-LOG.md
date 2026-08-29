@@ -1486,3 +1486,85 @@ review_2026_08_29_governance_closure:
     - E_claude_host_adapter_browser_free_parts
   requires_user_acceptance: yes
 ```
+
+## 2026-08-29（承接）：host_command 剖面终于有了一份真实实现
+
+结论：合同的真人侧不再只有模拟器。此前 `host_command` 那一侧的一致性套件跑的全是
+`test-support/adapter-simulator.cjs`，而模拟器过了只说明套件自洽——一份只有模拟器实现的剖面，
+整个就是本轮反复撞到的那类缺陷：一段永远走不到的检查。
+
+`src/host/host-command-adapter.cjs` 与 `TableWebHost` 的关系必须先说清楚，因为它最容易被读成
+「重写了牌桌」。牌桌是产品：HTTP 路由、会话表、轮询租约、驱动定时器、视图投影，已经闭合，
+有 209 条浏览器验收看着。参考适配器一行都不碰它，也不起服务、不开定时器、不碰网络——一致性
+套件必须能在没有核心的情况下构造它。运行路径上零个构造点，而那句话现在是一条会红的对账，
+不是一句散文。
+
+写这一层时最值得记的是**第一版做错、并且做错的方式很典型**的那一处：我在本层抄了一份
+`CREDENTIAL_COMMANDS`，而托管层的 `inject` 自己就按那份清单分流。抄的动作是我自己在同一个
+文件的注释里刚警告过的（「抄一份的后果是两处会漂移」），而我照样抄了——因为在写「哪些命令
+要注入」这一步时，手边最顺的做法就是把清单拿过来。删掉那份副本之后，本层不再判断哪些命令要
+凭据：句柄有就交上去，由 `inject` 决定用不用它。
+
+```yaml
+review_2026_08_29_host_command_adapter:
+  commits: [0542c1c, b93b3d5]
+  baseline_before: 010a116
+  why_a_reference_implementation_at_all: >-
+    让真实实现去过一致性套件，是唯一能证明「这份合同可实现」的办法。
+    模拟器全绿只说明套件自洽。
+  what_it_deliberately_is_not:
+    - 不是 TableWebHost 的替代品，也不打算成为
+    - 不起服务、不开定时器、不碰网络
+    - 运行路径上零个构造点
+  three_judgements_worth_keeping:
+    credential_list_not_duplicated:
+      first_version: 在本层抄了一份 CREDENTIAL_COMMANDS
+      why_wrong: 托管层 inject 自己就按那份清单分流，两处必然漂移
+      failure_shapes: [漏一条则某操作偶尔不管用, 多一条则建房第一步就失败]
+      neither_reports_an_error: true
+      fix: 句柄有就交上去，由 inject 决定用不用它
+      note: 抄的动作是我在同一个文件的注释里刚警告过的
+    never_guesses_the_handle:
+      rejected: 「只有一席就用那一席」
+      why: 单席上永远对，多席宿主上是替错的人行动，而单席测试永远发现不了
+      precedent: 托管层那条 seat_handle_required 的注释已经把这件事写死
+    human_face_does_not_sanitize:
+      model_face: 必须净化，收件人是模型
+      human_face: 不净化，收件人就是持有该席凭据的那个真人
+      what_sanitizing_would_break: seat_handle_missing 这类诊断被摘掉，掉线恢复无从排查
+      same_reasoning_for: command 不过 assertNoLeak（真人面的 command 来自宿主自己的路由表）
+  characterization_tests_protect_the_closed_table:
+    method: 四条命令的注入结果与 host.injected 逐字段对账
+    extra_assertion: 要凭据的命令确实补上了 seat_id 与 recovery_credential
+    why_that_extra_one: 对账通过不等于两边都什么也没做——两边都返回原样参数时 deepEqual 一样会过
+    drift_shape_being_guarded: 有人在一侧加了「顺手补个默认值」，那种改动不会让任何现有测试红
+  new_error_code:
+    code: command_not_host_facing
+    class: identity
+    why_not_merged_with_model_side: 合成之后日志里读不出是哪一面越界，而模型面越界意味着模型可能拿到下注权限
+    found_by: test/adapter-contract.test.cjs 的「每个错误码都被归类」当场抓出
+  own_test_holes_found_by_mutation_not_by_reading:
+    first_run: 19_total_17_killed_2_survived
+    - 没有断言本地拒绝**不**推进 degraded：把它算成降级会让宿主一次伪造参数就退回轮询
+    - 没有测 rememberHandle 拒空串：收下空句柄后 seat_handle_count 报了个数而句柄什么都发不出去
+  a_mutation_that_cannot_work:
+    attempted: 变异 test/adapter-integration-truth.test.cjs 里的断言，换成 assert.ok(true)
+    why_it_can_never_be_killed: 一个测试杀不掉自己身上的削弱——削弱后的断言自己就是绿的
+    replaced_by: 变异产品（给 table-web-host.cjs 加 require），由那条对账杀掉
+    recorded_in: 该规格的 excluded，连同一次双向手测（加 require 后变红，撤销后 8/8 复绿，git diff 确认字节复原）
+  measured:
+    host_command_adapter_tests: 20_of_20
+    integration_truth_tests: 8_of_8
+    new_mutation_spec: host-command-adapter_20_of_20
+    adapter_contract_mutations: 34_of_34
+    npm_test: 778_pass_0_fail_0_skipped
+    mutation_gate: MUTATION_TOTAL_430_KILLED_430_SURVIVED_0_SKIPPED_0_GATE_PASS
+    browser_acceptance: 209_pass_0_fail_0_console_errors_hand_13
+  unverified_boundaries:
+    - 产品未改用参考适配器，运行路径上零个构造点（由一正一反两条对账钉住）
+    - gate_5_proactive_wake_still_unverified；本适配器不声明 proactive_wake
+    - 是否把 host_command 从 table-web-host.cjs 拆出来仍待裁决，记在计划树 not_done
+  next:
+    - E_claude_host_adapter_browser_free_parts
+  requires_user_acceptance: yes
+```
