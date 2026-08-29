@@ -13,7 +13,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { runConformance } = require("../test-support/adapter-conformance.cjs");
+const {
+  runConformance, requiredCheckIds,
+} = require("../test-support/adapter-conformance.cjs");
 const { SeatCustody } = require("../src/host/seat-custody.cjs");
 const {
   DECLARED_CAPABILITIES,
@@ -33,10 +35,36 @@ function makeAdapter({ dispatch, capabilities } = {}) {
 }
 
 test("真实座位模型适配器过合同一致性套件", async () => {
-  const report = await runConformance(() => makeAdapter(), { role: "seat_model" });
+  const seen = [];
+  const report = await runConformance(
+    () => makeAdapter({
+      dispatch: async (command, params) => {
+        seen.push({ command, params });
+        return { room: { room_id: "r1" }, seats: [] };
+      },
+    }),
+    { role: "seat_model", observeDispatch: () => seen });
   assert.deepEqual(report.failures, [], `不合规项：${report.failures.join(" / ")}`);
-  assert.equal(report.passed, true);
-  assert.ok(report.checks.length >= 18, `只跑了 ${report.checks.length} 条检查`);
+  assert.equal(report.conformance_passed, true);
+  assert.equal(report.report_integrity.ok, true,
+    `报告结构不完整：${JSON.stringify(report.report_integrity)}`);
+  assert.equal(report.checks.length, requiredCheckIds("seat_model").length);
+  // 真实适配器交给传输的载荷必须能构成合规请求信封——不是 not_run。
+  // 这一条是 C.2 那个请求信封在适配器层的落点：适配器只交 (command, params)，
+  // 信封由传输构造，所以这一层能验的是「交下去的东西构不构得出信封」。
+  const dispatchCheck = report.checks
+    .find((entry) => entry.check_id === "dispatch_payload_envelope_ready");
+  assert.equal(dispatchCheck.status, "pass", dispatchCheck.detail);
+});
+
+test("真实适配器：完整验证仍然为假，因为主动唤醒够不到", async () => {
+  // conformance_passed 与 fully_verified 必须分开。合并成一个 passed 的话，
+  // 一份「Gate 5 根本没验」的报告读起来像完整通过——那正是这一轮要拆的形状。
+  const report = await runConformance(
+    () => makeAdapter({ capabilities: ["command_dispatch", "proactive_wake"] }),
+    { role: "seat_model" });
+  assert.equal(report.conformance_passed, true, `不合规项：${report.failures.join(" / ")}`);
+  assert.equal(report.fully_verified, false);
 });
 
 test("谎称有主动唤醒时，一致性报告仍然全绿——但会留下不可验证项", async () => {
@@ -49,18 +77,30 @@ test("谎称有主动唤醒时，一致性报告仍然全绿——但会留下�
     () => makeAdapter({ capabilities: ["command_dispatch", "proactive_wake"] }),
     { role: "seat_model" });
   assert.deepEqual(report.failures, []);
-  assert.equal(report.passed, true);
-  const entry = report.unverifiable.find((item) => item.capability === "proactive_wake");
+  assert.equal(report.conformance_passed, true);
+  const entry = report.unverifiable
+    .find((item) => item.check_id === "proactive_wake_actually_works");
   assert.ok(entry !== undefined, "声明了主动唤醒必须留下不可验证项");
-  assert.equal(entry.gate, "Gate 5");
   assert.match(entry.reason, /只验内部一致性/);
   assert.match(entry.reason, /都未验证/);
+  assert.match(entry.reason, /Gate 5/);
+  // 那一条在 checks 里的 status 也必须是 unverifiable，不是 pass。
+  // 只查 unverifiable 数组的话，同一条同时被记成 pass 也发现不了。
+  const inChecks = report.checks
+    .find((item) => item.check_id === "proactive_wake_actually_works");
+  assert.equal(inChecks.status, "unverifiable");
 });
 
-test("默认不声明时报告里没有不可验证项", async () => {
-  // 反面。默认配置下这一项不该出现，否则「有没有不可验证项」就不再是一个信号。
+test("默认不声明时报告里没有不可验证项，但那一条也不是 pass", async () => {
+  // 反面。默认配置下这一项不该出现在 unverifiable 里，否则「有没有不可验证项」
+  // 就不再是一个信号。同时它也不该是 pass——套件永远不该产出一条读起来像
+  // 「主动唤醒验过了」的记录，哪怕适配器根本没声明它。
   const report = await runConformance(() => makeAdapter(), { role: "seat_model" });
   assert.deepEqual(report.unverifiable, []);
+  const wake = report.checks
+    .find((item) => item.check_id === "proactive_wake_actually_works");
+  assert.equal(wake.status, "not_run");
+  assert.match(wake.detail, /没声明这个能力/);
 });
 
 test("默认不声明主动唤醒", () => {

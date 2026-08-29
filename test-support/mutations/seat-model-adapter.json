@@ -91,8 +91,8 @@
     {
       "id": "conformance-wake-unverifiable-not-recorded",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "      unverifiable.push({\n        capability: \"proactive_wake\",",
-      "replace": "      [].push({\n        capability: \"proactive_wake\",",
+      "find": "      ledger.unverifiable(\"proactive_wake_actually_works\",",
+      "replace": "      ledger.notRun(\"proactive_wake_actually_works\",",
       "note": "声明了主动唤醒却不留不可验证项。于是一份全绿的一致性报告读起来像「全都验过了」，而 Gate 5 从来没跑过。这一条与本轮刚修的验收判定式是同一个缺陷类，换了个地方长出来。",
       "test": "test/seat-model-adapter.test.cjs"
     },

@@ -1,0 +1,117 @@
+{
+  "name": "一致性报告结构（check_id、四态、恰好一次、conformance_passed vs fully_verified）",
+  "note": "报告聚合、跳过、提前返回、错误归因这四类是 D 的靶子。旧报告里「跳过」和「通过」长得一样：checks 数组短几条，没人数；断言只查 failures 非空，红的是不是该红的那一条无从判断。这些变异专门打这四处。",
+  "test": "test/adapter-conformance.test.cjs",
+  "mutations": [
+    {
+      "id": "integrity-ignores-missing",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "        ok: missing.length === 0 && duplicated.length === 0 && unknown.length === 0,",
+      "replace": "        ok: duplicated.length === 0 && unknown.length === 0,",
+      "note": "漏记的检查不再算结构问题。这是「跳过读成通过」的原始形状。",
+      "test": "test/conformance-report-integrity.test.cjs"
+    },
+    {
+      "id": "integrity-ignores-duplicates",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "    if (written.has(id)) duplicated.push(id);",
+      "replace": "    if (false) duplicated.push(id);",
+      "note": "同一条记两遍不再被发现。后果是同一症状在 failures 里说两次，根因被淹掉。",
+      "test": "test/conformance-report-integrity.test.cjs"
+    },
+    {
+      "id": "integrity-not-in-failures",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "          failures.push(`report_integrity｜有必需检查一次都没记：${missing.join(\", \")}`);",
+      "replace": "          void missing;",
+      "note": "结构问题只留在 report_integrity 里，不进 failures。只看 failures 的调用方会把一份缺十条的报告读成通过。",
+      "test": "test/conformance-report-integrity.test.cjs"
+    },
+    {
+      "id": "unknown-check-id-tolerated",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "      const error = new Error(`未登记的 check_id: ${id}`);",
+      "replace": "      const error = null; if (error === null) return;",
+      "note": "未登记的 id 被悄悄接受。拼错的 id 会让本该被登记的那条永远停在 not_run。",
+      "test": "test/conformance-report-integrity.test.cjs"
+    },
+    {
+      "id": "not-run-counted-as-pass",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "      write(id, ok ? \"pass\" : \"fail\", detail || (ok ? \"\" : \"条件不成立\"));",
+      "replace": "      write(id, \"pass\", detail || (ok ? \"\" : \"条件不成立\"));",
+      "note": "所有检查都记成 pass。最粗的一刀，用来确认整套断言不是空的。"
+    },
+    {
+      "id": "fully-verified-ignores-unverifiable",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "        fully_verified: failures.length === 0\n          && unverifiableList.length === 0\n          && notRunList.length === 0,",
+      "replace": "        fully_verified: failures.length === 0,",
+      "note": "fully_verified 退化成 conformance_passed。这一刀恢复的正是旧版那个「Gate 5 没验却读起来像完整通过」的 passed。"
+    },
+    {
+      "id": "wake-recorded-as-pass",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "      ledger.notRun(\"proactive_wake_actually_works\",\n        \"适配器没声明这个能力，退回轮询，无需实机验证\");",
+      "replace": "      ledger.record(\"proactive_wake_actually_works\", true,\n        \"适配器没声明这个能力，退回轮询，无需实机验证\");",
+      "note": "没声明时记成 pass。套件永远不该产出一条读起来像「主动唤醒验过了」的记录，哪怕适配器没声明。"
+    },
+    {
+      "id": "bail-out-returns-short-report",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "    const rest = requiredCheckIds(role).filter((id) => id !== \"factory_provided\");\n    for (const id of rest) ledger.notRun(id, \"没有适配器工厂，后面都没得可查\");",
+      "replace": "    void requiredCheckIds;",
+      "note": "提前返回时不再把剩下的记成 not_run，报告缩成一条。恰好一次那条约束就是为这个存在的。"
+    },
+    {
+      "id": "construct-failure-returns-short-report",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "      ledger.notRun(id, \"适配器没构造出来，后面都没得可查\");",
+      "replace": "      void id;",
+      "note": "构造失败时同上。两条提前返回路径各来一刀，一条覆盖不了另一条。"
+    },
+    {
+      "id": "failure-line-drops-check-id",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "        .map((entry) => `${entry.check_id}｜${entry.name}：${entry.detail}`);",
+      "replace": "        .map((entry) => `${entry.name}：${entry.detail}`);",
+      "note": "失败行里不带 check_id。名字里有插值，跨报告对不上——这是要 check_id 的头一条理由。"
+    },
+    {
+      "id": "envelope-ready-accepts-rewritten-command",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "  if (!commands.includes(command)) return false;",
+      "replace": "  if (false) return false;",
+      "note": "适配器把命令改写成别的也算合格。改写之后传输构出的信封是错的，而这一层是唯一看得见载荷的地方。"
+    },
+    {
+      "id": "envelope-ready-accepts-unserializable",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "  if (Object.keys(params).length !== Object.keys(roundTripped).length) return false;",
+      "replace": "  if (false) return false;",
+      "note": "参数里的字段在序列化时静默消失也算合格。第一版这条查的是序列化后的字符串，而 JSON.stringify 在两侧都会丢掉函数属性，于是断言恒成立——这条变异指出了那个缺陷，改为比键集合。"
+    },
+    {
+      "id": "observe-dispatch-missing-counts-as-pass",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "        ledger.notRun(\"dispatch_payload_envelope_ready\",\n          \"调用方没有提供 observeDispatch，看不到交给传输的载荷\");",
+      "replace": "        ledger.record(\"dispatch_payload_envelope_ready\", true,\n          \"调用方没有提供 observeDispatch，看不到交给传输的载荷\");",
+      "note": "没有观察点时记成 pass。「没能查」绝不能读成「查过了」——这是本轮反复撞到的那一类。"
+    },
+    {
+      "id": "failure-envelope-check-vacuous-pass",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "        ledger.notRun(\"failure_envelope_has_code\",\n          \"这一跑的读命令成功了，没有失败信封可查\");",
+      "replace": "        ledger.record(\"failure_envelope_has_code\", true,\n          \"这一跑的读命令成功了，没有失败信封可查\");",
+      "note": "成功路径上把失败信封那条记成 pass。这一跑根本没产生失败信封，判 pass 等于宣称验过了。"
+    },
+    {
+      "id": "release-zero-check-ignores-leftover",
+      "file": "test-support/adapter-conformance.cjs",
+      "find": "      .filter(([, value]) => value !== 0);",
+      "replace": "      .filter(() => false);",
+      "note": "残留计数不再算没归零。部分清理最难查：状态看着对，残留只在复用同一个 id 时露头。"
+    }
+  ],
+  "excluded": []
+}

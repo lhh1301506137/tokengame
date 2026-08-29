@@ -12,7 +12,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { runConformance } = require("../test-support/adapter-conformance.cjs");
+const {
+  runConformance, CHECKS, requiredCheckIds,
+} = require("../test-support/adapter-conformance.cjs");
 const { BROKEN, SimulatedAdapter } = require("../test-support/adapter-simulator.cjs");
 
 const ROLES = ["host_command", "seat_model"];
@@ -25,14 +27,41 @@ function make(role, overrides = {}) {
   });
 }
 
+// 带请求观察点的工厂。dispatch_payload_envelope_ready 要看适配器交给传输的载荷，
+// 而适配器不该为了被测多暴露一个出口，所以由调用方把 dispatch 接成记账的。
+function makeObserved(role, overrides = {}) {
+  const seen = [];
+  return {
+    factory: () => new SimulatedAdapter({
+      role,
+      dispatch: async (command, params) => {
+        seen.push({ command, params });
+        return { room: { room_id: "r1" }, seats: [] };
+      },
+      ...overrides,
+    }),
+    observeDispatch: () => seen,
+  };
+}
+
 for (const role of ROLES) {
   test(`参考适配器过一致性套件：${role}`, async () => {
-    const report = await runConformance(make(role), { role });
+    const { factory, observeDispatch } = makeObserved(role);
+    const report = await runConformance(factory, { role, observeDispatch });
     assert.deepEqual(report.failures, [], `不合规项：${report.failures.join(" / ")}`);
-    assert.equal(report.passed, true);
-    // 钉一个下界防止「套件退化成只跑两条也全绿」。两侧条数不同（模型面多三条句柄检查），
-    // 所以取较小的那一侧。
-    assert.ok(report.checks.length >= 18, `只跑了 ${report.checks.length} 条检查`);
+    assert.equal(report.conformance_passed, true);
+    // 报告结构完整：每条必需检查恰好一次。这比「条数够多」强——
+    // 旧版那条 `checks.length >= 18` 只挡得住整段消失，挡不住某一条被跳过。
+    assert.deepEqual(report.report_integrity.missing, []);
+    assert.deepEqual(report.report_integrity.duplicated, []);
+    assert.deepEqual(report.report_integrity.unknown, []);
+    assert.equal(report.report_integrity.ok, true);
+    assert.equal(report.checks.length, requiredCheckIds(role).length);
+    // 每一条都有四态之一，没有漏写 status 的。
+    for (const entry of report.checks) {
+      assert.ok(["pass", "fail", "not_run", "unverifiable"].includes(entry.status),
+        `${entry.check_id} 的 status 是 ${entry.status}`);
+    }
   });
 
   test(`声明了全部能力时不出现降级项：${role}`, async () => {
@@ -40,8 +69,24 @@ for (const role of ROLES) {
       "command_dispatch", "proactive_wake", "structured_ui",
       "private_hand_view", "persistent_session",
     ];
-    const report = await runConformance(make(role, { capabilities: all }), { role });
+    const { factory, observeDispatch } = makeObserved(role, { capabilities: all });
+    const report = await runConformance(factory, { role, observeDispatch });
     assert.deepEqual(report.failures, []);
+    // 声明了主动唤醒，报告里必须留下一条不可验证项，且 fully_verified 为假。
+    // 少了这一条，一份「合规」报告会被读成 Gate 5 通过。
+    assert.deepEqual(report.unverifiable.map((e) => e.check_id),
+      ["proactive_wake_actually_works"]);
+    assert.equal(report.fully_verified, false,
+      "存在不可验证的必需能力时不得判为完整验证");
+  });
+
+  test(`没声明主动唤醒时那一条记 not_run，不记 pass：${role}`, async () => {
+    // 反方向：不声明也不能产出一条读起来像「主动唤醒验过了」的记录。
+    const { factory, observeDispatch } = makeObserved(role);
+    const report = await runConformance(factory, { role, observeDispatch });
+    const wake = report.checks.find((c) => c.check_id === "proactive_wake_actually_works");
+    assert.equal(wake.status, "not_run", `实际是 ${wake.status}`);
+    assert.equal(report.fully_verified, false);
   });
 }
 
@@ -50,14 +95,56 @@ for (const role of ROLES) {
 for (const [name, variant] of Object.entries(BROKEN)) {
   for (const role of variant.roles) {
     test(`套件抓得住：${name}（${role}）`, async () => {
+      const seen = [];
       const report = await runConformance(
-        () => variant.make({ role, dispatch: async () => ({}) }), { role });
+        () => variant.make({
+          role,
+          dispatch: async (command, params) => { seen.push({ command, params }); return {}; },
+        }),
+        { role, observeDispatch: () => seen });
       assert.ok(report.failures.length > 0,
         `${name} 这项破坏在 ${role} 上没有被任何一条检查抓到——套件在这一点上是空的`);
-      assert.equal(report.passed, false);
+      assert.equal(report.conformance_passed, false);
+
+      // 关键一步：红的必须是**该红的那一条**。
+      //
+      // 只断言 failures 非空的话，一个宽的破坏被下游某条检查抓住就算过——
+      // out_of_face_passthrough 当初正是这样：它连带破坏了释放语义，被
+      // 「释放后不能再发命令」抓住，而越界那一条其实一次都没红过。
+      const failedIds = report.checks
+        .filter((entry) => entry.status === "fail")
+        .map((entry) => entry.check_id);
+      for (const expected of variant.expect) {
+        assert.ok(failedIds.includes(expected),
+          `${name}（${role}）应当让 ${expected} 变红，实际红的是：`
+          + `${failedIds.join(", ") || "（一条都没红，只有结构性失败）"}`);
+      }
+
+      // 报告结构在破坏下也必须成立：缺条、重条都会让上面那个断言失去意义
+      // （缺条时 failedIds 里当然找不到它，但原因是没记，不是没红）。
+      assert.deepEqual(report.report_integrity.missing, [],
+        `${name}（${role}）的报告漏记了检查`);
+      assert.deepEqual(report.report_integrity.duplicated, [],
+        `${name}（${role}）的报告重复记账`);
     });
   }
 }
+
+test("每一项破坏都声明了它该让哪条检查变红", () => {
+  // 不声明的话，「套件抓得住」就退化回只断言 failures 非空——那是这一轮要拆掉的形状。
+  for (const [name, variant] of Object.entries(BROKEN)) {
+    assert.ok(Array.isArray(variant.expect) && variant.expect.length > 0,
+      `${name} 缺 expect`);
+    for (const id of variant.expect) {
+      assert.ok(Object.prototype.hasOwnProperty.call(CHECKS, id),
+        `${name} 的 expect 里有未登记的 check_id：${id}`);
+      for (const role of variant.roles) {
+        assert.ok(requiredCheckIds(role).includes(id),
+          `${name} 声明在 ${role} 上跑，但 ${id} 不是该角色的必需检查`);
+      }
+    }
+  }
+});
 
 test("越界检查不是空的：只破坏那一条也要被抓住", async () => {
   // out_of_face_passthrough 连带破坏了释放语义，所以它被「释放后不能再发命令」抓住——
@@ -136,7 +223,71 @@ test("工厂抛错时套件如实记下，不当成通过", async () => {
   const report = await runConformance(() => { throw new Error("接线错了"); },
     { role: "seat_model" });
   assert.equal(report.failures.length > 0, true);
-  assert.match(report.failures[0], /能构造适配器/);
+  assert.match(report.failures[0], /adapter_constructs/);
+  // 提前返回也要给出一份**结构完整**的报告：剩下的全部显式记成 not_run。
+  // 旧版直接 return 一份两条的报告，而两条的和三十几条的在调用方看来都只是「报告」。
+  assert.deepEqual(report.report_integrity.missing, [],
+    `提前返回时漏记了检查：${report.report_integrity.missing.join(", ")}`);
+  assert.equal(report.checks.length, requiredCheckIds("seat_model").length);
+  assert.equal(report.conformance_passed, false);
+  // 除了构造那条，其余都该是 not_run 并写明原因。
+  const notRunIds = report.not_run.map((e) => e.check_id);
+  assert.equal(notRunIds.length, requiredCheckIds("seat_model").length - 2,
+    `not_run 条数不对：${notRunIds.length}`);
+  for (const entry of report.not_run) {
+    assert.match(entry.reason, /没得可查/, `${entry.check_id} 的 not_run 没写理由`);
+  }
+});
+
+test("失败行以 check_id 开头，报告能按 id 对账", async () => {
+  // 名字里带插值（越界命令那条在两个角色下是两个字符串），只按名字对账跨报告对不上。
+  const report = await runConformance(
+    () => BROKEN.starts_negotiated.make({ role: "seat_model", dispatch: async () => ({}) }),
+    { role: "seat_model" });
+  assert.ok(report.failures.length > 0);
+  for (const line of report.failures) {
+    const id = line.split("｜")[0];
+    assert.ok(Object.prototype.hasOwnProperty.call(CHECKS, id) || id === "report_integrity",
+      `失败行没有以已登记的 check_id 开头：${line}`);
+  }
+  assert.ok(report.failures.some((line) => line.startsWith("initial_state_created")));
+});
+
+test("没给 observeDispatch 时请求载荷那条记 not_run，不记 pass", async () => {
+  // 「没能查」绝不能读成「查过了」。这条检查需要调用方提供观察点，
+  // 而适配器不该为了被测多暴露一个出口——所以缺观察点是常态，必须在报告里看得见。
+  const report = await runConformance(make("seat_model"), { role: "seat_model" });
+  const entry = report.checks
+    .find((c) => c.check_id === "dispatch_payload_envelope_ready");
+  assert.equal(entry.status, "not_run", `实际是 ${entry.status}`);
+  assert.match(entry.detail, /observeDispatch/);
+  assert.equal(report.fully_verified, false);
+});
+
+test("读命令成功时失败信封那条记 not_run，不记 pass", async () => {
+  // 这一跑根本没产生失败信封，判 pass 等于宣称「失败信封的形状验过了」。
+  const { factory, observeDispatch } = makeObserved("seat_model");
+  const report = await runConformance(factory, { role: "seat_model", observeDispatch });
+  const entry = report.checks.find((c) => c.check_id === "failure_envelope_has_code");
+  assert.equal(entry.status, "not_run", `实际是 ${entry.status}`);
+  assert.match(entry.detail, /没有失败信封可查/);
+});
+
+test("读命令回失败信封时那条才真的查", async () => {
+  // 反方向：not_run 不能是个永远的挡箭牌。核心失败时适配器回错误信封，
+  // 那一跑里这条检查必须真的跑起来。
+  const seen = [];
+  const report = await runConformance(
+    () => new SimulatedAdapter({
+      role: "seat_model",
+      dispatch: async (command, params) => {
+        seen.push({ command, params });
+        throw Object.assign(new Error("核心挂了"), { code: "core_unreachable" });
+      },
+    }),
+    { role: "seat_model", observeDispatch: () => seen });
+  const entry = report.checks.find((c) => c.check_id === "failure_envelope_has_code");
+  assert.equal(entry.status, "pass", `实际是 ${entry.status}：${entry.detail}`);
 });
 
 test("核心失败时适配器回错误信封而不是抛", async () => {

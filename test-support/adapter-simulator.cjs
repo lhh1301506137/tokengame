@@ -141,13 +141,13 @@ const BOTH = Object.freeze(["host_command", "seat_model"]);
 
 const BROKEN = Object.freeze({
   // 释放只改标记，资源还在。
-  release_only_flips_flag: { roles: BOTH, make: (options) => {
+  release_only_flips_flag: { roles: BOTH, expect: ["release_zeroes_counts"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.release = function release() { this.state = "released"; };
     return adapter;
   } },
   // 释放后还能发命令。
-  usable_after_release: { roles: BOTH, make: (options) => {
+  usable_after_release: { roles: BOTH, expect: ["no_call_after_release"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.assertUsable = function assertUsable(command) {
       if (!commandsForRole(this.role).includes(command)) {
@@ -157,7 +157,7 @@ const BROKEN = Object.freeze({
     return adapter;
   } },
   // 释放后能重新协商。released 不再是终态。
-  renegotiable_after_release: { roles: BOTH, make: (options) => {
+  renegotiable_after_release: { roles: BOTH, expect: ["no_renegotiate_after_release"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.negotiate = function renegotiate() {
       this.state = "negotiated";
@@ -172,7 +172,7 @@ const BROKEN = Object.freeze({
   } },
   // 越界命令放过去，让核心兜。把 assertUsable 整个清空，所以它同时也不查释放后的状态
   // ——于是套件是靠「释放后不能再发命令」抓到它的，而不是靠越界那一条。
-  out_of_face_passthrough: { roles: BOTH, make: (options) => {
+  out_of_face_passthrough: { roles: BOTH, expect: ["out_of_face_rejected"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.assertUsable = function assertUsable() {};
     return adapter;
@@ -181,7 +181,7 @@ const BROKEN = Object.freeze({
   // 破坏了释放语义；这一项把破坏收窄到那一条上。
   //
   // 两项都留着：一个宽的破坏被某条检查抓住，不等于每条检查都不空。
-  out_of_face_only: { roles: BOTH, make: (options) => {
+  out_of_face_only: { roles: BOTH, expect: ["out_of_face_rejected"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.assertUsable = function assertUsable(command) {
       if (this.state === "released") {
@@ -195,7 +195,7 @@ const BROKEN = Object.freeze({
     return adapter;
   } },
   // 信封里不带合同版本。
-  envelope_without_version: { roles: BOTH, make: (options) => {
+  envelope_without_version: { roles: BOTH, expect: ["envelope_has_contract_version"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     const inner = adapter.call.bind(adapter);
     adapter.call = async function call(command, params) {
@@ -205,7 +205,7 @@ const BROKEN = Object.freeze({
     return adapter;
   } },
   // 命令面抄了一份副本。内容相同，但漂移就此可能。
-  copied_command_face: { roles: BOTH, make: (options) => {
+  copied_command_face: { roles: BOTH, expect: ["command_face_by_identity"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     const inner = adapter.negotiate.bind(adapter);
     adapter.negotiate = function negotiateCopied() {
@@ -217,7 +217,7 @@ const BROKEN = Object.freeze({
     return adapter;
   } },
   // 模型面偷偷存了一份句柄。
-  model_holds_handle: { roles: ["seat_model"], make: (options) => {
+  model_holds_handle: { roles: ["seat_model"], expect: ["model_holds_no_seat_handle"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.handles = ["seat_handle-abc123"];
     adapter.inspectableState = function inspectableState() {
@@ -226,14 +226,14 @@ const BROKEN = Object.freeze({
     return adapter;
   } },
   // 模型面声明自己持有句柄。
-  model_claims_handle: { roles: ["seat_model"], make: (options) => {
+  model_claims_handle: { roles: ["seat_model"], expect: ["model_does_not_claim_handle"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     Object.defineProperty(adapter, "holdsSeatHandle", { get: () => true });
     return adapter;
   } },
   // 没声明主动唤醒，却读不出降级路径——协商结果里把降级清单清空了。
   // 这是最要紧的一项：它对应的真实后果是牌局静默停住。
-  hides_wake_degradation: { roles: BOTH, make: (options) => {
+  hides_wake_degradation: { roles: BOTH, expect: ["wake_declaration_consistent"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     const inner = adapter.negotiate.bind(adapter);
     adapter.negotiate = function negotiateHiding() {
@@ -245,27 +245,51 @@ const BROKEN = Object.freeze({
     return adapter;
   } },
   // 初始状态就报成已协商。
-  starts_negotiated: { roles: BOTH, make: (options) => {
+  starts_negotiated: { roles: BOTH, expect: ["initial_state_created"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.state = "negotiated";
     return adapter;
   } },
   // 不实现 inspectableState。套件那三条身份检查会看到空对象——「看不到」不能被读成通过。
-  no_inspectable_state: { roles: BOTH, make: (options) => {
+  no_inspectable_state: { roles: BOTH, expect: ["inspectable_state_implemented"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.inspectableState = undefined;
     return adapter;
   } },
   // 不实现 seedForRelease。释放检查就没有东西可清，于是在空状态上成立。
   // 这一项对应的是套件第一版的真实缺陷，留着它是为了那个缺陷不会回来。
-  no_seed_for_release: { roles: BOTH, make: (options) => {
+  no_seed_for_release: { roles: BOTH, expect: ["seed_for_release_implemented"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.seedForRelease = undefined;
     return adapter;
   } },
+  // 把命令改写成别的再交给传输。这一项此刻的后果是隐蔽的：适配器自己的边界检查照旧
+  // 通过（改写发生在检查之后），信封形状也合法，只是内容指向另一条命令。
+  // 只有看得见交给传输的那份载荷才抓得住。
+  rewrites_dispatch_command: { roles: BOTH, expect: ["dispatch_payload_envelope_ready"], make: (options) => {
+    const adapter = new SimulatedAdapter(options);
+    const inner = adapter.dispatchImpl;
+    adapter.dispatchImpl = async function dispatchRewritten(command, params) {
+      // 改写成一个两侧命令面都没有的命令。改写成 room.create 之类的话，
+      // 那条命令在真人面里是合法的，于是这一项在那一侧不构成违规——
+      // 而「没抓到」会被读成「套件有洞」。
+      return inner("tg.not.in.any.face", params);
+    };
+    return adapter;
+  } },
+  // 交一份过不了 JSON 往返的参数。带方法的对象序列化之后方法没了，
+  // 传输那一跳静默丢字段——形状检查看不出来，因为顶层还是个对象。
+  unserializable_dispatch_params: { roles: BOTH, expect: ["dispatch_payload_envelope_ready"], make: (options) => {
+    const adapter = new SimulatedAdapter(options);
+    const inner = adapter.dispatchImpl;
+    adapter.dispatchImpl = async function dispatchUnserializable(command, params) {
+      return inner(command, { ...params, onDone() { return 1; } });
+    };
+    return adapter;
+  } },
   // 释放清了句柄，但没清一次性 id。部分清理最难查：状态看着对，残留只在下一次
   // 复用同一个 id 时才露头。
-  release_keeps_tracked_ids: { roles: ["seat_model"], make: (options) => {
+  release_keeps_tracked_ids: { roles: ["seat_model"], expect: ["release_zeroes_counts"], make: (options) => {
     const adapter = new SimulatedAdapter(options);
     adapter.release = function release() {
       if (this.state !== "released") this.state = nextLifecycleState(this.state, "released");

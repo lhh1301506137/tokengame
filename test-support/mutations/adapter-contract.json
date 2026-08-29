@@ -195,16 +195,16 @@
     {
       "id": "conformance-skips-release-seed",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "  record(\"实现了 seedForRelease()，释放检查才有东西可清\",\n    typeof adapter.seedForRelease === \"function\",",
-      "replace": "  record(\"实现了 seedForRelease()，释放检查才有东西可清\",\n    true,",
+      "find": "  const hasSeed = ledger.record(\"seed_for_release_implemented\",\n    typeof adapter.seedForRelease === \"function\",",
+      "replace": "  const hasSeed = ledger.record(\"seed_for_release_implemented\",\n    true,",
       "note": "缺 seedForRelease 时判通过。释放检查会在一个空状态上成立——这正是套件第一版的真实缺陷，一个只写 this.state = \"released\" 的实现当时全绿。",
       "test": "test/adapter-conformance.test.cjs"
     },
     {
       "id": "conformance-skips-count-zeroing",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "    for (const [key] of seededCounts) {\n      record(`释放后 ${key} 归零`, afterState[key] === 0, `${key}=${afterState[key]}`);\n    }",
-      "replace": "    for (const [key] of []) {\n      record(`释放后 ${key} 归零`, afterState[key] === 0, `${key}=${afterState[key]}`);\n    }",
+      "find": "    ledger.record(\"release_zeroes_counts\", leftover.length === 0,",
+      "replace": "    ledger.record(\"release_zeroes_counts\", true,",
       "note": "不查释放后是否归零。部分清理最难查：状态看着对，残留只在下一次复用同一个 id 时露头。",
       "test": "test/adapter-conformance.test.cjs"
     },
@@ -219,32 +219,32 @@
     {
       "id": "conformance-tolerates-missing-inspect",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "  record(\"实现了 inspectableState()\", typeof adapter.inspectableState === \"function\",",
-      "replace": "  record(\"实现了 inspectableState()\", true,",
+      "find": "  const hasInspectable = ledger.record(\"inspectable_state_implemented\",\n    typeof adapter.inspectableState === \"function\",",
+      "replace": "  const hasInspectable = ledger.record(\"inspectable_state_implemented\",\n    true,",
       "note": "缺 inspectableState 时判通过。身份边界检查看到的是空对象，「什么都没看到」被读成「什么都没发现」。",
       "test": "test/adapter-conformance.test.cjs"
     },
     {
       "id": "conformance-out-of-face-allowed",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "    record(`越界命令 ${outOfFace} 被本地拒绝`, rejected.threw === true,",
-      "replace": "    record(`越界命令 ${outOfFace} 被本地拒绝`, true,",
+      "find": "    ledger.record(\"out_of_face_rejected\", rejected.threw === true,",
+      "replace": "    ledger.record(\"out_of_face_rejected\", true,",
       "note": "越界命令不查。靠核心兜的话，一次拒绝也要先把请求发出去，而模型面越界发出去的那条请求带着的正是它不该有的权限。",
       "test": "test/adapter-conformance.test.cjs"
     },
     {
       "id": "conformance-passes-with-failures",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "  return { role, checks, failures, unverifiable, passed: failures.length === 0 };",
-      "replace": "  return { role, checks, failures, unverifiable, passed: true };",
+      "find": "        conformance_passed: failures.length === 0,",
+      "replace": "        conformance_passed: true,",
       "note": "报告永远说通过。与本轮刚修的验收判定式是同一个缺陷（artifacts/negctl6 那份 passed:true），换了个地方长出来。",
       "test": "test/adapter-conformance.test.cjs"
     },
     {
       "id": "conformance-wake-check-vacuous",
       "file": "test-support/adapter-conformance.cjs",
-      "find": "      record(\"没声明主动唤醒时降级清单点明退回轮询\",\n        wakeDegradation?.degrade_to === \"polling\",",
-      "replace": "      record(\"没声明主动唤醒时降级清单点明退回轮询\",\n        true,",
+      "find": "      ledger.record(\"wake_declaration_consistent\",\n        wakeDegradation?.degrade_to === \"polling\",",
+      "replace": "      ledger.record(\"wake_declaration_consistent\",\n        true,",
       "note": "不查主动唤醒的降级路径。合同里写着的那条最要紧的不变量就此无人对账。",
       "test": "test/adapter-conformance.test.cjs"
     }
