@@ -1,0 +1,141 @@
+{
+  "name": "host_command 参考适配器：句柄边界、注入语义、生命周期",
+  "note": "此前 host_command 那一侧只有模拟器实现。模拟器过了只说明套件自洽，所以这一组要确认真实实现上的每条边界都有测试站在它会造成伤害的那个条件上——本轮已经两次看到「代码不可达」让变异活着出去。",
+  "test": "test/host-command-adapter.test.cjs",
+  "mutations": [
+    {
+      "id": "custody-becomes-public",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    this.#custody = custody;",
+      "replace": "    this.custody = custody;",
+      "note": "托管层挂成公开属性：adapter.custody.resolve(handle) 一步取出凭据原文，文本出口净化得再干净都没用。模型侧那一版就是这样漏的。"
+    },
+    {
+      "id": "handles-become-public",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    this.#handles = new Set();",
+      "replace": "    this.handles = new Set();",
+      "note": "句柄集合挂成公开属性：句柄本身进了 JSON.stringify，而句柄是取凭据的钥匙。"
+    },
+    {
+      "id": "inspectable-leaks-handles",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "      seat_handle_count: this.#handles.size,",
+      "replace": "      seat_handles: [...this.#handles],",
+      "note": "可检视状态摊出句柄本身而不是数目。值一旦进了报告就等于凭据钥匙落进日志。"
+    },
+    {
+      "id": "guesses-single-handle",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    const withHandle = seatHandle === null\n      ? { ...params }\n      : { ...params, seat_handle: seatHandle };",
+      "replace": "    const only = this.#handles.size === 1 ? [...this.#handles][0] : null;\n    const picked = seatHandle ?? only;\n    const withHandle = picked === null\n      ? { ...params }\n      : { ...params, seat_handle: picked };",
+      "note": "「只有一席就用那一席」。单席上永远对，多席宿主上的表现是替错的人行动，而单席测试永远发现不了——托管层那条 seat_handle_required 的注释就是为这件事写的。"
+    },
+    {
+      "id": "copies-credential-command-list",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    return this.#custody.inject(command, withHandle);",
+      "replace": "    if (command === \"view.seat\" || command === \"seat.ready\" || command === \"chat.say\") {\n      return this.#custody.inject(command, withHandle);\n    }\n    const bare = { ...withHandle };\n    delete bare.seat_handle;\n    return bare;",
+      "note": "在本层抄一份「哪些命令要凭据」的清单。漏一条表现为某个操作偶尔不管用，多一条表现为建房第一步就失败，两个方向都不报错。"
+    },
+    {
+      "id": "release-skips-custody-forget",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "      for (const handle of this.#handles) this.#custody.forget(handle);",
+      "replace": "",
+      "note": "只清本地 Set，不走托管层的 forget：句柄到凭据的映射还在，而那份映射正是凭据原文的存放处。"
+    },
+    {
+      "id": "release-does-not-clear-handles",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    this.#handles.clear();",
+      "replace": "",
+      "note": "释放后本地仍握着句柄：下一个实例复用同一张表时，一个陈旧句柄会帮一条早该失效的命令成立。"
+    },
+    {
+      "id": "claims-no-handle",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "  get holdsSeatHandle() {\n    return true;\n  }",
+      "replace": "  get holdsSeatHandle() {\n    return false;\n  }",
+      "note": "真人面自称不持有句柄。一致性套件按这个字段分叉，谎报之后本该跑真人专属检查的那几条会跑成模型侧的。"
+    },
+    {
+      "id": "declares-proactive-wake",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "const DECLARED_CAPABILITIES = Object.freeze([\"command_dispatch\"]);",
+      "replace": "const DECLARED_CAPABILITIES = Object.freeze([\"command_dispatch\", \"proactive_wake\"]);",
+      "note": "声明一个在两个宿主上都未验证的能力。协商结果会据此不给出降级路径，后果是宿主不轮询、牌局静默停住。"
+    },
+    {
+      "id": "out-of-face-uses-model-code",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "      throw new ContractError(\"command_not_host_facing\", { command, role: this.role });",
+      "replace": "      throw new ContractError(\"command_not_model_facing\", { command, role: this.role });",
+      "note": "两面越界用同一个错误码：日志里读不出是哪一面越界了，而模型面越界意味着模型可能拿到下注权限，严重性差得很远。"
+    },
+    {
+      "id": "out-of-face-not-rejected",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    if (!commandsForRole(this.role).includes(command)) {",
+      "replace": "    if (false) {",
+      "note": "越界命令不本地拒绝，靠核心兜。那条请求要先带着真人面的权限发出去。"
+    },
+    {
+      "id": "no-negotiation-check",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    if (this.negotiation === null) {",
+      "replace": "    if (false) {",
+      "note": "未协商也能发命令：合同版本从没对过账，一个跑在别的合同上的宿主会一路成功到语义对不上为止。"
+    },
+    {
+      "id": "released-adapter-still-usable",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    if (this.state === \"released\") {\n      throw new ContractError(\"illegal_lifecycle_transition\", { from: \"released\", command });\n    }",
+      "replace": "",
+      "note": "释放之后还能发命令。用户关了页面、租约也超时了，而那一席仍在被操作。"
+    },
+    {
+      "id": "local-rejection-marks-degraded",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "      const code = error?.code ?? \"unknown_error\";\n      return errorEnvelope(code, error?.status ?? 400, error?.details ?? null);",
+      "replace": "      const code = error?.code ?? \"unknown_error\";\n      if (this.state === \"negotiated\" || this.state === \"bound\") {\n        this.state = nextLifecycleState(this.state, \"degraded\");\n      }\n      return errorEnvelope(code, error?.status ?? 400, error?.details ?? null);",
+      "note": "把本地拒绝算成降级：「适配器刚失败过」这个状态失去意义，而宿主正是靠它决定要不要退回轮询。"
+    },
+    {
+      "id": "core-failure-does-not-degrade",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "      if (this.state === \"negotiated\" || this.state === \"bound\") {\n        this.state = nextLifecycleState(this.state, \"degraded\");\n      }\n      // details 原样转交。",
+      "replace": "      // details 原样转交。",
+      "note": "核心失败之后不进 degraded：宿主不知道自己刚失败过，不会退回轮询。"
+    },
+    {
+      "id": "degraded-is-terminal",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "      if (this.state === \"negotiated\" || this.state === \"degraded\") {\n        this.state = nextLifecycleState(this.state, \"bound\");\n      }",
+      "replace": "      if (this.state === \"negotiated\") {\n        this.state = nextLifecycleState(this.state, \"bound\");\n      }",
+      "note": "degraded 成了终态：一次网络抖动之后宿主永远以为自己该退回轮询。"
+    },
+    {
+      "id": "dispatch-check-dropped",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    if (typeof dispatch !== \"function\") {\n      throw new ContractError(\"invalid_field\", { field: \"dispatch\" });\n    }",
+      "replace": "",
+      "note": "缺 dispatch 不当场报：真正的失败推迟到第一次调用，而那时的报错指向调用点内部，读不出「宿主没接上」。"
+    },
+    {
+      "id": "custody-check-dropped",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    if (custody === null || typeof custody !== \"object\"\n      || typeof custody.inject !== \"function\") {\n      throw new ContractError(\"invalid_field\", { field: \"custody\" });\n    }",
+      "replace": "",
+      "note": "缺托管层不当场报。本适配器没有 ModelCommandSurface 那层中介，所以这里是唯一的检查点，少了它一个没接托管层的真人适配器会一路构造成功。"
+    },
+    {
+      "id": "remember-accepts-empty-handle",
+      "file": "src/host/host-command-adapter.cjs",
+      "find": "    if (typeof handle !== \"string\" || handle === \"\") {",
+      "replace": "    if (false) {",
+      "note": "收下空句柄：seat_handle_count 报 1 而那张句柄解析不出任何席位，表现是「明明记着一张却什么都发不出去」。"
+    }
+  ],
+  "excluded": []
+}

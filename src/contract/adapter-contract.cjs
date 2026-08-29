@@ -108,6 +108,10 @@ const ERROR_CLASSES = Object.freeze({
   // 身份或授权不成立。适配器要么补身份，要么走恢复流程；不能靠重试。
   identity: Object.freeze([
     "authority_token_rejected",
+    // 两面各一个码，刻意不合成一个 command_out_of_face。合成之后日志里读不出是哪一面
+    // 越界了，而两个方向的严重性差得很远：真人面越界是宿主自己的路由表写错了，
+    // 模型面越界意味着模型可能拿到下注权限。
+    "command_not_host_facing",
     "command_not_model_facing",
     "credential_not_model_supplied",
     "invite_rejected",
