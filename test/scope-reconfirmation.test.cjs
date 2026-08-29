@@ -131,15 +131,113 @@ test("宿主把发言限制的版本报进视图，而不是生命周期版本",
   assert.equal(meBefore.public_scope_reconfirm_reason, null,
     "刚确认完就说要重新确认：宿主报的版本和权威记的对不上");
 
-  // 换掉宿主持有的发言限制版本串，模拟 Primary 版本化调整之后的那一刻。数值不动——
-  // 要检验的是「版本变了就重新问」，不是任何具体上限。
+  // 只换版本串、数值一个不动，模拟 Primary 版本化调整之后的那一刻。
+  //
+  // 本文件开头把「权威侧要不要按版本串强制」记成待裁决项，并写明按版本串强制会让一次
+  // 非实质的版本号变动也让既有确认失效。这一轮的裁决是：不算。实质性由 policy epoch
+  // 表达，而 epoch 刻意不含 version 字段（理由记在 policy-epoch.cjs 的排除清单里）。
+  // 所以这里断言的方向与上一轮相反，且这是有意的改动，不是回归。
   web.limits = { ...LIVELY_V1, version: "LIVELY_V2" };
   const after = await web.buildView(session);
   const meAfter = after.seats.find((seat) => seat.is_viewer);
-  assert.equal(meAfter.public_scope_reconfirm_reason, "public_limits_changed",
-    "发言限制版本变了却没要求重新确认——检查宿主取的是不是 roomState.limits_version");
-  // 权威侧不比对 limits_version，所以它仍然会放行。如实反映这一点。
+  assert.equal(meAfter.public_scope_reconfirm_reason, null,
+    "只改版本串就要求重新确认——同意门会被无意义的版本号变动刷成噪音");
   assert.equal(meAfter.public_scope_confirmed, true);
+
+  // 真正放宽额度就必须重新问，而且这一次界面和权威要给出同一个答案。
+  // 改的是权威那一份 limits（协调器持有的），不是宿主那份——界面必须照权威报的 epoch
+  // 判断，而不是照自己手上的数值。
+  surface.orchestrator.ai.limits = { ...LIVELY_V1, maxGraphemesPerMessage: 480 };
+  const relaxed = await web.buildView(session);
+  const meRelaxed = relaxed.seats.find((seat) => seat.is_viewer);
+  assert.equal(meRelaxed.public_scope_reconfirm_reason, "public_limits_changed",
+    "权威侧放宽了额度，界面却没要求重新确认");
+  assert.equal(meRelaxed.public_scope_confirmed, false);
+
+  await web.stop();
+});
+
+// 投影报的 epoch 必须和 gate 用的 epoch 是同一个值。
+//
+// 这一条独立存在，因为两者算错的方向不同却都不报错：投影读错字段（把 roomState 顶层
+// 当成房间字段）时 epoch 恒为 binding:-|rules:-，于是每次渲染都要求重新确认、理由永远
+// 是 new_room_binding；而 gate 读的是真值，照样放行。玩家看到的是一个点了也不消失的
+// 同意门，而权威侧一切正常，日志里没有任何错误。
+test("投影报的 epoch 与权威 gate 用的 epoch 同值", async () => {
+  const { CommandSurface } = require("../src/authority/command-surface.cjs");
+  const { policyEpoch } = require("../src/authority/policy-epoch.cjs");
+  const { stackedDeck } = require("../src/game/holdem.cjs");
+
+  const surface = new CommandSurface({ deckFactory: () => stackedDeck([]), now: () => 1_000 });
+  surface.dispatch("room.create", { player_id: "p1", table_rules_version: "table-rules-v1" });
+
+  const projection = surface.orchestrator.projection();
+  assert.equal(typeof projection.policy_epoch, "string");
+  // 不能是空壳：三段都缺的 epoch 也是字符串，但它对不上任何真实确认。
+  assert.ok(!projection.policy_epoch.includes("binding:-"),
+    `投影里的绑房段是空的：${projection.policy_epoch}`);
+  assert.ok(!projection.policy_epoch.includes("rules:-"),
+    `投影里的桌规段是空的：${projection.policy_epoch}`);
+
+  // 照权威自己的房间字段独立算一遍，必须一致。
+  const room = surface.orchestrator.rooms.roomState().room;
+  assert.equal(projection.policy_epoch, policyEpoch({
+    roomBindingId: room.room_binding_id,
+    tableRulesVersion: room.table_rules_version,
+    limits: surface.orchestrator.ai.limits,
+  }));
+});
+
+// 权威没报 epoch 时，宿主必须退回按发言限制版本判定——而且报的得是 LIVELY_V1 那一份。
+//
+// 这一条在 epoch 接上之后仍然必要，理由是它测的是另一条路：epoch 分支优先，于是生产路径
+// 不再走三字段判定，而 speechLimitsVersion 报错对象就不再有可观察后果。变异
+// host-reports-lifecycle-version 正是这样从「代码不可达」里活下来的——不是因为它无害，
+// 而是因为没有测试站在它会造成伤害的那个条件上。
+//
+// 那个条件是「权威没报 epoch」。它不是假想情形：退路本来就是为它写的。
+test("权威没报 epoch 时，宿主报的是发言限制版本而不是生命周期版本", async () => {
+  const { CommandSurface } = require("../src/authority/command-surface.cjs");
+  const { InProcessCoreClient } = require("../src/host/core-client.cjs");
+  const { TableWebHost } = require("../src/host/table-web-host.cjs");
+  const { LIVELY_V1 } = require("../src/authority/seat-ai-store.cjs");
+  const { stackedDeck } = require("../src/game/holdem.cjs");
+
+  const at = 1_000;
+  const surface = new CommandSurface({ deckFactory: () => stackedDeck([]), now: () => at });
+  const core = new InProcessCoreClient({ surface });
+  const web = new TableWebHost({ core, now: () => at, driveIntervalMs: 3_600_000 });
+
+  const response = { out: {}, writeHead() {}, end(payload) { this.out = JSON.parse(payload); } };
+  await web.postCreate(response, { player_id: "p1", table_rules_version: "table-rules-v1" });
+  const session = web.sessions.get(response.out.session_token);
+  await core.dispatch(
+    "room.confirm_public_scope",
+    web.injected("room.confirm_public_scope", session, { acknowledged: true }),
+  );
+
+  // 摘掉投影里的 epoch，模拟一个不报这个字段的内核。改的是投影出口，不是宿主——
+  // 要检验的正是宿主在拿不到 epoch 时的行为。
+  const realProjection = surface.orchestrator.projection.bind(surface.orchestrator);
+  surface.orchestrator.projection = () => {
+    const projection = realProjection();
+    delete projection.policy_epoch;
+    return projection;
+  };
+
+  const before = await web.buildView(session);
+  assert.equal(before.seats.find((seat) => seat.is_viewer).public_scope_reconfirm_reason, null,
+    "退路一上来就要求重新确认：宿主报的版本和权威记进确认的不是同一份");
+
+  // 这一路按版本串判定（旧语义，仅退路）。宿主若报的是 roomState.limits_version
+  // （TABLE_LIFECYCLE_V1），这里就永远看不到变化。
+  web.limits = { ...LIVELY_V1, version: "LIVELY_V2" };
+  const after = await web.buildView(session);
+  assert.equal(
+    after.seats.find((seat) => seat.is_viewer).public_scope_reconfirm_reason,
+    "public_limits_changed",
+    "退路里发言限制版本变了却没要求重新确认——检查宿主取的是不是 roomState.limits_version",
+  );
 
   await web.stop();
 });

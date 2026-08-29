@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "TokenGame 本地牌桌",
     "shortDescription": "在本地权威牌桌中使用 Codex 公开 AI 通道。",
-    "longDescription": "TokenGame 提供仓库本地 Skill、同步 Hooks 与 MCP 工具，把显式赛时提示和当前 Codex 会话的最终回答发布到本地权威事件流；牌局行动仍由独立四人 Web 牌桌裁决。",
+    "longDescription": "TokenGame 提供仓库本地 Skill、同步 Hooks 与 MCP 工具，把显式赛时提示和当前 Codex 会话的最终回答发布到本地权威事件流；牌局行动由宿主中立的权威内核裁决，Web 牌桌只是真人操作它的界面之一。下注、按 Ready、确认公开范围、亮牌都是真人的决定，模型面发不出这些命令。",
     "developerName": "本地开发者",
     "category": "Productivity",
     "capabilities": [],

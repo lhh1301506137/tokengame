@@ -267,6 +267,13 @@ class TableWebHost {
       // 永远答错。刻意不用 roomState.limits_version：那是 TABLE_LIFECYCLE_V1，管席位数
       // 和保留窗，与规则 3 要重新确认的东西无关。
       speechLimitsVersion: this.limits.version ?? null,
+      // 权威当下的同意 epoch，原样转交。
+      //
+      // 关键是「原样转交」而不是在这一层重算：this.limits 是宿主自己那份 LIVELY_V1，
+      // 权威用的是它自己那份。两份通常相同，但真正给同意门把关的是权威那一份，
+      // 所以界面必须拿权威报的那个值去比。在这里重算等于让界面按宿主的看法判断
+      // 权威会不会放行——两者一旦不同，界面就会给出一个权威并不同意的结论。
+      currentPolicyEpoch: projection?.policy_epoch ?? null,
       // 座位旁气泡的退出时刻按协调器的时钟算。不传的话 recent_speech 恒为空，
       // 座位旁一条都不显示——测试里注入的假时钟也走这条路，所以退出时刻可判定。
       now: this.now(),

@@ -17,6 +17,7 @@
 // 一处，否则 Codex 适配器和 Claude 适配器会各翻一遍并逐渐分叉。
 
 const { ProbeError } = require("./event-store.cjs");
+const { policyEpoch } = require("./policy-epoch.cjs");
 const { RoomStore, TABLE_LIFECYCLE_V1 } = require("./room-store.cjs");
 const { SeatAiStore, LIVELY_V1 } = require("./seat-ai-store.cjs");
 const {
@@ -676,14 +677,33 @@ class TableOrchestrator {
   }
 
   projection() {
+    const room = this.rooms.roomState();
     return {
-      room: this.rooms.roomState(),
+      room,
       hand: this.hand === null ? null : { id: this.hand.id, status: this.hand.status },
       // 公共牌、底池、当前行动者、行动截止时间都属公开信息，房间级只读面就该有。
       public_hand: this.publicHandView(),
       public_timeline: this.ai.publicTimeline(),
       pending_intent_count: this.ai.workItems.size,
+      // 当前的同意 epoch。报出来是为了让界面拿它跟自己那份确认比，而不是自己再算一遍
+      // 「什么算实质变化」——算两遍就有两份判据，而两份判据迟早不一致。
+      // 不含秘密：三个都是权威公开事实（绑房 id、桌规版本、公开范围额度）。
+      policy_epoch: this.currentPolicyEpoch(room),
     };
+  }
+
+  // 权威当下承诺的那一套。gate 用它、投影也报它，同一处推导。
+  currentPolicyEpoch(room = null) {
+    // roomState() 把房间字段收在 .room 里，不是平铺在顶层。直接读顶层会得到
+    // undefined，于是投影永远报 binding:-|rules:-，而 gate 拿的是真值——两个 epoch
+    // 永远对不上，表现是每次渲染都要求重新确认，理由永远是 new_room_binding。
+    const source = room ?? this.rooms.roomState();
+    const fields = source?.room ?? source ?? null;
+    return policyEpoch({
+      roomBindingId: fields?.room_binding_id ?? null,
+      tableRulesVersion: fields?.table_rules_version ?? null,
+      limits: this.ai.limits,
+    });
   }
 }
 

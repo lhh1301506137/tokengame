@@ -1,0 +1,71 @@
+{
+  "name": "插件入口文案：谁在裁决，以及哪些命令是真人的",
+  "note": "变异对着 plugin.json 这份数据文件跑。装机文案是用户在装之前唯一看到的说明，说错了就是承诺错了，而它不会让任何代码抛错——所以只能靠对照文本的测试钉住。",
+  "test": "test/plugin-entry-copy.test.cjs",
+  "mutations": [
+    {
+      "id": "restore-inverted-adjudicator",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "牌局行动由宿主中立的权威内核裁决，Web 牌桌只是真人操作它的界面之一。",
+      "replace": "牌局行动仍由独立四人 Web 牌桌裁决。",
+      "note": "把裁决权说回 Web 牌桌。读者据此会以为换一个界面就换了一个裁决者，而这正是 L2 章程点名要防的那件事。"
+    },
+    {
+      "id": "drop-adjudicator-sentence",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "；牌局行动由宿主中立的权威内核裁决，Web 牌桌只是真人操作它的界面之一。",
+      "replace": "。",
+      "note": "整句删掉。只禁错的说法不够——什么都不说也能过那一条，而「没说」在装机页上和「说错了」几乎一样。"
+    },
+    {
+      "id": "drop-host-neutrality",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "宿主中立的权威内核",
+      "replace": "本插件内置的权威内核",
+      "note": "去掉宿主中立这一维：读者会以为每个宿主各有一个内核，于是两个宿主是不是同一场牌局的答案在文案里仍然是错的。"
+    },
+    {
+      "id": "drop-ui-role",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "Web 牌桌只是真人操作它的界面之一",
+      "replace": "Web 牌桌与之配合工作",
+      "note": "不说牌桌是界面。「配合工作」听起来像两个对等的裁决方。"
+    },
+    {
+      "id": "drop-human-only-commands",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "下注、按 Ready、确认公开范围、亮牌都是真人的决定，模型面发不出这些命令。",
+      "replace": "模型面受到限制。",
+      "note": "不点名四条真人专属命令。「AI 能不能替我下注」是用户装之前就会问的问题，而这里是唯一回答它的地方。"
+    },
+    {
+      "id": "drop-bet-from-human-list",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "下注、按 Ready、",
+      "replace": "按 Ready、",
+      "note": "四条里单独漏掉下注——恰好是四条中风险最高的那一条。"
+    },
+    {
+      "id": "soften-human-decision",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "都是真人的决定，模型面发不出这些命令。",
+      "replace": "通常由真人操作。",
+      "note": "把一道硬边界写成一个习惯做法：「通常」意味着存在例外，而这里没有例外。"
+    },
+    {
+      "id": "claim-proactive-wake",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "\"capabilities\": [],",
+      "replace": "\"capabilities\": [\"proactive_wake\"],",
+      "note": "在装机页上声明一个 Gate 5 未验证的能力。比在报告里声明更糟：报告有 unverifiable 数组承载它，装机页没有。"
+    },
+    {
+      "id": "claim-wake-in-prose",
+      "file": "plugins/tokengame/.codex-plugin/plugin.json",
+      "find": "把显式赛时提示",
+      "replace": "支持主动唤醒，把显式赛时提示",
+      "note": "能力声明藏在正文里而不在 capabilities 数组里——只查数组的测试会漏掉它。"
+    }
+  ],
+  "excluded": []
+}

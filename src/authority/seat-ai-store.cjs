@@ -8,6 +8,7 @@
 // 它的窗口模型，只复用 ProbeError 以保持错误形状一致。
 
 const { ProbeError } = require("./event-store.cjs");
+const { epochChangeReason, policyEpoch } = require("./policy-epoch.cjs");
 
 // 规则 3：LIVELY_V1。四层限制（单条 / 短窗 / 每手 / AI 启动间隔）不得取消。
 const LIVELY_V1 = Object.freeze({
@@ -175,6 +176,14 @@ class SeatAiStore {
       room_binding_id: roomBindingId,
       table_rules_version: tableRulesVersion,
       limits_version: this.limits.version,
+      // 同意所承诺的那一整套，合成一个串。记下来才能在下次比较时知道「上次同意的是哪一套」——
+      // 靠三个分散字段重新推导的话，漏推一维的表现就是那一维在权威侧不生效，
+      // 而 limits 那一维此前正是这样漏掉的。
+      policy_epoch: policyEpoch({
+        roomBindingId,
+        tableRulesVersion,
+        limits: this.limits,
+      }),
       confirmed_at: this.now(),
     };
     return this.record("DEFAULT_PUBLIC_SCOPE_CONFIRMED", {
@@ -186,15 +195,30 @@ class SeatAiStore {
   requireConfirmedScope(seatIdValue, roomBindingId, tableRulesVersion) {
     const seat = this.requireSeat(seatIdValue);
     const confirmation = seat.public_scope_confirmation;
-    if (
-      confirmation === null
-      || confirmation.room_binding_id !== roomBindingId
-      || confirmation.table_rules_version !== tableRulesVersion
-    ) {
+    // 按 epoch 比，不再逐维比。
+    //
+    // 逐维比的写法漏掉了发言限制这一维：limits_version 写进了确认记录却从不检查，
+    // 于是那一维只在 src/host/table-view-model.cjs 里生效——绕过界面直接打命令的调用方
+    // 在限制实质放宽之后仍然握着一份旧同意继续发言。同意门只在界面上成立等于没有同意门。
+    //
+    // 合成一个 epoch 之后比较点只有一处，将来加一维不会再出现「加了但某处没比」。
+    const current = policyEpoch({
+      roomBindingId,
+      tableRulesVersion,
+      limits: this.limits,
+    });
+    if (confirmation === null || confirmation.policy_epoch !== current) {
       throw new ProbeError("default_public_scope_not_confirmed", 409, {
         seat_id: seat.seat_id,
         room_binding_id: roomBindingId,
         table_rules_version: tableRulesVersion,
+        // 两个 epoch 都说出来，并指出是哪一维变了。只说「没确认」的话，跨 epoch 调试要靠猜，
+        // 而那时最省事的「修法」是让用户重新点一次同意——掩盖了「限制被谁改了」这个真问题。
+        confirmed_policy_epoch: confirmation === null ? null : confirmation.policy_epoch ?? null,
+        current_policy_epoch: current,
+        reason: confirmation === null
+          ? "never_confirmed"
+          : epochChangeReason(confirmation.policy_epoch, current),
       });
     }
     return confirmation;

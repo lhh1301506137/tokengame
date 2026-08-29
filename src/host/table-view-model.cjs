@@ -90,9 +90,18 @@ function pickHandSource(publicHand, privateHand) {
 // UI 说已确认，而每一次 chat.say 都被拒为 default_public_scope_not_confirmed，页面上
 // 没有任何东西解释原因，也没有可以点的东西。
 //
-// 发言限制版本单独一路：权威记它但不比对它（规则 3 说的是「实质改变热闹度或公平性的调整
-// 仍须重新确认」，而「实质」是人的判断，机器只有版本串）。所以它不进 confirmed，只进
-// reason——如实说成「权威会放行，但该重新给玩家看一遍」。
+// 2026-08-29 改：优先按权威报的 policy_epoch 比。
+//
+// 此前这里自己拿三个字段算一遍「什么算实质变化」，而权威只比其中两个——于是发言限制
+// 那一维只在这一层生效：绕过界面直接打命令的调用方，在限制实质放宽之后仍然握着旧同意
+// 继续发言。权威侧补上 epoch 之后，这一层不该再有第二份判据：两份判据迟早不一致，
+// 而不一致的表现是「界面说要重新确认，权威说不用」（或者反过来，更糟）。
+//
+// 本模块刻意零 require（它是权威与浏览器之间唯一的纯翻译层），所以 epoch 作为数据传进来，
+// 不在这里 import 权威模块。
+//
+// 旧的三字段路径保留为退路：宿主没报 currentPolicyEpoch 时（还没接上这个字段）
+// 仍按绑房与桌规判定，但那时不再自称能判断发言限制——如实降级，不假装。
 //
 // 理由的判定顺序是固定的：没确认过 -> 换绑 -> 桌规 -> 发言限制。不定的话同一份状态在两次
 // 渲染里可能给出不同理由，表现为对话框标题自己变来变去。
@@ -102,12 +111,29 @@ function scopeConfirmationState({
   roomBindingId,
   tableRulesVersion,
   speechLimitsVersion,
+  currentPolicyEpoch = null,
 }) {
   if (!isViewer) {
     return { public_scope_confirmed: null, public_scope_reconfirm_reason: null };
   }
   if (confirmation === null || typeof confirmation !== "object") {
     return { public_scope_confirmed: false, public_scope_reconfirm_reason: "never_confirmed" };
+  }
+
+  // 权威报了 epoch、确认里也有 epoch 时，这就是唯一判据。
+  if (typeof currentPolicyEpoch === "string" && typeof confirmation.policy_epoch === "string") {
+    if (confirmation.policy_epoch === currentPolicyEpoch) {
+      return { public_scope_confirmed: true, public_scope_reconfirm_reason: null };
+    }
+    // 理由从两个 epoch 的差异里读，与权威侧 epochChangeReason 取同一套值。
+    // 这里不 import 那个函数（本模块零依赖），改为按同样的分段比较——
+    // 分段格式由 policy-epoch.cjs 固定，test/policy-epoch.test.cjs 钉住两侧一致。
+    const [wasBinding, wasRules] = confirmation.policy_epoch.split("|");
+    const [nowBinding, nowRules] = currentPolicyEpoch.split("|");
+    let epochReason = "public_limits_changed";
+    if (wasBinding !== nowBinding) epochReason = "new_room_binding";
+    else if (wasRules !== nowRules) epochReason = "table_rules_changed";
+    return { public_scope_confirmed: false, public_scope_reconfirm_reason: epochReason };
   }
 
   // 权威强制的两维。缺字段一律按对不上处理：一份没有 room_binding_id 的确认在权威侧
@@ -135,6 +161,7 @@ function scopeConfirmationState({
 function buildSeats({
   roomState, publicHand, privateHand, viewerSeatId, aiStates, localHidden,
   speechLimitsVersion = null,
+  currentPolicyEpoch = null,
 }) {
   const hand = pickHandSource(publicHand, privateHand);
   const byPlayer = handSeatByPlayer(hand);
@@ -233,6 +260,7 @@ function buildSeats({
       // 但规则 3 要求重新确认（所以不能什么都不说）。一个字段兼两职责的教训在别处已经
       // 付过一次代价，这里不再重演。
       ...scopeConfirmationState({
+        currentPolicyEpoch,
         confirmation: isViewer
           ? aiStates?.[seat.seat_id]?.public_scope_confirmation ?? null
           : null,
@@ -395,6 +423,9 @@ function build(input = {}) {
     // 是前者（字素上限、每手条数、启动间隔）。两个字段同名不同义，拿错一个会让
     // 「限制变了吗」这个问题永远答错，而答错的方向是永远弹门或永远不弹。
     speechLimitsVersion = null,
+    // 权威侧算出来的 policy epoch，原样转交，本层不重算。缺省 null 时退回上面那条
+    // 三字段旧路径——那是诚实的降级，不是等价物：旧路径不知道哪些字段算实质变化。
+    currentPolicyEpoch = null,
     // 座位旁气泡的退出时刻要靠它算。缺省 null 而不是 Date.now()：本模块不读时钟，
     // 而一个偷偷读时钟的缺省值会让「投影是纯函数」这句话在某些调用路径上不成立。
     // 不传时座位旁一条都不显示，时间线不受影响——宁可少显示，不要显示一份算错时刻的。
@@ -415,6 +446,7 @@ function build(input = {}) {
     aiStates,
     localHidden: hidden,
     speechLimitsVersion,
+    currentPolicyEpoch,
   });
 
   const seatIndexById = new Map(seats.map((seat) => [seat.seat_id, seat.seat_index]));

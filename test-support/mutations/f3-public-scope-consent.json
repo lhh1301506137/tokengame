@@ -27,16 +27,17 @@
     {
       "id": "F3-04-确认门不比对绑房",
       "file": "src/authority/seat-ai-store.cjs",
-      "find": "      || confirmation.room_binding_id !== roomBindingId",
-      "replace": "",
-      "why": "换了房间旧确认还算：恢复到新绑定后不必重新确认。"
+      "find": "confirmation.policy_epoch !== current",
+      "replace": "confirmation.policy_epoch?.split(\"|\").slice(1).join(\"|\") !== current.split(\"|\").slice(1).join(\"|\")",
+      "why": "换了房间旧确认还算。逐维比已换成比 epoch，所以同一个缺陷现在的形状是「只比 epoch 的一部分」：掉绑房那一段后，换绑之后的旧同意仍然对得上。"
     },
     {
       "id": "F3-05-确认门不比对桌规版本",
       "file": "src/authority/seat-ai-store.cjs",
-      "find": "      || confirmation.table_rules_version !== tableRulesVersion",
-      "replace": "",
-      "why": "改了桌规旧确认还算：规则变了也不用重新告知。"
+      "find": "        reason: confirmation === null",
+      "replace": "        reason_disabled: confirmation === null",
+      "why": "拒绝时不说哪一维变了。只说「没确认」的话，最省事的修法是让用户重新点一次同意，而那掩盖了「限制被谁改了」这个真问题。",
+      "test": "test/policy-epoch.test.cjs"
     },
     {
       "id": "F3-06-发言查错席位的确认",
@@ -90,8 +91,8 @@
     {
       "id": "F3-13-确认落在共享对象上",
       "file": "src/authority/seat-ai-store.cjs",
-      "find": "    seat.public_scope_confirmation = {\n      seat_id: seat.seat_id,\n      room_binding_id: roomBindingId,\n      table_rules_version: tableRulesVersion,\n      limits_version: this.limits.version,\n      confirmed_at: this.now(),\n    };",
-      "replace": "    this.sharedConfirmation = this.sharedConfirmation ?? {};\n    for (const other of this.seats.values()) other.public_scope_confirmation = this.sharedConfirmation;\n    Object.assign(this.sharedConfirmation, {\n      seat_id: seat.seat_id,\n      room_binding_id: roomBindingId,\n      table_rules_version: tableRulesVersion,\n      limits_version: this.limits.version,\n      confirmed_at: this.now(),\n    });",
+      "find": "    seat.public_scope_confirmation = {\n      seat_id: seat.seat_id,\n      room_binding_id: roomBindingId,\n      table_rules_version: tableRulesVersion,\n      limits_version: this.limits.version,\n      // 同意所承诺的那一整套，合成一个串。记下来才能在下次比较时知道「上次同意的是哪一套」——\n      // 靠三个分散字段重新推导的话，漏推一维的表现就是那一维在权威侧不生效，\n      // 而 limits 那一维此前正是这样漏掉的。\n      policy_epoch: policyEpoch({\n        roomBindingId,\n        tableRulesVersion,\n        limits: this.limits,\n      }),\n      confirmed_at: this.now(),\n    };",
+      "replace": "    this.sharedConfirmation = this.sharedConfirmation ?? {};\n    for (const other of this.seats.values()) other.public_scope_confirmation = this.sharedConfirmation;\n    Object.assign(this.sharedConfirmation, {\n      seat_id: seat.seat_id,\n      room_binding_id: roomBindingId,\n      table_rules_version: tableRulesVersion,\n      limits_version: this.limits.version,\n      // 同意所承诺的那一整套，合成一个串。记下来才能在下次比较时知道「上次同意的是哪一套」——\n      // 靠三个分散字段重新推导的话，漏推一维的表现就是那一维在权威侧不生效，\n      // 而 limits 那一维此前正是这样漏掉的。\n      policy_epoch: policyEpoch({\n        roomBindingId,\n        tableRulesVersion,\n        limits: this.limits,\n      }),\n      confirmed_at: this.now(),\n    });",
       "why": "所有席位共用一份确认：写法变了，语义还是整桌单例。"
     },
     {

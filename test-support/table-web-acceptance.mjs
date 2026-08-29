@@ -865,8 +865,12 @@ async function main() {
         return table.scopeGateVisible === false && table.scopeReason === "";
       }, { timeout: 15_000 });
     }
-    // public_limits_changed 那一条是三者里唯一权威不强制的：它 confirmed 仍为 true，
-    // 门却必须出现。只看 confirmed 的实现会漏掉它，所以单列一条把这件事说清楚。
+    // public_limits_changed 这一条的 confirmed 仍写成 true，而门必须出现——检验的是
+    // 「只看 confirmed 的渲染实现会漏掉带理由的那一路」。
+    //
+    // 注意这里的 confirmed:true 是这段改写自己造的组合，不是权威当下的语义：权威侧现在
+    // 按 policy epoch 强制公开范围额度，实质放宽之后 confirmed 会是 false。上一轮这一维
+    // 确实只在界面上生效，那句话已不再成立，改写保留是因为它测的是渲染而不是权威。
     ok("三个维度各自都能让同意门重新出现，且恢复后自己收起");
     artifacts.push(await shot(alice, "01c-reconfirm-cleared"));
 

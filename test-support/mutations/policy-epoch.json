@@ -1,0 +1,125 @@
+{
+  "name": "policy epoch：什么算实质变化，以及它由权威侧强制",
+  "note": "这一组要钉住三件事：实质字段少一个就有一类变化悄悄不算；排除清单里的两项确实不该算；以及 gate 与投影用的是同一个 epoch。最后一条是本轮真实修掉的缺陷——投影读错嵌套层级时 epoch 恒为空壳，界面永远弹同意门而权威一切正常。",
+  "test": "test/policy-epoch.test.cjs",
+  "mutations": [
+    {
+      "id": "drop-grapheme-cap-from-scope",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "  \"maxGraphemesPerMessage\",",
+      "replace": "",
+      "note": "字素上限退出实质字段：单条能公开多长悄悄翻倍而旧同意继续有效。"
+    },
+    {
+      "id": "drop-rolling-window-from-scope",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "  \"playerRollingWindowMs\",",
+      "replace": "",
+      "note": "窗时长退出实质字段：条数不变而窗缩短同样是提速，这是最容易被漏掉的一维。"
+    },
+    {
+      "id": "drop-ai-public-per-hand-from-scope",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "  \"aiMaxPublicPerHand\",",
+      "replace": "",
+      "note": "模型每手公开条数退出实质字段。"
+    },
+    {
+      "id": "version-becomes-material",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "  \"aiMinEvaluationIntervalMs\",\n]);",
+      "replace": "  \"aiMinEvaluationIntervalMs\",\n  \"version\",\n]);",
+      "note": "把版本串算成实质变化：任意版本号变动都会让既有确认失效，同意门被刷成噪音。这正是目标里点名要避免的那一路。"
+    },
+    {
+      "id": "bubble-display-becomes-material",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "  \"aiMinEvaluationIntervalMs\",\n]);",
+      "replace": "  \"aiMinEvaluationIntervalMs\",\n  \"bubbleDisplayMs\",\n]);",
+      "note": "把纯本地显示时长算成实质变化。它不改变公开了什么也不改变公开的量。"
+    },
+    {
+      "id": "missing-field-collapses",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "value === undefined || value === null ? \"-\" : value",
+      "replace": "value === undefined || value === null ? \"\" : value",
+      "note": "缺字段与空串写成同一个指纹：一份少了字段的 limits 与一份该字段为空的 limits 得到同一个 epoch。"
+    },
+    {
+      "id": "epoch-ignores-binding",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "`binding:${roomBindingId ?? \"-\"}`",
+      "replace": "\"binding:any\"",
+      "note": "换绑之后 epoch 不变：旧同意跨房间继续有效。"
+    },
+    {
+      "id": "epoch-ignores-rules",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "`rules:${tableRulesVersion ?? \"-\"}`",
+      "replace": "\"rules:any\"",
+      "note": "改桌规之后 epoch 不变。"
+    },
+    {
+      "id": "reason-always-limits",
+      "file": "src/authority/policy-epoch.cjs",
+      "find": "  if (prevBinding !== curBinding) return \"new_room_binding\";",
+      "replace": "",
+      "note": "换绑被报成 public_limits_changed：对话框说的理由与真实原因无关。"
+    },
+    {
+      "id": "gate-ignores-epoch",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    if (confirmation === null || confirmation.policy_epoch !== current) {",
+      "replace": "    if (confirmation === null) {",
+      "note": "权威侧退回「存在过一份确认就放行」：实质放宽之后旧同意继续有效，同意门只在界面上成立。"
+    },
+    {
+      "id": "confirmation-omits-epoch",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "      policy_epoch: policyEpoch({",
+      "replace": "      policy_epoch_unused: policyEpoch({",
+      "note": "确认记录里不写 epoch：gate 侧比对时恒为 undefined，每一席都永远被拒。"
+    },
+    {
+      "id": "projection-reads-wrong-nesting",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "    const fields = source?.room ?? source ?? null;",
+      "replace": "    const fields = source ?? null;",
+      "note": "本轮真实修掉的缺陷：roomState() 把房间字段收在 .room 里，读顶层得到 undefined，投影报的 epoch 恒为空壳。界面每次渲染都要求重新确认、理由永远是 new_room_binding，而权威侧照常放行——没有任何错误日志。",
+      "test": "test/scope-reconfirmation.test.cjs"
+    },
+    {
+      "id": "projection-omits-epoch",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      policy_epoch: this.currentPolicyEpoch(room),",
+      "replace": "",
+      "note": "投影不报 epoch：界面拿不到判据，静默退回三字段旧路径。",
+      "test": "test/scope-reconfirmation.test.cjs"
+    },
+    {
+      "id": "view-model-drops-epoch-forwarding",
+      "file": "src/host/table-view-model.cjs",
+      "find": "        currentPolicyEpoch,\n",
+      "replace": "",
+      "note": "视图层不把 epoch 转交给判定函数：epoch 分支不可达，静默走三字段旧路径。一条不可达的分支与一条正常工作的分支读起来一模一样。",
+      "test": "test/scope-reconfirmation.test.cjs"
+    },
+    {
+      "id": "host-recomputes-epoch",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      currentPolicyEpoch: projection?.policy_epoch ?? null,",
+      "replace": "      currentPolicyEpoch: null,",
+      "note": "宿主不转交权威报的 epoch：界面退回旧路径，于是它按自己手上的 limits 判断权威会不会放行。",
+      "test": "test/scope-reconfirmation.test.cjs"
+    },
+    {
+      "id": "view-model-epoch-mismatch-passes",
+      "file": "src/host/table-view-model.cjs",
+      "find": "    if (confirmation.policy_epoch === currentPolicyEpoch) {",
+      "replace": "    if (true) {",
+      "note": "epoch 对不上也显示「已确认」：权威会拒的发言，界面上没有任何东西提示要重新确认。",
+      "test": "test/scope-reconfirmation.test.cjs"
+    }
+  ],
+  "excluded": []
+}
