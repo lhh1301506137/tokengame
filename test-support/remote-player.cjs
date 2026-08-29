@@ -17,6 +17,7 @@ const CREDENTIAL = process.env.TOKENGAME_SEAT_CREDENTIAL;
 // 唯一的 require，且不在 src/ 下：绑定字段的形成规则只该有一份，
 // 各调用点各写一遍迟早有人把某个字段填成常量。
 const { actionBindingFromProjection } = require("./action-binding.cjs");
+const { requestEnvelope } = require("../src/contract/adapter-contract.cjs");
 
 const MAX_POLLS = 200;
 
@@ -27,7 +28,8 @@ async function call(command, params = {}) {
       "content-type": "application/json",
       "x-tokengame-authority-token": TOKEN,
     },
-    body: JSON.stringify({ command, params }),
+    // 请求信封由合同层构造。服务端校验 contract_version。
+    body: JSON.stringify(requestEnvelope(command, params)),
   });
   const body = await response.json();
   if (!response.ok) {

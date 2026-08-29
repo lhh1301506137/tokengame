@@ -9,6 +9,7 @@
 
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { requestEnvelope } = require("../src/contract/adapter-contract.cjs");
 
 const ENTRY = path.join(__dirname, "..", "src", "run-table-core.cjs");
 const TOKEN = "core-entry-probe-token";
@@ -54,7 +55,8 @@ async function post(origin, command, params, token) {
   const response = await fetch(`${origin}/command`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ command, params }),
+    // 请求信封由合同层构造。服务端校验 contract_version。
+    body: JSON.stringify(requestEnvelope(command, params)),
   });
   return { status: response.status, body: await response.json() };
 }

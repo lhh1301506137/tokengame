@@ -106,7 +106,7 @@
       "file": "src/contract/adapter-contract.cjs",
       "find": "    commands: MODEL_COMMANDS,\n    holds_seat_handle: false,",
       "replace": "    commands: MODEL_COMMANDS,\n    holds_seat_handle: true,",
-      "note": "合同声明模型面持有句柄。句柄代表该席的行动能力——两份合同分开的全部意义就在这一行。"
+      "note": "合同声明模型面持有句柄。句柄代表该席的行动能力——两个权限剖面分开的全部意义就在这一行。"
     },
     {
       "id": "commands-copied-not-shared",

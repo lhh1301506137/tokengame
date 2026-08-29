@@ -24,6 +24,7 @@
 // 两个都留，并由 test/table-web-host.test.cjs 对同一批断言各跑一遍。
 
 const { AUTHORITY_TOKEN_HEADER } = require("../authority/command-server.cjs");
+const { requestEnvelope } = require("../contract/adapter-contract.cjs");
 
 // 归一后的错误。宿主侧只认这一个类：HTTP 那边错误是 JSON body，进程内那边是 ProbeError
 // 实例，两者形状不同。让宿主自己去分辨等于让每个调用点都写两套判断。
@@ -57,7 +58,9 @@ class HttpCoreClient {
           "content-type": "application/json",
           [AUTHORITY_TOKEN_HEADER]: this.token,
         },
-        body: JSON.stringify({ command, params }),
+        // 请求信封由合同层构造，不在这里拼字面量：两处各写一份的话，改合同不会影响
+        // 传输，而合同文档描述的是 helper。服务端会校验 contract_version，缺了就 400。
+        body: JSON.stringify(requestEnvelope(command, params)),
       });
     } catch (cause) {
       // 核心不可达要有自己的错误码。让 fetch 的原始报错穿到浏览器等于把 Node 的

@@ -21,6 +21,9 @@
 const http = require("node:http");
 
 const { closeServer, listen, readJson, sendJson } = require("../shared/http.cjs");
+// 合同版本从 shared 读，不从 src/contract 读：权威内核不该依赖适配器合同层
+// （改合同能弄坏内核，而内核本该是稳定的那一侧），也不该抄一份数字。理由写在那个文件里。
+const { CONTRACT_VERSION } = require("../shared/contract-version.cjs");
 const { ProbeError } = require("./event-store.cjs");
 const { CommandSurface } = require("./command-surface.cjs");
 const { createDueWorkDriver } = require("./due-work.cjs");
@@ -145,6 +148,32 @@ async function handle(request, response, surface, internalToken) {
   const body = await readJson(request, MAX_BODY_BYTES);
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     sendJson(response, 400, { ok: false, code: "invalid_field", details: { field: "body" } });
+    return;
+  }
+
+  // 请求信封的版本检查。在令牌之后、在派发之前。
+  //
+  // 在令牌之后：未授权者不该从错误码里读出我们的合同版本。
+  // 在派发之前：反过来的话，一个跨版本的客户端拿到的是「未知命令」，它会去查命令表
+  //   而不是查版本——而命令表在它那一版里是对的，于是它查不出任何问题。
+  //
+  // 缺失也拒，不当成「旧客户端」放行。放行等于让这条检查对任何从不带版本的客户端
+  // 永远不会红，而合同文档写着「请求 {contract_version, command, params}」。
+  if (body.contract_version === undefined) {
+    sendJson(response, 400, {
+      ok: false,
+      code: "contract_version_missing",
+      details: { expected: CONTRACT_VERSION },
+    });
+    return;
+  }
+  if (body.contract_version !== CONTRACT_VERSION) {
+    sendJson(response, 400, {
+      ok: false,
+      code: "contract_version_mismatch",
+      // 两边的版本都说出来。只说「版本不对」的话，跨版本调试要靠猜。
+      details: { expected: CONTRACT_VERSION, received: body.contract_version },
+    });
     return;
   }
 

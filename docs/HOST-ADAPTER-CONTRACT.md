@@ -7,20 +7,30 @@
 **本文件不构成任何真实宿主门禁已通过的证据。** 真实 Gate 5（事件驱动主动唤醒）保留为
 未验证，实机清单见末节。
 
-## 为什么是两份合同
+## 一套协议，两个权限剖面
 
-Plan Tree 里 `TG-EU-HOST-ADAPTER-CONTRACT` 写的是单数「HostAdapter 合同」，而仓库里实际
-存在两个权限完全不同的面，`src/authority/host-surface.cjs` 已经把它们分开了：
-`HUMAN_COMMANDS` 与 `MODEL_COMMANDS`。
+结构是**一套 HostAdapter 协议 + 两个权限剖面**：`host_command` 与 `seat_model`。
 
-合成一份的后果就是那个二分存在要否定的东西——一份平坦的适配器接口会让「把整份清单交给
-模型可见的工具」成为最省事的做法，而那等于让模型替玩家下注、按 Ready、代确认隐私范围、
-翻开底牌。
+共用的是「怎么说话」——版本、三个信封、七类错误分类、三层身份、生命周期、能力协商。
+两个剖面之间**唯一**不同的字段是 `commands`，它按对象身份引 `src/authority/host-surface.cjs`
+的 `HUMAN_COMMANDS` 与 `MODEL_COMMANDS`，不复制。抄一份的后果是两处会漂移，而漂移的方向
+一定是模型面变宽——「新命令默认落到真人面」这条规则只写在那一边。
 
-所以结构是：**一份共享底座 + 两份面向不同主体的合同**。共享的是「怎么说话」，
-分开的是「能说什么」。
+### 措辞为什么从「两份合同」改成「两个权限剖面」
 
-节点名与份数的偏离不由我单方面改，已列为待 Codex 裁决项（见 `REVIEW-LOG.md`）。
+之前这一节叫「为什么是两份合同」。那个说法与代码不符：除 `commands` 之外没有一样东西是
+分开的。把一个字段的差别叫做两份合同，会让读者以为存在两套需要各自实现、各自验证的
+协议，于是一致性套件也该跑两批不同的检查。实际是**同一批检查跑两个剖面**，只有权限
+相关的几条按剖面分叉（`seat_model` 不持句柄、越界命令必须被本地拒绝）。
+
+Plan Tree 里 `TG-EU-HOST-ADAPTER-CONTRACT` 的节点名本来就是单数。这个措辞与它一致，
+所以「两份合同 vs 一份」这个待裁决项就此关闭——不是改了产品结构，是把说法改回与结构
+一致。二分本身一点没松：
+
+- `seat_model` 一张句柄也没有（`holds_seat_handle: false`，一致性套件逐条查）。
+- 两个剖面的命令面不重叠，且都不许出现 `host-surface.cjs` 之外的命令。
+- 一份平坦的适配器接口会让「把整份清单交给模型可见的工具」成为最省事的做法，而那等于
+  让模型替玩家下注、按 Ready、代确认隐私范围、翻开底牌。剖面就是为了让那件事做不到。
 
 ## 共享底座
 
@@ -148,15 +158,38 @@ Plan Tree 里 `TG-EU-HOST-ADAPTER-CONTRACT` 写的是单数「HostAdapter 合同
 | --- | --- |
 | 共享底座 | 已实现，46 条单元断言，34 条变异全杀 |
 | 一致性套件 + 模拟器 | 已实现，40 条断言，14 项故意破坏逐个验证可被抓住 |
-| SeatModelAdapter（模型面） | **已实现真实适配器**，`src/host/seat-model-adapter.cjs`，过一致性套件，14 条变异全杀 |
-| HostCommandAdapter（真人面） | **只有合同与一致性套件，没有独立实现** |
+| SeatModelAdapter（`seat_model` 剖面） | **参考实现**，`src/host/seat-model-adapter.cjs`，过一致性套件，14 条变异全杀。**没有接进任何运行路径**——见下一节 |
+| HostCommandAdapter（`host_command` 剖面） | **只有协议与一致性套件，没有独立实现** |
+| 请求信封 | 已接进真实路径：`command-server` 校验 `contract_version`（缺失与不匹配都拒），四个客户端都经 `requestEnvelope` 发出 |
 
-真人面为什么没做：现有的 `src/host/table-web-host.cjs` 是浏览器宿主的协调器，它同时承担 UI
-与 HTTP 服务。拆成一个独立的 HostCommandAdapter 会动到已闭合的单栈牌桌，而两份合同的节点
-划分还等着 Codex 裁决。不在本轮擅自重构。
+`host_command` 剖面为什么没做：现有的 `src/host/table-web-host.cjs` 是浏览器宿主的协调器，
+它同时承担 UI 与 HTTP 服务。拆成一个独立的 HostCommandAdapter 会动到已闭合的单栈牌桌，
+而是否拆分仍待裁决。不在本轮擅自重构。
 
-模型面那个适配器是「这份合同可实现」的唯一证据。模拟器过了只说明套件自洽——一份只有模拟器
-实现的合同，整个就是本轮反复撞到的那种东西。
+`SeatModelAdapter` 是「这份协议可实现」的唯一证据，而不是「这份协议在跑」的证据。
+模拟器过了只说明套件自洽——一份只有模拟器实现的协议，整个就是本轮反复撞到的那种东西。
+
+## 模型命令网关 ≠ 模型推理运行时
+
+仓库里有两个东西都被叫过「模型适配器」。它们的接口、方向、接入状态全都不同，
+混着说会让读者以为真实模型集成已经完成，而 Gate 5 一步都没走。
+
+| | 模型命令网关 | 模型推理运行时 |
+| --- | --- | --- |
+| 方法 | `call(command, params)` | `evaluate({seat_id, turn_id, context})` |
+| 方向 | **模型 → 权威**：模型发 `ai.take_intents` / `ai.start` / `ai.resolve` / `view.projection` | **权威 → 模型**：协调器问「你这一席现在说什么」 |
+| 实现 | `src/host/seat-model-adapter.cjs`（薄层）、`src/host/model-command-surface.cjs`（下层） | 唯一实现是 `test-support/scripted-model-adapter.cjs` |
+| 接入状态 | **参考实现，未接线。** `plugins/tokengame/mcp/server.cjs` 直接构造 `ModelCommandSurface`，一次都没有构造 `SeatModelAdapter` | **接口已接线，实现是模拟的。** `table-web-host.cjs` 的 `driveOnce` 真的调 `evaluate`；被调的那个自报 `simulated: true`（硬编码，不可覆盖） |
+
+两侧都不构成实机能力的证据：
+
+- 网关侧：过一致性套件是真的，在产品里跑着是假的。
+- 运行时侧：接线是真的，接的那一端是模拟器。
+
+这两条由 `test/adapter-integration-truth.test.cjs` 钉着，方向是双向的：
+`SeatModelAdapter` 真接进运行路径的那一天，那个文件会红，而那时该做的是把断言改成正向
+**并同时**把这里的「参考实现」改掉。接线与说法必须一起动——只改一样正是这份文档
+之前写着「已实现真实适配器」的由来。
 
 ## 真实 Gate 5 实机清单（未执行）
 
@@ -194,7 +227,10 @@ Plan Tree 里 `TG-EU-HOST-ADAPTER-CONTRACT` 写的是单数「HostAdapter 合同
 
 ## 待裁决项
 
-1. **两份合同 vs 一份。** Plan Tree 的节点名是单数。份数不由我单方面改。
+1. ~~**两份合同 vs 一份。**~~ **已关闭（2026-08-29）。** 措辞统一为「一套 HostAdapter 协议、
+   `host_command` 与 `seat_model` 两个权限剖面」，与 Plan Tree 的单数节点名一致。
+   关闭的是说法与结构不符，不是改了结构：除 `commands` 之外两侧本来就完全共用，
+   而 `commands` 一直是按对象身份引 `host-surface.cjs`，没有复制。理由见上文那一节。
 2. **`src/authority/table-store.cjs` 输出的桌名**「Codex 无限注德州扑克测试桌」是用户可见串，
    双宿主下 Claude 侧玩家会看到一张以对方宿主命名的桌子。该文件自带 `SUPERSEDED_BY_` 标记
    并写明「本文件不改变行为，仅保留现状……收口留待 Codex 归队后处理」，所以本轮不改，

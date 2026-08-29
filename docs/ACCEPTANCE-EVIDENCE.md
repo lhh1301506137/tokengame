@@ -168,13 +168,13 @@ stderr 写明「未处理的拒绝，本次运行不算通过」。
   （`test-support/scripted-model-adapter.cjs`，`simulated: true`），
   不能代替真人。
 - **HostCommandAdapter：未实现。** 它要动 `table-web-host.cjs`，而那是一张已经闭合的
-  单栈牌桌；两份合同拆成两份还是合成一份也该由 Codex 先裁。
+  单栈牌桌。（措辞项已于 2026-08-29 关闭：一套协议、两个权限剖面，见 docs/HOST-ADAPTER-CONTRACT.md。）
 - **边池分层的浏览器层观测：不可行**（投影里没有），已如实记为缺口。
 
 ### 交用户裁决
 
 1. HostCommandAdapter 的实现是否可以动 `table-web-host.cjs`。
-2. 两份合同拆成两份、还是合成一份带角色字段。
+2. ~~两份合同拆成两份、还是合成一份带角色字段。~~ 已关闭（2026-08-29）：措辞统一为「一套 HostAdapter 协议、host_command 与 seat_model 两个权限剖面」，与 Plan Tree 的单数节点名一致。关闭的是说法与结构不符，不是改了结构。
 3. `src/authority/table-store.cjs` 里那个 `name: "Codex` 牌桌显示名是否重命名
    （文件带 `SUPERSEDED_BY_` 冻结标记，是用户可见字符串而非判断分支）。
 4. 是否把边池分层投影进 `tokengame.table-view.v1` 供 UI 显示。

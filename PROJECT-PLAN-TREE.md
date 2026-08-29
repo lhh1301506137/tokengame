@@ -519,8 +519,10 @@ plan_tree:
       not_done:
         - id: host_command_adapter
           reason: >-
-            要动 src/host/table-web-host.cjs，而那是一张已经闭合的单栈牌桌；两份合同拆成两份
-            还是合成一份带角色字段，也该由 Codex 先裁。列为待裁决项而不是擅自开工。
+            要动 src/host/table-web-host.cjs，而那是一张已经闭合的单栈牌桌。措辞项（「两份合同」
+            拆成两份还是合成一份带角色字段）已于 2026-08-29 关闭：统一为「一套 HostAdapter 协议、
+            host_command 与 seat_model 两个权限剖面」，与本节点的单数名一致；关闭的是说法与结构
+            不符，不是改了结构。是否把 host_command 从 table-web-host.cjs 里拆出来仍待裁决。
       claim_limit: >-
         底座与模型面适配器可声称已实现并过自动化一致性套件。不得声称 HostCommandAdapter 已存在，
         也不得声称主动唤醒（Gate 5）已验证——一致性套件只验内部一致性，谎称有这个能力它仍然全绿，

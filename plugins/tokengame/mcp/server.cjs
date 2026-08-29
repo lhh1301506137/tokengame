@@ -8,6 +8,7 @@ const {
   SeatCustody,
 } = require("../../../src/host/seat-custody.cjs");
 const { ModelCommandSurface, ModelSurfaceError } = require("../../../src/host/model-command-surface.cjs");
+const { requestEnvelope } = require("../../../src/contract/adapter-contract.cjs");
 
 // F6：席位凭据托管在这个进程里，不进模型上下文。
 //
@@ -50,7 +51,10 @@ async function coreRequest(command, params = {}) {
       "content-type": "application/json",
       "x-tokengame-authority-token": token,
     },
-    body: JSON.stringify({ command, params }),
+    // 请求信封由合同层构造。服务端校验 contract_version，缺了就 400——
+    // 这条检查存在的意义是让「跨版本客户端」这件事有可判定的错误码，而不是表现为
+    // 某个字段静默地被忽略。
+    body: JSON.stringify(requestEnvelope(command, params)),
     signal: AbortSignal.timeout(Number(process.env.TOKENGAME_CORE_TIMEOUT_MS || 5_000)),
   });
   const text = await response.text();

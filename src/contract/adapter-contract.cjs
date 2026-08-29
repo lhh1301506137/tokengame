@@ -3,15 +3,20 @@
 // 两个宿主适配器共享的合同。宿主中立：本文件不引用 Codex / Claude / MCP / Hook /
 // 浏览器，一个专有判断都不许出现——这条由 test/adapter-contract.test.cjs 的源码断言守着。
 //
-// 为什么是两份合同而不是一份。Plan Tree 里 TG-EU-HOST-ADAPTER-CONTRACT 写的是单数
-// 「HostAdapter 合同」，而仓库里实际存在两个权限完全不同的面，host-surface.cjs 已经把它们
-// 分开了：HUMAN_COMMANDS 与 MODEL_COMMANDS。合成一份的后果就是那个二分存在要否定的东西
-// ——一份平坦的适配器接口会让「把整份清单交给模型可见的工具」成为最省事的做法。
+// 结构是**一套 HostAdapter 协议 + 两个权限剖面**：`host_command` 与 `seat_model`。
 //
-// 所以这里的结构是：一份共享底座（信封、错误分类、身份、生命周期、能力协商）+ 两份面向
-// 不同主体的合同。共享的是「怎么说话」，分开的是「能说什么」。节点名与份数的偏离不由我
-// 单方面改，已列为待裁决项（见 REVIEW-LOG.md）——本文件不许出现任何宿主专有判断，
-// 这条由 test/adapter-contract.test.cjs 的源码断言守着。
+// 共用的是这里的全部——版本、三个信封、七类错误、三层身份、生命周期、能力协商。
+// 两个剖面之间唯一不同的字段是 `commands`，它按对象身份引 host-surface.cjs 的
+// HUMAN_COMMANDS 与 MODEL_COMMANDS，不复制。
+//
+// 为什么不叫「两份合同」（之前的说法）。除 commands 之外没有一样东西是分开的，把一个
+// 字段的差别叫做两份合同，会让读者以为存在两套要各自实现、各自验证的协议，于是一致性
+// 套件也该跑两批不同的检查——实际是同一批检查跑两个剖面，只有权限相关的几条按剖面分叉。
+// Plan Tree 的节点名本来就是单数，这个措辞与它一致，那个「份数待裁决」的悬置项因此关闭。
+//
+// 剖面不比合同弱：模型剖面一张句柄也没有，两个剖面的命令面不重叠，而且两侧都不许出现
+// host-surface.cjs 之外的命令——这几条与「本文件不出现任何宿主专有判断」一样，
+// 由 test/adapter-contract.test.cjs 的源码断言守着。
 
 const {
   HUMAN_COMMANDS,
@@ -21,10 +26,10 @@ const {
 
 // ---- 合同版本 ----
 //
-// 单调整数，不用 semver。适配器与宿主的兼容判断只需要「你认得我说的话吗」这一个答案，
-// 而 semver 的三段式会诱使人去实现「minor 兼容」那套推断——两边由不同的人在不同时间写，
-// 那种推断迟早会错，而错的表现是一次静默的语义漂移。
-const CONTRACT_VERSION = 1;
+// 数字本身住在 src/shared/contract-version.cjs，理由写在那里：说这个版本号的有两侧
+// （这里构造信封，command-server 校验进来的信封），而抄两份迟早差一，让传输 require
+// 合同层则把依赖方向倒过来。这里按对象身份引用，不复制。
+const { CONTRACT_VERSION } = require("../shared/contract-version.cjs");
 
 // ---- 信封 ----
 //
@@ -341,11 +346,22 @@ const REQUIRED_CAPABILITIES = Object.freeze(
   Object.entries(CAPABILITIES).filter(([, spec]) => spec.required).map(([name]) => name),
 );
 
-// ---- 两份合同 ----
+// ---- 两个权限剖面 ----
 //
-// 共享上面全部，分开的只有「能发什么命令」。清单不在这里重写一遍，直接引 host-surface.cjs
-// ——那里已经逐条写明了每条命令归谁以及为什么。抄一份的后果是两处会漂移，而漂移的方向
-// 一定是模型面变宽（新命令默认落到真人面这条规则只写在那一边）。
+// 措辞现在统一为：**一套 HostAdapter 协议、`host_command` 与 `seat_model` 两个权限剖面**。
+//
+// 为什么改这个说法。之前写「两份合同」，而上面每一样东西——版本、三个信封、七类错误、
+// 三层身份、生命周期、协商——两侧完全共用，分开的只有 `commands` 这一个字段。把「一个
+// 字段不同」叫做两份合同，会让读者以为存在两套需要各自实现、各自验证的协议，于是
+// 一致性套件也该跑两遍不同的检查。实际不是：套件对两侧跑同一批检查，只有权限相关的
+// 几条按剖面分叉。Plan Tree 的节点名本来就是单数，这个措辞与它一致。
+//
+// 「剖面」不比「合同」弱。二分仍然是硬的：模型剖面一张句柄也没有，命令面不重叠，
+// 而下面 test/adapter-contract.test.cjs 扫源码盯着两侧不出现 host-surface.cjs 之外的命令。
+//
+// 清单不在这里重写一遍，直接引 host-surface.cjs——那里已经逐条写明了每条命令归谁以及
+// 为什么。按对象身份引用，不复制：抄一份的后果是两处会漂移，而漂移的方向一定是模型面
+// 变宽（「新命令默认落到真人面」这条规则只写在那一边）。
 const ADAPTER_ROLES = Object.freeze({
   host_command: Object.freeze({
     actor: "human",

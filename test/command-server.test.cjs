@@ -11,6 +11,9 @@ const {
   AUTHORITY_TOKEN_HEADER,
   DEFAULT_AUTHORITY_TOKEN,
 } = require("../src/authority/command-server.cjs");
+const {
+  CONTRACT_VERSION, requestEnvelope,
+} = require("../src/contract/adapter-contract.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 const { TABLE_LIFECYCLE_V1 } = require("../src/authority/room-store.cjs");
 const { actionBindingFromProjection } = require("../test-support/action-binding.cjs");
@@ -50,7 +53,10 @@ async function serve(t, { token = DEFAULT_AUTHORITY_TOKEN } = {}) {
     const response = await fetch(`${origin}/command`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ command, params }),
+      // 请求信封由合同层构造，与产品的两个传输（HttpCoreClient、MCP server 的
+      // coreRequest）走同一个 helper。这里拼字面量的话，服务端加上版本检查之后
+      // 这个辅助会整体红，而那时最省事的「修法」是给服务端开一个放行缺失版本的口子。
+      body: JSON.stringify(requestEnvelope(command, params)),
     });
     return { status: response.status, body: await response.json(), response };
   }
@@ -306,4 +312,105 @@ test("传输：ProbeError 的 status 与 details 被原样映射，不吞不改"
   assert.equal(rejected.body.ok, false);
   assert.equal(typeof rejected.body.code, "string");
   assert.ok(rejected.status >= 400 && rejected.status < 500, `实得 ${rejected.status}`);
+});
+
+// ---- 请求信封（C.2）----
+//
+// 合同文档写着「请求 {contract_version, command, params}」，而在这之前 requestEnvelope
+// 这个 helper 除了它自己的纯函数测试之外没有任何调用方：传输发的是 {command, params}，
+// 服务端也不看版本。也就是说那句承诺只在纯函数测试里成立。
+//
+// 两条路可选：接进真实路径，或者删掉 helper 与那句承诺。选前者，理由是即将有第二个
+// 适配器（Claude 宿主侧），而 CONTRACT_VERSION 存在的全部意义就是「你认得我说的话吗」
+// 这一个答案——响应里带了版本，请求里不带，等于服务端无法发现客户端说的是另一版合同，
+// 而那种不匹配的表现正是合同注释点名要防的静默语义漂移。
+//
+// 缺失也必须拒。放行「没带版本的旧客户端」等于让这条检查对任何从不带版本的客户端
+// 永远不会红——那是本轮一直在清的那类洞。
+
+function rawPost(origin, body, token) {
+  const headers = { "content-type": "application/json" };
+  if (token !== null) headers[AUTHORITY_TOKEN_HEADER] = token;
+  return fetch(`${origin}/command`, { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+test("请求信封：正常请求带 contract_version 且被接受", async (t) => {
+  const ctx = await serve(t);
+  // 用 room.create：空服务器上它就能成。view.projection 在没有房间时回 room_not_found，
+  // 那条路径分不出「版本通过了」与「版本被忽略了」。
+  const response = await rawPost(ctx.origin, {
+    contract_version: CONTRACT_VERSION,
+    command: "room.create",
+    params: { player_id: "p1", table_rules_version: RULES },
+  }, DEFAULT_AUTHORITY_TOKEN);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+});
+
+test("请求信封：缺 contract_version 就拒，不当成旧客户端放行", async (t) => {
+  const ctx = await serve(t);
+  const response = await rawPost(ctx.origin, {
+    command: "room.create",
+    params: { player_id: "p1", table_rules_version: RULES },
+  }, DEFAULT_AUTHORITY_TOKEN);
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.code, "contract_version_missing");
+  assert.equal(body.details.expected, CONTRACT_VERSION);
+});
+
+test("请求信封：版本不匹配就拒，并把两边的版本都说出来", async (t) => {
+  const ctx = await serve(t);
+  for (const [index, wrong] of [CONTRACT_VERSION + 1, CONTRACT_VERSION - 1, "1", null, 1.5].entries()) {
+    const response = await rawPost(ctx.origin, {
+      contract_version: wrong,
+      command: "room.create",
+      params: { player_id: `p${index}`, table_rules_version: RULES },
+    }, DEFAULT_AUTHORITY_TOKEN);
+    assert.equal(response.status, 400, `版本 ${JSON.stringify(wrong)} 应当被拒`);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    // 两边的版本都要在错误里。只说「版本不对」的话，跨版本调试要靠猜。
+    assert.ok(
+      body.code === "contract_version_mismatch" || body.code === "contract_version_missing",
+      `实得 ${body.code}`);
+    assert.equal(body.details.expected, CONTRACT_VERSION);
+    if (body.code === "contract_version_mismatch") {
+      assert.deepEqual(body.details.received, wrong);
+    }
+  }
+});
+
+test("请求信封：版本检查在令牌之后、在派发之前", async (t) => {
+  const ctx = await serve(t);
+  // 未授权 + 版本也不对：必须先报令牌。未授权者不该从错误码里读出我们的合同版本。
+  const unauthorised = await rawPost(ctx.origin, {
+    contract_version: 999,
+    command: "view.projection",
+  }, "wrong-token");
+  assert.equal(unauthorised.status, 403);
+  assert.equal((await unauthorised.json()).code, "authority_token_rejected");
+
+  // 版本不对 + 命令也不存在：必须先报版本。反过来的话，一个跨版本客户端拿到的是
+  // 「未知命令」，它会去查命令表而不是查版本——而命令表在它那一版里是对的。
+  const wrongVersion = await rawPost(ctx.origin, {
+    contract_version: 999,
+    command: "no.such.command",
+  }, DEFAULT_AUTHORITY_TOKEN);
+  assert.equal(wrongVersion.status, 400);
+  assert.equal((await wrongVersion.json()).code, "contract_version_mismatch");
+});
+
+test("请求信封：合同 helper 与传输发出的形状是同一个", async (t) => {
+  // 这一条防的是「两处各写一份，然后悄悄长得不一样」。传输若自己拼字面量，
+  // 改 helper 不会影响它，而合同文档描述的是 helper。
+  const ctx = await serve(t);
+  const envelope = requestEnvelope("room.create",
+    { player_id: "p1", table_rules_version: RULES });
+  assert.deepEqual(Object.keys(envelope).sort(), ["command", "contract_version", "params"]);
+  const response = await rawPost(ctx.origin, envelope, DEFAULT_AUTHORITY_TOKEN);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ok, true);
 });

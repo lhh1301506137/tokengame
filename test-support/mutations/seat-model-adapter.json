@@ -15,7 +15,7 @@
       "file": "src/host/seat-model-adapter.cjs",
       "find": "  get holdsSeatHandle() {\n    return false;\n  }",
       "replace": "  get holdsSeatHandle() {\n    return true;\n  }",
-      "note": "模型面声明持有句柄。句柄代表该席的行动能力，两份合同分开的全部意义就在这一行。"
+      "note": "模型面声明持有句柄。句柄代表该席的行动能力，两个权限剖面分开的全部意义就在这一行。"
     },
     {
       "id": "inspectable-leaks-handles",

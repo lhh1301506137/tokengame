@@ -8,7 +8,7 @@
 //      悄悄破坏它，而破坏之后一切照常工作。
 //   2. 源码里每一个错误码都必须被归类。漏一个的后果不是崩溃，是它落到 unknown 档被当成
 //      缺陷弹给用户；而如果哪天有人把 unknown 的默认处置改宽，漏掉的码就会被静默重试。
-//   3. 模型面不许拿到句柄，两份合同的命令面不许重叠出 host-surface.cjs 之外的东西。
+//   3. 模型剖面不许拿到句柄，两个权限剖面的命令面不许重叠出 host-surface.cjs 之外的东西。
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -128,9 +128,23 @@ test("合同不 require 任何宿主实现", () => {
   const source = fs.readFileSync(
     path.join(SRC, "contract", "adapter-contract.cjs"), "utf8");
   const requires = [...source.matchAll(/require\("([^"]+)"\)/g)].map((m) => m[1]);
-  // 只许引权威侧的词汇表。引 src/host/ 会把某个具体宿主的形状带进合同；引 http / net
-  // 会把传输方式冻进来，而「打到哪」是宿主的事。
-  assert.deepEqual(requires, ["../authority/host-surface.cjs"]);
+  // 只许引权威侧的词汇表与 shared 里的纯常量。引 src/host/ 会把某个具体宿主的形状
+  // 带进合同；引 http / net 会把传输方式冻进来，而「打到哪」是宿主的事。
+  //
+  // 名单是精确的（多一个就红），但精确名单只挡得住「我没想到的那一个」，挡不住
+  // 「有人顺手把它加进名单」。所以下面另有两条按类别的禁止断言：那两条说的是理由，
+  // 改名单的人会先撞上它们。
+  assert.deepEqual(requires, [
+    "../authority/host-surface.cjs",
+    "../shared/contract-version.cjs",
+  ]);
+  const forbidden = requires.filter((spec) => spec.includes("/host/") || spec.includes("host/"));
+  assert.deepEqual(forbidden, [],
+    `合同引了宿主实现：${forbidden.join(" ")}。那会把某个具体宿主的形状带进合同`);
+  const transport = requires.filter(
+    (spec) => ["node:http", "node:https", "node:net", "http", "net"].includes(spec));
+  assert.deepEqual(transport, [],
+    `合同引了传输：${transport.join(" ")}。「打到哪」是宿主的事，不是合同的事`);
 });
 
 // ---- 2. 错误码全覆盖 ----
@@ -298,7 +312,7 @@ test("信封里没有重试建议或用户文案字段", () => {
 // ---- 4. 身份 ----
 
 test("句柄只在真人面，模型面拿不到", () => {
-  // 这是两份合同分开的全部意义所在。
+  // 这是两个权限剖面分开的全部意义所在。
   assert.equal(contract.ADAPTER_ROLES.host_command.holds_seat_handle, true);
   assert.equal(contract.ADAPTER_ROLES.seat_model.holds_seat_handle, false);
   assert.deepEqual(contract.describeIdentity("seat_handle").held_by, ["host_command"]);
@@ -487,7 +501,7 @@ test("协商不替调用方改生命周期状态", () => {
   assert.equal(Object.isFrozen(result), true);
 });
 
-// ---- 7. 两份合同的命令面 ----
+// ---- 7. 两个权限剖面的命令面 ----
 
 test("命令面直接引 host-surface，不抄一份", () => {
   // 抄一份的后果是两处会漂移，而漂移的方向一定是模型面变宽——「新命令默认落到真人面」
