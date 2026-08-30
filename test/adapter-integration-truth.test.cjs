@@ -79,13 +79,26 @@ test("TableWebHost 仍直接持有 custody 与 core，没有改成经 HostComman
   assert.doesNotMatch(host, /HostCommandAdapter/);
 });
 
-test("MCP 服务端直接持有 ModelCommandSurface，绕过 SeatModelAdapter", () => {
+test("协调器直接持有 ModelCommandSurface，绕过 SeatModelAdapter", () => {
   // 这一条是上一条的正面：不是「谁都没接」，而是「接的是更下面那一层」。
   // 少了这一条，上一条读起来像「模型网关根本没人用」，而那是错的。
+  //
+  // 构造点在 B6 收敛时从 MCP 进程搬到了协调器，而这不是搬家：此前 MCP 进程那份
+  // ModelCommandSurface 配的是它自己的 SeatCustody，而往那份托管里 bind 句柄的唯一入口
+  // 有零个产品调用者——于是它扇出到零席，模型一个席位也驱动不了。现在它与真人命令共用
+  // 同一份托管，而 MCP 进程降级为一条 stdio 到 HTTP 的转运。
+  const host = code(read("src", "host", "table-web-host.cjs"));
+  assert.match(host, /new ModelCommandSurface\(/,
+    "协调器应当直接构造 ModelCommandSurface");
+  assert.doesNotMatch(host, /new SeatModelAdapter\(/);
+
+  // MCP 进程那一侧的反面：它不该再持有托管或模型命令面。持有等于又有了第二份，
+  // 而第二份的表现是「模型照样能调工具，只是永远收到空意图」。
   const server = code(read("plugins", "tokengame", "mcp", "server.cjs"));
-  assert.match(server, /new ModelCommandSurface\(/,
-    "MCP 服务端应当直接构造 ModelCommandSurface");
-  assert.doesNotMatch(server, /new SeatModelAdapter\(/);
+  assert.doesNotMatch(server, /new\s+SeatCustody\s*\(/,
+    "MCP 进程自持托管等于模型永远扇出到零席");
+  assert.doesNotMatch(server, /new\s+ModelCommandSurface\s*\(/,
+    "模型命令面必须在协调器里，与真人命令共用同一份托管");
 });
 
 test("evaluate 这个接口已经接进运行路径", () => {

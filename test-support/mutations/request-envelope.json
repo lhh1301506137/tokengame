@@ -56,9 +56,9 @@
     {
       "id": "mcp-transport-builds-literal-again",
       "file": "plugins/tokengame/mcp/server.cjs",
-      "find": "    body: JSON.stringify(requestEnvelope(command, params)),",
-      "replace": "    body: JSON.stringify({ contract_version: 1, command, params }),",
-      "note": "同上，模型侧那条传输。两条传输都要盯：只盯一条的话另一条可以悄悄漂。",
+      "find": "    body: JSON.stringify(modelToken ? requestEnvelope(body.command, body.params) : body),",
+      "replace": "    body: JSON.stringify(modelToken ? { contract_version: 1, command: body.command, params: body.params } : body),",
+      "note": "同上，模型侧那条传输。两条传输都要盯：只盯一条的话另一条可以悄悄漂。B6 收敛后这条打的是协调器的 /api/model/command 而不是核心的 /command，信封仍由 requestEnvelope 构造。",
       "test": "test/contract-version-single-source.test.cjs"
     },
     {

@@ -21,6 +21,9 @@
 const http = require("node:http");
 
 const { closeServer, listen, readJson, sendJson } = require("../shared/http.cjs");
+// 等时比较只有一份实现（src/shared/tokens.cjs 的文件头写了理由）。此前它在本文件里，
+// 而模型命令路由需要同一份语义——抄一份的漂移方向是某一处被改成早返回。
+const { sameToken } = require("../shared/tokens.cjs");
 // 合同版本从 shared 读，不从 src/contract 读：权威内核不该依赖适配器合同层
 // （改合同能弄坏内核，而内核本该是稳定的那一侧），也不该抄一份数字。理由写在那个文件里。
 const { CONTRACT_VERSION } = require("../shared/contract-version.cjs");
@@ -42,17 +45,6 @@ function isLoopback(host) {
 }
 
 // 定长比较。令牌长度不同直接判否，避免把长度差异变成可测信道。
-function sameToken(provided, expected) {
-  if (typeof provided !== "string" || provided.length !== expected.length) {
-    return false;
-  }
-  let mismatch = 0;
-  for (let index = 0; index < expected.length; index += 1) {
-    mismatch |= provided.charCodeAt(index) ^ expected.charCodeAt(index);
-  }
-  return mismatch === 0;
-}
-
 function createCommandServer(options = {}) {
   const internalToken = options.internalToken
     || process.env.TOKENGAME_AUTHORITY_TOKEN

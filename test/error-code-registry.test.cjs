@@ -133,17 +133,62 @@ test("失败关闭的安全码明确当缺陷，不是碰巧落在兜底里", ()
   }
 });
 
-test("核心不可达归传输类，因为它是唯一原样重试有意义的一类", () => {
-  for (const code of ["core_unavailable", "invalid_core_response", "adapter_timeout"]) {
+test("对面不可达归传输类，因为它是唯一原样重试有意义的一类", () => {
+  // core_unavailable 曾在这一行。它出在插件 MCP 连不上核心，而 B6 收敛后插件不再直接打
+  // 核心——那一跳由协调器做，插件那一侧的不可达现在是 table_unavailable。核心不可达本身
+  // 没消失，它出在 core-client 里，码是 core_unreachable。
+  for (const code of ["core_unreachable", "table_unavailable", "invalid_core_response", "adapter_timeout"]) {
     assert.notEqual(contract.classifyError(code), "unknown", `${code} 没归类`);
   }
-  // core_unavailable 与 adapter_timeout 都是「对面没答」，重试有意义。
-  assert.equal(contract.dispositionFor("core_unavailable").retryable, true);
+  // 这三条都是「对面没答」，重试有意义。
+  assert.equal(contract.dispositionFor("core_unreachable").retryable, true);
+  assert.equal(contract.dispositionFor("table_unavailable").retryable, true);
   assert.equal(contract.dispositionFor("adapter_timeout").retryable, true);
   // invalid_core_response 不同：对面答了，但答的不是 JSON。重发同一条请求会得到同一份
   // 坏响应，所以它不可重试，且是缺陷。
   assert.equal(contract.dispositionFor("invalid_core_response").retryable, false);
   assert.equal(contract.dispositionFor("invalid_core_response").is_defect, true);
+});
+
+test("没配令牌与配错令牌不是同一件事", () => {
+  // B6-2 的模型命令口有两种拒绝，读起来都像「你进不来」，而该做的事相反：
+  //
+  //   model_command_route_disabled       协调器没设令牌 → 这条路整个关着，谁都进不来
+  //   model_command_token_not_configured 插件没设令牌 → 路开着，本进程无凭出示
+  //   model_command_token_rejected       令牌不对 → 路开着，你出示的那个不对
+  //
+  // 前两条要运维去设一个环境变量，第三条要运维去核对已设的那个。混成一类会让第一种
+  // 情况下有人反复检查一个根本还没生成的令牌。
+  for (const code of ["model_command_route_disabled", "model_command_token_not_configured"]) {
+    assert.equal(contract.classifyError(code), "configuration", `${code} 归错类了`);
+    const d = contract.dispositionFor(code);
+    // 不可重试：路关着是常态，不是抖动。重试改不了一个没设的环境变量。
+    assert.equal(d.retryable, false, `${code} 原样重试没有意义`);
+    // 不是缺陷：不配模型口是合法的默认（本地单机玩牌不需要它）。
+    assert.equal(d.is_defect, false, `${code} 不是缺陷，是没配`);
+    // 必须可见。这一位是这一档存在的理由：静默的「路关着」会让宿主 AI 对着一个永远
+    // 不答的口轮询下去，而运维看不到任何该改配置的信号。
+    assert.equal(d.user_visible, true, `${code} 必须让人看见，否则宿主 AI 会静默空转`);
+  }
+  // 令牌不对是身份问题，与上面两条不同类。这一条断言的是「两者被分开了」——
+  // 都归 identity 或都归 configuration 都能让上面那几行通过。
+  assert.equal(contract.classifyError("model_command_token_rejected"), "identity");
+  assert.notEqual(
+    contract.classifyError("model_command_token_rejected"),
+    contract.classifyError("model_command_route_disabled"),
+    "配错令牌与没配令牌归了同一类，运维读不出该设还是该核对",
+  );
+});
+
+test("真人命令缺会话令牌归身份类，不是参数类", () => {
+  // 协调器收到一条真人命令而调用方没说是哪个会话。归 identity 而不是 invalid_request：
+  // 后者的处置里 is_defect 为真，而少带会话令牌在正常使用中会发生（浏览器刚重连、
+  // 插件被换了宿主），把它记成缺陷会让例行状况变成一条 bug 报告。
+  assert.equal(contract.classifyError("web_session_required"), "identity");
+  assert.equal(contract.dispositionFor("web_session_required").is_defect, false);
+  // 与 web_session_unknown 同类同处置，但保持两个码：一个是「你没说」，一个是
+  // 「你说的我不认」，后者可能是会话过期，也可能是有人在猜会话号。
+  assert.equal(contract.classifyError("web_session_unknown"), "identity");
 });
 
 test("注册表里没有源码不存在的码", () => {

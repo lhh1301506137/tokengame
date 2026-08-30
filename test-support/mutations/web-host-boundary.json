@@ -115,8 +115,8 @@
     {
       "id": "WEB-15-模型失败把回合悬住",
       "file": "src/host/table-web-host.cjs",
-      "find": "          } catch (error) {\n            decision = {\n              decision: \"silent\",",
-      "replace": "          } catch (error) {\n            continue;\n            decision = {\n              decision: \"silent\",",
+      "find": "        } catch (error) {\n          decision = {\n            decision: \"silent\",",
+      "replace": "        } catch (error) {\n          continue;\n          decision = {\n            decision: \"silent\",",
       "why": "适配器抛错时直接跳过，不回填。在途回合一直占着 active_turn，该席在整个评估租约期内不可能有第二次发言机会——表现为「这个座位的 AI 从某一刻起再也不说话了」，且没有任何错误。"
     },
     {

@@ -118,13 +118,17 @@ test("改掉唯一来源，客户端发出去的 body 里也是新版本", async
   assert.deepEqual(bodies[0].params, { room_id: "r1" });
 });
 
-test("改掉唯一来源，MCP 传输发出去的 body 里也是新版本", async (t) => {
-  // MCP 那一侧的 coreRequest 没有导出，也不接受注入的 fetch。但它按环境变量决定打给谁，
-  // 所以把 TOKENGAME_COMMAND_ORIGIN 指向一个只负责记账的假核心，就能看见它真正写在
-  // 线上的字节——不必为了可测性给产品加一个测试专用出口。
+test("改掉唯一来源，MCP 打协调器的 body 里也是新版本", async (t) => {
+  // MCP 那一侧的传输没有导出，也不接受注入的 fetch。但它按环境变量决定打给谁，所以把
+  // TOKENGAME_TABLE_ORIGIN 指向一个只负责记账的假协调器，就能看见它真正写在线上的
+  // 字节——不必为了可测性给产品加一个测试专用出口。
   //
-  // 走 hostCommand("room.create")：它是真人剖面里不需要先有托管凭据的入口，
-  // 因此能一路走到传输而不必先造出一间房。
+  // 打的是协调器而不是核心。B6 收敛前这条测试走 hostCommand("room.create") 打核心，而
+  // 那条路已经不存在：MCP 进程不再直接打核心（直接打就必须自己持有席位凭据），改由协调器
+  // 那一跳去打。留下的跨版本边界因此是 MCP -> 协调器，而这一条正是它。
+  //
+  // 走模型工具而不是 hostCommand：真人入口刻意不带版本（那些路由的主要客户端是浏览器，
+  // 而浏览器的 JS 由协调器自己发，两者不可能不同版本），带版本的是模型命令这一条。
   const bodies = [];
   const stub = http.createServer((request, response) => {
     let raw = "";
@@ -139,26 +143,35 @@ test("改掉唯一来源，MCP 传输发出去的 body 里也是新版本", asyn
   t.after(() => new Promise((resolve) => stub.close(resolve)));
 
   const origin = `http://127.0.0.1:${stub.address().port}`;
-  const previous = process.env.TOKENGAME_COMMAND_ORIGIN;
-  process.env.TOKENGAME_COMMAND_ORIGIN = origin;
+  const saved = {
+    table: process.env.TOKENGAME_TABLE_ORIGIN,
+    model: process.env.TOKENGAME_MODEL_TOKEN,
+  };
+  process.env.TOKENGAME_TABLE_ORIGIN = origin;
+  process.env.TOKENGAME_MODEL_TOKEN = "version-test-model-token";
   t.after(() => {
-    if (previous === undefined) delete process.env.TOKENGAME_COMMAND_ORIGIN;
-    else process.env.TOKENGAME_COMMAND_ORIGIN = previous;
+    for (const [key, value] of [
+      ["TOKENGAME_TABLE_ORIGIN", saved.table],
+      ["TOKENGAME_MODEL_TOKEN", saved.model],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   const fake = otherVersion(95);
   await withVersion(fake, async () => {
     delete require.cache[MCP];
     const server = require("../plugins/tokengame/mcp/server.cjs");
-    await server.hostCommand("room.create", { rules_version: "table-rules-v1" });
+    await server.callTool("tokengame_table", { command: "view.projection", params: {} });
   });
   delete require.cache[MCP];
 
-  assert.equal(bodies.length, 1, "MCP 传输没打到假核心上");
+  assert.equal(bodies.length, 1, "MCP 传输没打到假协调器上");
   assert.equal(bodies[0].contract_version, fake,
     "MCP 传输没经 requestEnvelope 构造——它大概自己拼了字面量，"
     + "于是它与另一个传输会在改版本时分道扬镳");
-  assert.equal(bodies[0].command, "room.create");
+  assert.equal(bodies[0].command, "view.projection");
 });
 
 test("改掉唯一来源，服务端的版本闸门也跟着变（不是抄了一份数字）", async (t) => {

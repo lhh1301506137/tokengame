@@ -14,29 +14,70 @@ const path = require("node:path");
 
 const { createCommandServer, DEFAULT_AUTHORITY_TOKEN } = require("../src/authority/command-server.cjs");
 const { HOST_COMMANDS, HUMAN_COMMANDS, MODEL_COMMANDS } = require("../src/authority/host-surface.cjs");
+const { HttpCoreClient } = require("../src/host/core-client.cjs");
+const { TableWebHost } = require("../src/host/table-web-host.cjs");
 const mcp = require("../plugins/tokengame/mcp/server.cjs");
 
 const RULES = "table-rules-v1";
 const MCP_SOURCE = path.join(__dirname, "..", "plugins", "tokengame", "mcp", "server.cjs");
+const MODEL_TOKEN = "mcp-surface-test-model-token-0001";
 
-// 真核心 + 真端口 + 真时钟。这里不注入 now()，因为本文件要证明的恰是「宿主不推进规则，
-// 核心自己走表也会开局」——到期驱动必须开着。
+// 真核心 + 真协调器 + 真端口 + 真时钟。
+//
+// 为什么现在要三个进程角色而不是两个：B6 收敛后 MCP 进程不再持有托管，模型命令经协调器
+// 落到那份唯一的 SeatCustody 上。只起核心的话本文件测的是一条产品里不存在的路——而它
+// 原本正是这么测的，于是「模型能不能真的驱动一个席位」这件事在这里看起来一直是对的。
+//
+// 不注入 now()：本文件要证明的恰是「宿主不推进规则，核心自己走表也会开局」，到期驱动
+// 必须开着。
 async function coreAt(t, { token = DEFAULT_AUTHORITY_TOKEN } = {}) {
   const service = createCommandServer({ internalToken: token });
   const origin = await service.start({ host: "127.0.0.1", port: 0 });
   t.after(() => service.stop());
 
-  const prevOrigin = process.env.TOKENGAME_COMMAND_ORIGIN;
-  const prevToken = process.env.TOKENGAME_AUTHORITY_TOKEN;
+  // 协调器接同一个核心。真人命令与模型命令都落到它这一份托管上。
+  const core = new HttpCoreClient({ origin, token });
+  const host = new TableWebHost({ core, modelCommandToken: MODEL_TOKEN });
+  const tableOrigin = await host.start({ port: 0 });
+  t.after(() => host.stop());
+
+  const saved = {
+    command: process.env.TOKENGAME_COMMAND_ORIGIN,
+    authority: process.env.TOKENGAME_AUTHORITY_TOKEN,
+    table: process.env.TOKENGAME_TABLE_ORIGIN,
+    model: process.env.TOKENGAME_MODEL_TOKEN,
+  };
   process.env.TOKENGAME_COMMAND_ORIGIN = origin;
   process.env.TOKENGAME_AUTHORITY_TOKEN = token;
+  process.env.TOKENGAME_TABLE_ORIGIN = tableOrigin;
+  process.env.TOKENGAME_MODEL_TOKEN = MODEL_TOKEN;
   t.after(() => {
-    if (prevOrigin === undefined) delete process.env.TOKENGAME_COMMAND_ORIGIN;
-    else process.env.TOKENGAME_COMMAND_ORIGIN = prevOrigin;
-    if (prevToken === undefined) delete process.env.TOKENGAME_AUTHORITY_TOKEN;
-    else process.env.TOKENGAME_AUTHORITY_TOKEN = prevToken;
+    for (const [key, value] of [
+      ["TOKENGAME_COMMAND_ORIGIN", saved.command],
+      ["TOKENGAME_AUTHORITY_TOKEN", saved.authority],
+      ["TOKENGAME_TABLE_ORIGIN", saved.table],
+      ["TOKENGAME_MODEL_TOKEN", saved.model],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
-  return { origin, service };
+  return { origin, service, host, tableOrigin };
+}
+
+// 直接打协调器的真人路由。
+//
+// 为什么不都走 mcp.hostCommand：它只覆盖 create / join 与 /api/action，而本文件要用到
+// /api/view（读底牌）与 /api/session/resume（掉线恢复）。给 hostCommand 加这两条路由只为
+// 让测试跑通，那是为可测性扩产品面——真人面的完整实现是浏览器那一侧，它已经被
+// test/table-web-host.test.cjs 一整套盯着。
+async function tableRoute(tableOrigin, route, body) {
+  const response = await fetch(`${tableOrigin}${route}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, body: await response.json() };
 }
 
 // 经模型可见的 MCP 工具发一条命令。这是模型能走的唯一一条路。
@@ -48,12 +89,15 @@ async function table(command, params = {}) {
 
 // 真人操作面。刻意不经 callTool：真人命令不是工具，模型在 tools/list 里看不到它们。
 // 形状对齐 table() 以便同一段流程读起来一致，但走的是完全不同的入口。
-async function human(command, params = {}) {
-  const out = await mcp.hostCommand(command, params);
+//
+// 会话令牌逐次传进去，本进程不存一份。存的话「谁 require 了那个模块就能替那一席行动」，
+// 而同一个模块同时导出模型可见的 callTool。
+async function human(command, params = {}, sessionToken = null) {
+  const out = await mcp.hostCommand(command, params, { sessionToken });
   return {
     isError: out.ok !== true,
     body: out.body,
-    seat_handle: out.seat_handle ?? null,
+    session_token: out.body?.session_token ?? null,
     raw: JSON.stringify(out.body),
   };
 }
@@ -62,16 +106,40 @@ test("MCP：牌桌命令真的落到外部核心，不是本进程自己编的",
   const { service } = await coreAt(t);
 
   // room.create 是真人命令（分权后模型发不出它），所以走真人入口。
-  // 本条测试要证的是「这一跳打到了外部核心」，与哪一面发出无关。
+  // 本条测试要证的是「这一跳打到了核心」，与哪一面发出无关。
+  //
+  // 收敛后这一跳是两段：MCP -> 协调器 -> 核心。中间多一段不削弱这条断言——它要否证的是
+  // 「MCP 在本进程构造了一张牌桌」，而那种情况下核心这边会是空的，无论中间有几段。
   const created = await human("room.create", { player_id: "p-host", table_rules_version: RULES });
   assert.equal(created.isError, false, created.raw);
-  const roomId = created.body.result.room.room_id;
+  const roomId = created.body.room_id;
   assert.equal(typeof roomId, "string");
+  assert.equal(typeof created.body.session_token, "string",
+    "入口必须回一个会话令牌——真人后续的每条命令都按它说话");
+  assert.ok(!created.raw.includes("recovery_credential"),
+    "入口的返回不得出现凭据字段名：凭据只在协调器的托管层里");
+  assert.ok(!/seat_handle/.test(created.raw),
+    "入口的返回不得出现句柄：句柄是协调器托管层的对象，不该经过 MCP 进程");
 
-  // 同一个房间必须在核心那一侧存在。MCP 若在本进程构造牌桌，核心这边会是空的。
-  // 投影把房间包在契约信封里（projection.room.room），room.create 的返回是平的，别搞混。
+  // 同一个房间必须在核心那一侧存在。
   const inCore = service.surface.dispatch("view.projection").room.room;
   assert.equal(inCore.room_id, roomId, "MCP 建的房间必须就是核心里的那个房间");
+});
+
+test("MCP：没带会话令牌的真人命令被本地拒，不猜「反正只有一个会话」", async (t) => {
+  await coreAt(t);
+  const created = await human("room.create", { player_id: "p-solo", table_rules_version: RULES });
+  assert.equal(created.isError, false, created.raw);
+
+  // 只建了一席，所以「猜」在这一刻一定猜得对——这正是要拒的时刻。多席宿主上同一段代码
+  // 会替错的人行动，而单席场景下永远看不出来。
+  const guessed = await human("seat.ready", { ready: true });
+  assert.equal(guessed.isError, true, "没带会话令牌居然被接受了");
+  assert.equal(guessed.body.code, "web_session_required", guessed.raw);
+
+  // 带上就该通。少了这一条，上面那条对一个「永远拒绝」的实现也成立。
+  const ok = await human("room.confirm_public_scope", { acknowledged: true }, created.body.session_token);
+  assert.equal(ok.isError, false, ok.raw);
 });
 
 // 白名单在本地挡，且不经过网络。把 origin 指向一个死端口来证明这一点：
@@ -158,37 +226,39 @@ test("MCP：原有桥接探针工具仍在", () => {
 // 模型可见工具跑完全程，恰恰说明当时模型能替玩家按 Ready。现在两条路都要真的能走通，
 // 才证明真人命令是被移到另一条路上了，而不是被删掉了。
 test("MCP：两面配合就能进入牌局，且开局由核心自己走表", async (t) => {
-  await coreAt(t);
+  const { tableOrigin } = await coreAt(t);
 
-  // F6：create / join 的返回给的是句柄，不是凭据。邀请码仍然可见——建房的人必须看得见
-  // 才能转给朋友，理由见 seat-custody.cjs 的 SECRET_FIELDS 注释。
+  // F6：create / join 的返回给的是会话令牌，不是凭据也不是句柄。邀请码仍然可见——建房的人
+  // 必须看得见才能转给朋友，理由见 seat-custody.cjs 的 SECRET_FIELDS 注释。
+  //
+  // 句柄不再经过这个进程。它是协调器托管层的对象，而托管层收敛到那一侧之后，本进程连
+  // 「有这么一张句柄」都不需要知道。
   const created = await human("room.create", { player_id: "p-a", table_rules_version: RULES });
-  const host = created.body.result;
+  assert.equal(created.isError, false, created.raw);
   const joined = await human("room.join", {
     player_id: "p-b",
-    invite_code: host.invite_code,
-    room_id: host.room.room_id,
+    invite_code: created.body.invite_code,
+    room_id: created.body.room_id,
   });
-  const guest = joined.body.result;
+  assert.equal(joined.isError, false, joined.raw);
 
   const seats = [
-    { handle: created.seat_handle, seat_id: host.seat.seat_id, player: "p-a" },
-    { handle: joined.seat_handle, seat_id: guest.seat.seat_id, player: "p-b" },
+    { token: created.body.session_token, seat_id: created.body.seat_id, player: "p-a" },
+    { token: joined.body.session_token, seat_id: joined.body.seat_id, player: "p-b" },
   ];
   for (const seat of seats) {
-    assert.equal(typeof seat.handle, "string", "create / join 必须回一个句柄");
-    const auth = { seat_handle: seat.handle };
-    // F3：确认按席位记账；F6：这一层给的是句柄，凭据由本机协调器注入。
-    const confirmed = await human("room.confirm_public_scope", { ...auth, acknowledged: true });
+    assert.equal(typeof seat.token, "string", "create / join 必须回一个会话令牌");
+    // F3：确认按席位记账；F6：这一层给的是会话令牌，凭据由协调器的托管层注入。
+    const confirmed = await human("room.confirm_public_scope", { acknowledged: true }, seat.token);
     assert.equal(confirmed.isError, false, confirmed.raw);
-    const connected = await human("seat.connect", { ...auth, connection_id: `mcp-${seat.player}` });
-    assert.equal(connected.isError, false, connected.raw);
-    const ready = await human("seat.ready", { ...auth, ready: true });
+    // 连接由入口本身建立（协调器的 openSession 就建了首个连接），所以这里不再单发
+    // seat.connect。再发一次不是错，但它会让读者以为「不发就没连上」，而那是错的。
+    const ready = await human("seat.ready", { ready: true }, seat.token);
     assert.equal(ready.isError, false, ready.raw);
 
     // 同一条命令经模型工具必须发不出去。就地验一次而不是只在别的文件里验：
-    // 这里手上正好有一个真句柄，是最像「模型试一下」的时刻。
-    const asModel = await table("seat.ready", { ...auth, ready: true });
+    // 这里手上正好有一个真会话，是最像「模型试一下」的时刻。
+    const asModel = await table("seat.ready", { ready: true });
     assert.equal(asModel.isError, true, "模型工具居然按下了 Ready");
     assert.equal(asModel.body.code, "command_not_model_facing", asModel.raw);
   }
@@ -197,8 +267,10 @@ test("MCP：两面配合就能进入牌局，且开局由核心自己走表", as
   // 只读命令不写状态，所以这个轮询不构成「宿主在推进规则」。
   let started = false;
   for (let poll = 0; poll < 60 && !started; poll += 1) {
+    // 用 ?. 而不是直接取：失败时模型路由回的是 { ok:false, code }，没有 result。
+    // 直接取会把「还没开局」变成一次 TypeError，而那读起来像测试自己坏了。
     const view = (await table("view.projection")).body.result;
-    started = view.public_hand !== null && view.public_hand !== undefined;
+    started = view?.public_hand !== null && view?.public_hand !== undefined;
     if (!started) await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(started, "倒计时走完后核心必须自己开局：宿主面上没有任何开局命令可用");
@@ -215,24 +287,25 @@ test("MCP：两面配合就能进入牌局，且开局由核心自己走表", as
 
   // 底牌只走真人面。view.hand 是全系统唯一吐底牌的出口，分权后它归真人：座位 AI 的上下文
   // 由权威裁剪后随 intent 一起给出（F5 要求 2），给模型第二条自取底牌的路等于绕过那次裁剪。
-  const holeByModel = await table("view.hand", { seat_handle: seats[0].handle });
+  const holeByModel = await table("view.hand", {});
   assert.equal(holeByModel.isError, true, "模型工具居然能读底牌");
   assert.equal(holeByModel.body.code, "command_not_model_facing", holeByModel.raw);
 
   // 各席只看见自己的两张。
-  // view.hand 返回的是同一个 publicProjection 形状，席位按 id（即 playerId）索引，
-  // 不是 seat_id——只有查看者自己那一席的 hole_cards 被填上。上一轮就是在这里认错了字段。
+  //
+  // 走协调器的 /api/view 而不是 hostCommand：view.hand 不在 BROWSER_ACTIONS 里，它由
+  // /api/view 组装成视图模型再回。给 hostCommand 加一条 view 路由只为让这里跑通，那是
+  // 为可测性扩产品面——真人读牌的完整路径是浏览器那一侧。
   const seen = [];
   for (const seat of seats) {
-    const mine = (await human("view.hand", { seat_handle: seat.handle })).body.result.hand;
-
-    const own = mine.seats.find((entry) => entry.id === seat.player);
+    const view = (await tableRoute(tableOrigin, "/api/view", { session_token: seat.token })).body.view;
+    const own = view.seats.find((entry) => entry.player_id === seat.player);
     assert.ok(own !== undefined, `${seat.player} 没在自己的手牌视图里找到本席`);
     assert.equal(own.hole_cards.length, 2, `${seat.player} 应看到自己的两张底牌`);
     seen.push(own.hole_cards.join("|"));
 
-    for (const other of mine.seats) {
-      if (other.id === seat.player) continue;
+    for (const other of view.seats) {
+      if (other.player_id === seat.player) continue;
       assert.equal(
         other.hole_cards,
         null,
@@ -242,22 +315,12 @@ test("MCP：两面配合就能进入牌局，且开局由核心自己走表", as
   }
   assert.notEqual(seen[0], seen[1], "两席不该拿到同一副底牌");
 
-  // 「拿别人的 seat_id 配自己的句柄」在这一层表达不出来：托管层不接受调用方自带 seat_id。
-  // 真人路径同样过这道门——UI 也没有理由自己拼 seat_id，它手里就有句柄。
+  // 「拿别人的 seat_id 配自己的会话」在这一层表达不出来：托管层不接受调用方自带 seat_id。
+  // 真人路径同样过这道门——UI 也没有理由自己拼 seat_id，协调器手里就有句柄。
   // 核心那一侧的跨席拒绝仍然由 test/seat-authorization.test.cjs 直接钉住。
-  const stolen = await human("view.hand", {
-    seat_handle: seats[0].handle,
-    seat_id: seats[1].seat_id,
-  });
+  const stolen = await human("seat.ready", { seat_id: seats[1].seat_id, ready: true }, seats[0].token);
   assert.equal(stolen.isError, true, `自带 seat_id 居然被接受了: ${stolen.raw}`);
   assert.equal(stolen.body.code, "seat_id_not_model_supplied", stolen.raw);
-
-  // 句柄只解回自己那一席：换句柄读到的是另一副底牌，而不是同一副。
-  const byHandle = await human("view.hand", { seat_handle: seats[1].handle });
-  assert.equal(byHandle.isError, false, byHandle.raw);
-  const other = byHandle.body.result.hand.seats.find((entry) => entry.id === seats[1].player);
-  assert.equal(other.hole_cards.length, 2);
-  assert.notEqual(other.hole_cards.join("|"), seen[0], "换句柄必须换到另一席的视角");
 });
 
 // F6 要求 4：「工具返回与模型可见 transcript 不含 credential」。
@@ -274,7 +337,7 @@ function credentialsInCore(service) {
 }
 
 test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t) => {
-  const { service } = await coreAt(t);
+  const { service, tableOrigin, host } = await coreAt(t);
 
   // 模型看得见的每一个字节。存整个工具返回而不只是 content[0].text：isError 之外的任何
   // 字段将来也会进上下文，只扫一个字段等于给以后新增字段留了通道。
@@ -292,37 +355,40 @@ test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t)
   assert.equal(created.isError, false, created.raw);
   const joined = await human("room.join", {
     player_id: "p-b",
-    invite_code: created.body.result.invite_code,
-    room_id: created.body.result.room.room_id,
+    invite_code: created.body.invite_code,
+    room_id: created.body.room_id,
   });
   assert.equal(joined.isError, false, joined.raw);
 
   const seats = [
-    { handle: created.seat_handle, player: "p-a", conn: "mcp-a" },
-    { handle: joined.seat_handle, player: "p-b", conn: "mcp-b" },
+    { token: created.body.session_token, player: "p-a", conn: created.body.connection_id },
+    { token: joined.body.session_token, player: "p-b", conn: joined.body.connection_id },
   ];
   for (const seat of seats) {
-    const auth = { seat_handle: seat.handle };
-    assert.equal((await human("room.confirm_public_scope", { ...auth, acknowledged: true })).isError, false);
-    assert.equal((await human("seat.connect", { ...auth, connection_id: seat.conn })).isError, false);
+    assert.equal((await human("room.confirm_public_scope", { acknowledged: true }, seat.token)).isError, false);
   }
 
-  // 掉线 -> 恢复 -> 重连。seat.recover 也走句柄，所以这段同时证明「凭据的唯一入参命令」
-  // 在 UI 侧也不需要凭据原文。
-  const b = { seat_handle: seats[1].handle };
-  assert.equal((await human("seat.disconnect", { ...b, connection_id: seats[1].conn })).isError, false);
-  const recovered = await human("seat.recover", { ...b, connection_id: seats[1].conn });
-  assert.equal(recovered.isError, false, recovered.raw);
-  assert.equal((await human("seat.connect", { ...b, connection_id: seats[1].conn })).isError, false);
+  // 掉线 -> 恢复。协调器这一侧的恢复是 /api/session/resume，它内部铸一个新连接 id 再连；
+  // 核心那条 seat.recover 由协调器的租约扫描按需发，不在 BROWSER_ACTIONS 里。
+  //
+  // 这段仍然证明同一件事：整条掉线恢复路径上，凭据原文一次都不经过本进程，也不进
+  // 模型可见文本。
+  assert.equal((await human(
+    "seat.disconnect",
+    { connection_id: seats[1].conn },
+    seats[1].token,
+  )).isError, false);
+  const resumed = await tableRoute(tableOrigin, "/api/session/resume", { session_token: seats[1].token });
+  assert.equal(resumed.body.ok, true, JSON.stringify(resumed.body));
 
   for (const seat of seats) {
-    assert.equal((await human("seat.ready", { seat_handle: seat.handle, ready: true })).isError, false);
+    assert.equal((await human("seat.ready", { ready: true }, seat.token)).isError, false);
   }
 
   let hand = null;
   for (let poll = 0; poll < 60 && hand === null; poll += 1) {
     const view = await say("view.projection");
-    hand = view.body.result.public_hand ?? null;
+    hand = view.body.result?.public_hand ?? null;
     if (hand === null) await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(hand !== null, "核心必须自己开局");
@@ -330,10 +396,9 @@ test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t)
   // 真人发言。这是白名单来源事件，会给两席各排一个待办——模型那条回路的入口。
   for (const seat of seats) {
     assert.equal((await human("chat.say", {
-      seat_handle: seat.handle,
       text: `${seat.player} 到了`,
       idempotency_key: `chat-${seat.player}`,
-    })).isError, false);
+    }, seat.token)).isError, false);
   }
   assert.equal((await say("view.timeline", {})).isError, false);
 
@@ -389,9 +454,16 @@ test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t)
   // 原来这里断言的是反面——句柄必须出现在模型可见文本里，因为那时模型要拿它发命令。分权之后
   // 模型不再需要任何席位标识，于是同一段文本里出现句柄就成了缺陷：句柄一样代表该席的行动
   // 能力，模型手上有它，就只差一条没被挡住的命令。
-  for (const seat of seats) {
+  //
+  // 句柄从**协调器的托管层**取，不从本进程取——本进程收敛后一张句柄也没有，拿它自己手上
+  // 的（空）清单去扫等于扫了个空集，那种绿什么都不说明。这是本条断言在 B6 之后变强的地方：
+  // 扫的是真正存在的那些句柄。
+  const handles = host.custody.handles();
+  assert.equal(handles.length, 2, `协调器应当托管两席: ${handles.length}`);
+  for (const handle of handles) {
+    assert.ok(handle.length >= 8, `句柄太短，扫描没有意义: ${handle}`);
     assert.ok(
-      !text.includes(seat.handle),
+      !text.includes(handle),
       "句柄出现在模型可见文本里：模型不该持有任何席位标识",
     );
   }
@@ -418,6 +490,63 @@ test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t)
   }
 });
 
+// 桩协调器。用来测「协调器那一侧漏了」这种场合——而那正是 MCP 这一道扫描存在的唯一理由。
+//
+// 为什么必须用桩而不是真协调器：真协调器不漏（它自己那道门先拦住），所以在真协调器上这道
+// 扫描永远无事可做，删掉它两条流程测试都照旧绿。桩把「连接的另一端出了问题」这件事做成
+// 可测的输入，测的是这道门本身，不是假装产品此刻会漏。
+async function stubTableAt(t, body) {
+  const http = require("node:http");
+  const server = http.createServer((request, response) => {
+    let raw = "";
+    request.on("data", (chunk) => { raw += chunk; });
+    request.on("end", () => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(body));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const saved = { table: process.env.TOKENGAME_TABLE_ORIGIN, model: process.env.TOKENGAME_MODEL_TOKEN };
+  process.env.TOKENGAME_TABLE_ORIGIN = `http://127.0.0.1:${server.address().port}`;
+  process.env.TOKENGAME_MODEL_TOKEN = MODEL_TOKEN;
+  t.after(() => {
+    for (const [key, value] of [["TOKENGAME_TABLE_ORIGIN", saved.table], ["TOKENGAME_MODEL_TOKEN", saved.model]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+}
+
+test("F6：协调器若在返回里带出句柄原文，MCP 这一侧整份扣下", async (t) => {
+  // 句柄不在 SECRET_FIELDS 里——它不是一个秘密字段名，是一个值。协调器那道
+  // assertNoLeak 扫的是「已知凭据原文」与「秘密字段名的键位」，两者都扫不到句柄。
+  // 所以这道前缀扫描是句柄唯一的出门检查，而持有句柄一样代表该席的行动能力。
+  await stubTableAt(t, { ok: true, result: { note: "leaked", owner: "seat_handle-abc123def456" } });
+  const out = await mcp.callTool("tokengame_table", { command: "view.projection", params: {} });
+  assert.equal(out.isError, true, `句柄原文必须被扣下：${out.content[0].text}`);
+  const body = JSON.parse(out.content[0].text);
+  assert.equal(body.code, "response_withheld_secret_detected");
+  assert.equal(body.field, "seat_handle");
+  // 扣下的那份自己也不许把句柄带出去。打码放过与整份扣下的差别就在这里：
+  // 一份「已扣下，内容是 seat_handle-abc123」的错误消息等于把它又发了一次。
+  assert.equal(out.content[0].text.includes("seat_handle-abc123def456"), false,
+    "扣下的响应本身把句柄带出去了");
+});
+
+test("F6：正常返回不因为提到公开字段就被扣下", async (t) => {
+  // 反面对照。这一条防的是把上面那道扫描写宽：按子串扫 "credential" 会命中合法的公开布尔
+  // credential_revoked，于是每一条 view.projection 都变成一条安全错误——安全边界报不出
+  // 自己拒了什么，而这个失败形态本轮实际踩过一次。
+  await stubTableAt(t, {
+    ok: true,
+    result: { seats: [{ seat_id: "s-1", credential_revoked: false, seat_handle_present: true }] },
+  });
+  const out = await mcp.callTool("tokengame_table", { command: "view.projection", params: {} });
+  assert.equal(out.isError, false, `合法的公开字段被误扣下了：${out.content[0].text}`);
+  assert.equal(JSON.parse(out.content[0].text).result.seats[0].credential_revoked, false);
+});
+
 test("F6：工具说明不得要求模型自己回传凭据", () => {
   // 说明文本本身就是一条泄漏路径：只要它教模型「把 recovery_credential 传回来」，模型就会
   // 先把凭据复述进上下文，然后托管层再怎么净化都晚了。
@@ -427,8 +556,6 @@ test("F6：工具说明不得要求模型自己回传凭据", () => {
   assert.ok(text.includes("seat_handle"), "工具说明必须告诉模型用句柄");
 });
 
-// 架构分水岭写成断言。MCP 进程内 require 命令面或编排层，就等于每个宿主各自持一张牌桌，
-// 两个宿主从此是两场牌局。这正是章程点名的失败形态，所以钉在源码层面。
 // 架构分水岭写成断言。MCP 进程内 require 命令面或编排层，就等于每个宿主各自持一张牌桌，
 // 两个宿主从此是两场牌局。这正是章程点名的失败形态，所以钉在源码层面。
 //

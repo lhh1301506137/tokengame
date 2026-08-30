@@ -1,0 +1,137 @@
+{
+  "name": "协调器模型命令口：远端模型客户端与进程内驱动同一条实现",
+  "note": "B6-2。收敛前 MCP 进程自己持有一份 SeatCustody，而它唯一的绑定入口有零个产品调用者——于是 ai.take_intents 在一张空表上扇出，seats_polled 恒为 0，真实宿主 AI 永远驱动不了任何一席。收敛后模型命令由协调器出口，MCP 进程只是 stdio 到 HTTP 的转运。这条边界因此需要一道鉴权、一道版本闸门，以及两侧各一道出门扫描；这份变异谱只覆盖这几项新增行为。",
+  "test": "test/coordinator-model-route.test.cjs",
+  "mutations": [
+    {
+      "id": "route-open-without-token",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (this.modelCommandToken === null) {\n      sendJson(response, 503, { ok: false, code: \"model_command_route_disabled\" });\n      return;\n    }",
+      "replace": "",
+      "note": "没配令牌时这条路照样开着。失败关闭是这一档的全部内容：未配置的默认必须是关，否则一台机器只要跑起协调器就把所有席位的发言权对局域网敞开。"
+    },
+    {
+      "id": "token-check-removed",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (!sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)) {",
+      "replace": "    if (false) {",
+      "note": "令牌不再校验。配了令牌但谁都能进，比不配更坏——运维会以为已经关上了。"
+    },
+    {
+      "id": "empty-string-counts-as-configured",
+      "file": "src/shared/tokens.cjs",
+      "find": "function usableToken(value) {\n  return typeof value === \"string\" && value.length > 0;\n}",
+      "replace": "function usableToken(value) {\n  return typeof value === \"string\";\n}",
+      "note": "空串算「配了」。TOKENGAME_MODEL_TOKEN= 在 shell 里是合法赋值，读出来是空串；当成配了的话那道门对所有人开着——请求方不带这个头时读到的也是空。"
+    },
+    {
+      "id": "token-compared-with-early-return",
+      "file": "src/shared/tokens.cjs",
+      "find": "    mismatch |= provided.charCodeAt(index) ^ expected.charCodeAt(index);",
+      "replace": "    if (provided.charCodeAt(index) !== expected.charCodeAt(index)) return false;",
+      "note": "循环里早返回。功能完全正常，两侧都绿——除了那条钉住「循环里没有 return」的静态检查。比较时间从此随匹配前缀长度变化，持有网络访问的人可以一个字符一个字符地问出令牌。"
+    },
+    {
+      "id": "token-compared-with-equals",
+      "file": "src/shared/tokens.cjs",
+      "find": "  if (provided.length !== expected.length) return false;\n  let mismatch = 0;",
+      "replace": "  if (provided !== expected) return false;\n  let mismatch = 0;",
+      "note": "改用 === 比较。同上，功能不变而按前缀泄漏。这一条与上一条分开：一个是「循环写坏了」，一个是「循环还在但已经不起作用了」，后者读起来更像已有防护。"
+    },
+    {
+      "id": "second-implementation-of-same-token",
+      "file": "src/host/table-web-host.cjs",
+      "find": "const { sameToken, usableToken } = require(\"../shared/tokens.cjs\");",
+      "replace": "const { usableToken } = require(\"../shared/tokens.cjs\");\nfunction sameToken(provided, expected) {\n  return typeof provided === \"string\" && provided === expected;\n}",
+      "note": "在协调器里再写一份同义实现。两份的漂移方向很具体：某一处被改成早返回或 === 而另一处不会红。这条钉住「只有一份实现」，而不只是「有一份是对的」。"
+    },
+    {
+      "id": "health-always-reports-enabled",
+      "file": "src/host/table-web-host.cjs",
+      "find": "        model_command_route: this.modelCommandToken === null ? \"disabled\" : \"enabled\",",
+      "replace": "        model_command_route: \"enabled\",",
+      "note": "健康检查永远说这条路开着。一条内测启动脚本会照着它判断该不该把令牌发给宿主，读到 enabled 而实际关着会让排查转向宿主一侧。"
+    },
+    {
+      "id": "version-gate-removed",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (body.contract_version !== CONTRACT_VERSION) {\n      sendJson(response, 400, {\n        ok: false,\n        code: \"contract_version_mismatch\",\n        details: { expected: CONTRACT_VERSION, received: body.contract_version },\n      });\n      return;\n    }",
+      "replace": "",
+      "note": "跨版本放行。插件装在宿主自己的配置里，协调器从仓库跑，两者会停在不同提交上——没有闸门时旧插件发来的字段被静默忽略，表现为「某个参数不起作用」而不是一个可判定的错误码。"
+    },
+    {
+      "id": "missing-version-allowed",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (body.contract_version === undefined) {\n      sendJson(response, 400, {\n        ok: false,\n        code: \"contract_version_missing\",\n        details: { expected: CONTRACT_VERSION },\n      });\n      return;\n    }",
+      "replace": "",
+      "note": "不带版本号的客户端放行。放行等于让上面那道闸门对任何从不带版本的客户端永远不会红——而那正是最旧的那一类客户端。"
+    },
+    {
+      "id": "version-gate-before-token-gate",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (!sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)) {\n      // 只回码。回显命令名或席位数会让这条路变成枚举口：不带令牌就能问出\n      // 「这个协调器上有几席」「这条命令存不存在」。\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\" });\n      return;\n    }",
+      "replace": "    const tokenOk = sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken);",
+      "note": "把令牌闸门挪到版本闸门之后（这里的写法是先算不拒，于是版本先答）。未鉴权的调用者因此能问出本机跑的是哪一版合同——一次不用令牌就能拿到的指纹。"
+    },
+    {
+      "id": "rejection-echoes-command",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\" });",
+      "replace": "      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\", command: body.command ?? null });",
+      "note": "拒绝时回显命令名。这让 403 变成一个命令面的探测口：不带令牌就能逐个试出哪些命令存在。"
+    },
+    {
+      "id": "response-not-scanned",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    this.custody.assertNoLeak(JSON.stringify(sanitized), \"model_command_response\");",
+      "replace": "",
+      "note": "出门前不再扫描。sanitizeResult 已经摘了已知字段，所以这条删掉后功能不变——它兜的是「将来某个新字段带出了秘密」，而那时没有这道门就没有人会知道。"
+    },
+    {
+      "id": "response-not-sanitized",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    const sanitized = this.custody.sanitizeResult(result.body);",
+      "replace": "    const sanitized = result.body;",
+      "note": "不再净化，只靠下面那道扫描。两者不同：净化是摘掉该摘的，扫描是命中就整份扣下。只剩扫描时，一次本该被摘掉的字段会让整个响应变成一条安全错误，模型面从此完全不可用。"
+    },
+    {
+      "id": "ok-flag-dropped",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    sendJson(response, result.status ?? (result.ok ? 200 : 400), { ok: result.ok, ...sanitized });",
+      "replace": "    sendJson(response, result.status ?? (result.ok ? 200 : 400), sanitized);",
+      "note": "响应体里不带 ok。HTTP 调用方必须能不看状态码就分辨成败——状态码会被代理改写，body 不会。"
+    },
+    {
+      "id": "mcp-holds-its-own-custody",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "const { SECRET_FIELDS } = require(\"../../../src/host/seat-custody.cjs\");",
+      "replace": "const { SECRET_FIELDS, SeatCustody } = require(\"../../../src/host/seat-custody.cjs\");\nconst custody = new SeatCustody();",
+      "note": "MCP 进程重新自己持有一份托管。这就是 B6 要消除的那两条不相交路径的起点：本进程的那一份没有产品绑定入口，于是它扇出的席位数恒为 0，而同一份实现在协调器里是好的。"
+    },
+    {
+      "id": "leak-scan-matches-substring",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "  SECRET_FIELDS.map((field) => new RegExp(`\"${field}\"\\\\s*:`)),",
+      "replace": "  SECRET_FIELDS.map((field) => new RegExp(field)),",
+      "note": "字段名扫描不再限定键位。不限的话它会命中合法的公开布尔 credential_revoked，于是每一条 view.projection 都返回 response_withheld_secret_detected——安全边界报不出自己拒了什么。这条是实测踩过的。",
+      "test": "test/mcp-table-surface.test.cjs"
+    },
+    {
+      "id": "handle-prefix-not-scanned",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "  if (HANDLE_VALUE_PATTERN.test(text)) {",
+      "replace": "  if (false) {",
+      "note": "不再扫句柄原文。句柄不在 SECRET_FIELDS 里（它不是秘密字段名，是一个值），而持有句柄一样代表该席的行动能力——只扫字段名会放过它。",
+      "test": "test/mcp-table-surface.test.cjs"
+    },
+    {
+      "id": "mcp-guesses-the-session",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "      body: { code: \"web_session_required\", command },",
+      "replace": "      body: { code: \"internal_error\", command },",
+      "note": "缺会话令牌时报成内部错误。这一条的处置差别是实的：web_session_required 归 identity（补身份即可，不是缺陷），internal_error 归 internal（当缺陷弹出来），于是一次例行的重连会在朋友面前变成一条 bug。",
+      "test": "test/mcp-table-surface.test.cjs"
+    }
+  ],
+  "excluded": []
+}

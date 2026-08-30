@@ -37,8 +37,8 @@
     {
       "id": "malformed-output-forwarded",
       "file": "src/host/table-web-host.cjs",
-      "needle": "          const normalized = normalizeDecision(decision);",
-      "replacement": "          const normalized = decision ?? { decision: \"silent\" };",
+      "needle": "        const normalized = normalizeDecision(decision);",
+      "replacement": "        const normalized = decision ?? { decision: \"silent\" };",
       "test": "test/model-output-degradation.test.cjs",
       "note": "跳过归一化，把模型返回的任意结构原样转给权威。null 被兜住了，但空对象、拼错的枚举、缺 text 都会穿过去。"
     },
@@ -61,16 +61,16 @@
     {
       "id": "timeout-not-recorded",
       "file": "src/host/table-web-host.cjs",
-      "needle": "              failure: error?.code === \"adapter_timeout\"\n                ? \"adapter_timeout\"",
-      "replacement": "              failure: false\n                ? \"adapter_timeout\"",
+      "needle": "            failure: error?.code === \"adapter_timeout\"\n              ? \"adapter_timeout\"",
+      "replacement": "            failure: false\n              ? \"adapter_timeout\"",
       "test": "test/model-output-degradation.test.cjs",
       "note": "超时不再留痕。静默收尾但不记录，等于把「模型坏了」这件事藏起来——driveErrors 是诊断这件事的唯一入口。"
     },
     {
       "id": "drive-errors-unbounded",
       "file": "src/host/table-web-host.cjs",
-      "needle": "          if (normalized.failure !== undefined) {\n            this.driveErrors.push({ at: this.now(), code: normalized.failure });\n            if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();\n          }",
-      "replacement": "          if (normalized.failure !== undefined) {\n            this.driveErrors.push({ at: this.now(), code: normalized.failure });\n          }",
+      "needle": "        if (normalized.failure !== undefined) {\n          this.driveErrors.push({ at: this.now(), code: normalized.failure });\n          if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();\n        }",
+      "replacement": "        if (normalized.failure !== undefined) {\n          this.driveErrors.push({ at: this.now(), code: normalized.failure });\n        }",
       "test": "test/model-output-degradation.test.cjs",
       "note": "去掉环形缓冲的丢弃。坏适配器会一直坏下去，诊断缓冲跟着一直长。"
     }

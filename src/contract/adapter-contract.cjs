@@ -97,8 +97,11 @@ class ContractError extends Error {
 
 // ---- 错误分类 ----
 //
-// 仓库里此刻有 65 个错误码。适配器不该认得全部 65 个——它需要知道的是「拿到这个码该怎么
-// 办」，而那只有五种答案。分类是给适配器的，不是给人读日志的。
+// 仓库里此刻有九十来个错误码。适配器不该认得全部——它需要知道的是「拿到这个码该怎么办」，
+// 而那只有十来种答案。分类是给适配器的，不是给人读日志的。
+//
+// 这里刻意不写确切数字。写了就得有人在每次加码时改它，而没有任何测试会因为它过期而红
+// ——「注册表里没有源码不存在的码」那条对账管的是码本身，管不了注释里的数字。
 //
 // 未列出的码归 "unknown"，而 "unknown" 的处置与 "bug" 相同（原样上报，不重试、不改 UI
 // 状态）。默认落到最保守的一档：新增一个码时忘了归类，后果是它被当成 bug 显示出来，
@@ -132,6 +135,9 @@ const ERROR_CLASSES = Object.freeze({
     "credential_not_model_supplied",
     "invite_rejected",
     "local_bridge_auth_unresolved",
+    // 模型命令口的令牌不对。与 authority_token_rejected 同类同处置，刻意不合成一个码：
+    // 两者守的是不同的口，日志里读不出是哪一个被试探等于看不见试探。
+    "model_command_token_rejected",
     "player_credentials_incomplete",
     "player_token_rejected",
     "recovery_credential_rejected",
@@ -141,6 +147,10 @@ const ERROR_CLASSES = Object.freeze({
     "seat_handle_unknown",
     "seat_id_not_model_supplied",
     "seat_identity_not_model_supplied",
+    // 一条真人命令没带会话令牌。与 web_session_unknown 分成两个码：那一条是「你给的这个
+    // 会话我不认」，这一条是「你根本没说你是哪个会话」。协调器刻意不在只有一个会话时替
+    // 调用方猜——猜对一次，就会有第二个会话进来时把命令记到别人头上。
+    "web_session_required",
     "web_session_unknown",
     "unknown_authority_id",
   ]),
@@ -196,13 +206,31 @@ const ERROR_CLASSES = Object.freeze({
   ]),
   // 传输层。核心不可达或答非所问。这一类是唯一「原样重试有意义」的。
   transport: Object.freeze([
-    // adapter_timeout 与 core_unavailable 是「对面没答」，重试有意义。
-    // 前者出在 table-web-host 的模型适配器超时，后者出在插件 MCP 连不上核心。
+    // adapter_timeout 与 table_unavailable 是「对面没答」，重试有意义。
+    // 前者出在 table-web-host 的推理运行时超时，后者出在插件 MCP 连不上协调器。
+    //
+    // core_unavailable 曾在这里。它出在插件 MCP 连不上**核心**，而 B6 收敛后插件不再
+    // 直接打核心——那一跳由协调器做。留着一个源码里已经没有的码不是「向后兼容」：
+    // 它会让「注册表里没有源码不存在的码」那条对账永远绿不了，于是下一次真的漂了也看不出来。
     "adapter_timeout",
     "core_request_failed",
     "core_response_not_json",
-    "core_unavailable",
     "core_unreachable",
+    "table_unavailable",
+  ]),
+  // 这台机器没配这条路。改配置能好，重试不能，也不是缺陷——不配是合法的默认。
+  //
+  // 单列一类而不是并入 identity 或 transport，两边都会读错：
+  //   归 identity  → 读成「你的令牌不对」，于是运维去换令牌，而问题是根本没设令牌；
+  //   归 transport → 处置里 retryable 为真，于是模型客户端对一条永远不会变好的 503
+  //                  一直重试。
+  // 这一类的正确处置是「把该配什么告诉运维」，那与上面两类都不同。
+  //
+  // 两条码分居两侧，刻意不合成一个：协调器没设令牌（路整个关着）与插件没设令牌
+  // （路开着但本进程无凭出示）要靠不同的人改不同的配置。合成之后读不出该改哪一边。
+  configuration: Object.freeze([
+    "model_command_route_disabled",
+    "model_command_token_not_configured",
   ]),
   // 例行 HTTP 状况。客户端问的方式不对，不是本地缺陷。
   //
@@ -230,7 +258,7 @@ const ERROR_CLASSES = Object.freeze({
   // 本地缺陷。走到这里说明有代码路径没考虑到，重试和换参数都没用。
   //
   // invalid_core_response 归这里而不是 transport：对面确实答了，只是答的不是 JSON。
-  // 重发同一条请求会得到同一份坏响应，所以它不可重试——这是它与 core_unavailable 的
+  // 重发同一条请求会得到同一份坏响应，所以它不可重试——这是它与 core_unreachable 的
   // 分界，两者读起来都像「对面有问题」，处置却相反。
   internal: Object.freeze([
     "internal_error",
@@ -274,6 +302,9 @@ const ERROR_DISPOSITIONS = Object.freeze({
   conflict: Object.freeze({ retryable: false, user_visible: false, is_defect: false }),
   transport: Object.freeze({ retryable: true, user_visible: true, is_defect: false }),
   contract: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),
+  // 配置缺失。user_visible 为真是这一档最要紧的一位：一条静默的「路关着」会让宿主 AI
+  // 对着一个永远不答的口轮询下去，而运维那边看不到任何该改配置的信号。
+  configuration: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),
   // 例行 HTTP 状况。不记缺陷（多数是浏览器或脚本在探路），但要让调用方看见——
   // 一次静默的 404 会让人以为请求成功了。
   http_request: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),

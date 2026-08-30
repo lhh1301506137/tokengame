@@ -73,12 +73,12 @@
       "note": "把领取令牌一起交给模型。它是本宿主的领取凭证，多一条搬运路径就多一处可能被改坏、被忘掉、被上下文截断的地方。"
     },
     {
-      "id": "web-driver-drops-claim-token",
-      "file": "src/host/table-web-host.cjs",
-      "needle": "              ...(intent.claim_token === undefined ? {} : { claim_token: intent.claim_token }),",
+      "id": "model-surface-drops-claim-token-on-start",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "      ...(claimToken === null ? {} : { claim_token: claimToken }),",
       "replacement": "",
-      "test": "test/table-web-host.test.cjs",
-      "note": "web 驱动不带令牌回去。它自己就成了那个「旧 claimant」：领走、卡住、被接手、回来还能抢。"
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "起回合时不把领取令牌交回权威。这一条原本盯的是 table-web-host 里手搓的那份驱动（needle 是 `...(intent.claim_token === undefined ? ...)`），B6-1 把它删了——同一件事现在由模型命令面做，所以这条跟着搬到新家而不是删掉：没有令牌的一方就是那个「旧 claimant」，领走、卡住、被接手、回来还能抢。"
     }
   ]
 }

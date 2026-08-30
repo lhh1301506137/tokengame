@@ -247,7 +247,7 @@ test("合同不 require 任何宿主实现", () => {
 //     一个都没进视野，于是十二个码全部落到 unknown，而 unknown 的处置是「当缺陷、弹给用户」。
 //     `not_found` / `method_not_allowed` / `unknown_route` 这些例行 HTTP 状况因此都被当成缺陷。
 //   - 新文件扫三种形状，范围含 plugins/，并且额外钉住每一档的处置对不对（例行 HTTP 不记
-//     缺陷、安全失败关闭绝不可重试、core_unavailable 可重试而 invalid_core_response 不可）。
+//     缺陷、安全失败关闭绝不可重试、core_unreachable 可重试而 invalid_core_response 不可）。
 //
 // 留在这里的是与合同结构直接相关的几条（处置表的射程、兜底的保守性），不重复覆盖检查。
 

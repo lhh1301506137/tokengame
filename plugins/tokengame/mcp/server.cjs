@@ -3,58 +3,84 @@
 const readline = require("node:readline");
 const { bridgeRequest } = require("../hooks/hook-lib.cjs");
 const { HUMAN_COMMANDS, MODEL_COMMANDS } = require("../../../src/authority/host-surface.cjs");
-const {
-  CredentialLeak,
-  SeatCustody,
-} = require("../../../src/host/seat-custody.cjs");
-const { ModelCommandSurface, ModelSurfaceError } = require("../../../src/host/model-command-surface.cjs");
 const { requestEnvelope } = require("../../../src/contract/adapter-contract.cjs");
 
-// F6：席位凭据托管在这个进程里，不进模型上下文。
+// 这个进程不持有任何秘密。
 //
-// 这个 MCP 服务器就是章程说的「本机协调器」：它是唯一同时接触模型和核心的地方。凭据在
-// room.create / room.join 的返回里产生，被这里截下换成句柄；之后模型只发句柄，凭据由
-// 这里注入。模型从头到尾没见过那串秘密，所以也没有「记得别说出来」这回事。
+// 此前它自己 new SeatCustody()，注释里写着「这个 MCP 服务器就是章程说的本机协调器」。
+// 那句话在当时是意图，不是事实——往那份托管里 bind 句柄的唯一入口是下面的 hostCommand()，
+// 而它有**零个产品调用者**。于是 custody.handles() 恒为空，ai.take_intents 扇出到零席，
+// 模型收到空意图，一个席位也驱动不了。浏览器里之所以能看到座位旁的气泡，是因为
+// TableWebHost 另有一份托管加一条自己的 AI 循环，喂它的是进程内脚本运行时。
 //
-// 进程级单例而不是每次调用新建：句柄的作用域就是这个进程的生命周期。每次新建等于每条
-// 命令都换一套句柄，模型上一条拿到的句柄下一条就失效了。
-const custody = new SeatCustody();
+// 两条路径不相交：一条跑着但只接得上模拟运行时，一条接得上真实模型但永远看不见席位。
+//
+// 收敛后协调器只有一个，就是 Web 牌桌那个进程：凭据只能住在一个地方，而两个面都必须
+// 够得着它——浏览器是筹码操作面，它够不着别的进程；本进程本来就是 HTTP 客户端。所以
+// 这里降级为一条 stdio 到 HTTP 的转运，托管、注入、扇出、泄漏扫描全在协调器里。
+//
+// 少了什么保护吗：没有。净化与泄漏扫描原本在本进程的出门处，现在在协调器的出门处，
+// 而那一处同时服务进程内驱动与本进程——两种传输共用同一道门，比两份各扫一遍更难漂。
 
 // 分权：这个进程里有两条路，只有一条是工具。
 //
 // MCP 的规则是「登记成工具就等于模型可调用」，所以真人命令不能作为工具存在——加一个
 // tokengame_human_table 工具再叮嘱模型别用它，等于没有边界。真人那条路是下面的
-// hostCommand()，它导出给宿主适配器（以及测试）直接调用，不出现在 tools 里。
-//
-// 单栈牌桌的真人入口本来就不在这个进程：web/table 经 src/host/table-web-host.cjs 打到
-// 同一个核心，那条路没有模型参与。hostCommand() 是给「宿主自己提供结构化 UI」的那种
-// 情形留的入口（阶段 2 的 HostCommand/UI Adapter），此刻它的用途是让分权可被自动验证：
-// 有一条真人路径存在，才能证明真人命令是被移走了而不是被删掉了。
-const modelSurface = new ModelCommandSurface({ custody, request: coreRequest });
+// hostCommand()，它导出给宿主（以及测试）直接调用，不出现在 tools 里。
 
-// 牌桌命令走 HTTP 打到已经在跑的权威核心（npm run core），不在本进程构造牌桌。
-// 这一条是架构的分水岭：进程内 require CommandSurface 会让每个宿主各自持有一张牌桌，
-// 于是两个宿主就是两场牌局——正是 L2 章程点名的「不同房间命名空间或独立玩家身份」。
+// 协调器在哪。模型命令与真人命令都打它。
 //
-// 鉴权沿用 command-server 既有的 x-tokengame-authority-token 约定，不另造一套：
-// U-TG-LOCAL-BRIDGE-AUTH 是 professional_design_unknown、blocking_boundary: release，
-// 不由这里发明。这个令牌只说明「这个进程有资格说话」，不说明「你拥有哪一席」——
-// 后者要席位凭据，由核心校验。
-const DEFAULT_CORE_ORIGIN = "http://127.0.0.1:7801";
+// 与 TOKENGAME_COMMAND_ORIGIN（权威核心）刻意分开：本进程收敛后不再直接打核心，
+// 因为直接打核心就必须自己持有席位凭据——那正是上面删掉的东西。留着两个变量名而不是
+// 复用一个，是为了让配错的人看得出自己配的是哪一层：指向核心时模型命令会因为缺
+// seat_id 被核心拒，那个报错读不出「你把协调器地址填成了核心地址」。
+const DEFAULT_TABLE_ORIGIN = "http://127.0.0.1:7802";
+const MODEL_TOKEN_HEADER = "x-tokengame-model-token";
 
-async function coreRequest(command, params = {}) {
-  const origin = process.env.TOKENGAME_COMMAND_ORIGIN || DEFAULT_CORE_ORIGIN;
-  const token = process.env.TOKENGAME_AUTHORITY_TOKEN || "local-probe-only-authority-token";
-  const response = await fetch(`${origin}/command`, {
+// 本进程不再直接打核心。
+//
+// 此前这里有一个 coreRequest()：它带权威令牌、经 requestEnvelope 构造信封、打
+// /command。收敛后它有零个调用者——真人命令与模型命令都打协调器，而协调器自己持有
+// HttpCoreClient 去打核心。留着一个没有调用者的传输不是「以后可能用得上」：它带着
+// 权威令牌，而权威令牌能发任何命令，包括模型面绝不该有的那些。
+
+// 打协调器的那一跳。模型命令走这条。
+//
+// 令牌从环境变量来，没配就不发请求：本进程无法自己生成一个（协调器那边校验的是它自己
+// 那份），而带着空令牌发出去只会换回一个 403，读起来像「令牌不对」而真正的原因是没配。
+async function tableRequest(route, body, { modelToken = false } = {}) {
+  const origin = process.env.TOKENGAME_TABLE_ORIGIN || DEFAULT_TABLE_ORIGIN;
+  const headers = { "content-type": "application/json" };
+  if (modelToken) {
+    const token = process.env.TOKENGAME_MODEL_TOKEN;
+    if (typeof token !== "string" || token === "") {
+      return {
+        ok: false,
+        status: 503,
+        body: {
+          code: "model_command_token_not_configured",
+          hint: "本进程需要 TOKENGAME_MODEL_TOKEN 才能替这一席发言。"
+            + "它由启动内测的那条命令生成并同时交给协调器与本进程；"
+            + "协调器没配同一个值时，它的 /api/health 会显示 model_command_route: disabled。",
+        },
+      };
+    }
+    headers[MODEL_TOKEN_HEADER] = token;
+  }
+  const response = await fetch(`${origin}${route}`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-tokengame-authority-token": token,
-    },
-    // 请求信封由合同层构造。服务端校验 contract_version，缺了就 400——
-    // 这条检查存在的意义是让「跨版本客户端」这件事有可判定的错误码，而不是表现为
-    // 某个字段静默地被忽略。
-    body: JSON.stringify(requestEnvelope(command, params)),
+    headers,
+    // 模型命令经 requestEnvelope 构造信封，真人入口不。
+    //
+    // 差别的理由是「两端会不会各自升级」。本进程与协调器是两个可独立安装的东西：插件登记
+    // 在宿主自己的配置里，协调器从仓库跑起来，两者完全可能停在不同的提交上。所以模型命令
+    // 这条要带版本，让跨版本表现为一个可判定的错误码，而不是某个字段静默地被忽略。
+    //
+    // 真人入口（/api/room/*、/api/action）不带：那些路由的主要客户端是浏览器，而浏览器的
+    // JS 由协调器自己发，两者不可能不同版本。给它们加一个必填版本字段就必须同时改前端，
+    // 而那道闸门在那一侧永远不会红——一条永远为真的检查。本进程是它们的次要客户端，
+    // 版本漂移时它会从字段校验那里拿到明确的拒绝。
+    body: JSON.stringify(modelToken ? requestEnvelope(body.command, body.params) : body),
     signal: AbortSignal.timeout(Number(process.env.TOKENGAME_CORE_TIMEOUT_MS || 5_000)),
   });
   const text = await response.text();
@@ -64,7 +90,7 @@ async function coreRequest(command, params = {}) {
   } catch {
     payload = { code: "invalid_core_response" };
   }
-  return { ok: response.ok, status: response.status, body: payload };
+  return { ok: response.ok && payload.ok !== false, status: response.status, body: payload };
 }
 
 const tools = [
@@ -146,22 +172,46 @@ function errorResult(body) {
   return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }], isError: true };
 }
 
+// 模型可见文本里绝不该出现的字段名。清单引托管层的权威定义，不在这里写第二份——
+// 两份清单的漂移方向是某一侧漏一条，而漏掉的那一条表现为一个字段静默地被放过。
+const { SECRET_FIELDS } = require("../../../src/host/seat-custody.cjs");
+
+// 只扫**键位**，不扫子串。
+//
+// 这一条是照托管层 assertNoLeak 的判断抄的，而抄它的理由值得写下来：先写成子串扫描，
+// 于是公开投影里那个合法的 credential_revoked 布尔（这一席的凭据被吊销了没有）被判成
+// 泄漏，模型每次读牌面都收到一份「本进程已扣下」。安全边界报不出自己拒了什么时，
+// 读日志的人会得到完全相反的结论。
+//
+// 句柄按值的前缀扫，因为它没有固定键名——协调器要是把句柄塞进任何字段，前缀都在。
+const SECRET_KEY_PATTERNS = Object.freeze(
+  SECRET_FIELDS.map((field) => new RegExp(`"${field}"\\s*:`)),
+);
+const HANDLE_VALUE_PATTERN = /seat[-_]handle-/;
+
 // 出门前最后一道扫描。命中就整份扣下，不打码后放过：打码只是让这一次看不见，搬运秘密的
 // 那条路径还在，换个字段名下次照样漏。扣下会让功能明显坏掉，坏掉才会被修。
-function safeResult(body, isError, seatHandle) {
-  const payload = seatHandle === null || seatHandle === undefined
-    ? body
-    : { ...body, seat_handle: seatHandle };
-  let text;
-  try {
-    text = custody.assertNoLeak(JSON.stringify(payload, null, 2), "tool_result");
-  } catch (error) {
-    if (!(error instanceof CredentialLeak)) throw error;
+//
+// 与协调器那道门方向不同，两道都要。协调器按**秘密原文**扫（它认得那串凭据），本进程
+// 按**字段名与句柄前缀**扫（它不持有秘密，所以扫不了原文）。本进程这一道在连接的另一端
+// 出问题时才起作用——协调器自己扫自己，两者同处一个进程，那份缺陷两道都躲不过。
+function safeResult(body, isError) {
+  const text = JSON.stringify(body, null, 2);
+  const hitKey = SECRET_KEY_PATTERNS.findIndex((pattern) => pattern.test(text));
+  if (hitKey !== -1) {
     return errorResult({
       code: "response_withheld_secret_detected",
-      where: error.details.where,
-      field: error.details.field,
-      hint: "核心返回里含席位秘密，本机协调器已扣下。这是实现缺陷，不是用户操作问题。",
+      where: "tool_result",
+      field: SECRET_FIELDS[hitKey],
+      hint: "协调器返回里含席位秘密的字段名，本进程已扣下。这是实现缺陷，不是用户操作问题。",
+    });
+  }
+  if (HANDLE_VALUE_PATTERN.test(text)) {
+    return errorResult({
+      code: "response_withheld_secret_detected",
+      where: "tool_result",
+      field: "seat_handle",
+      hint: "协调器返回里含席位句柄，本进程已扣下。句柄一样代表该席的行动能力。",
     });
   }
   return { content: [{ type: "text", text }], isError };
@@ -169,16 +219,17 @@ function safeResult(body, isError, seatHandle) {
 
 // 真人操作面。刻意不是工具：登记成工具就等于模型可调用。
 //
-// 句柄在这里产生也在这里留下——凭据只在 room.create / room.join 的返回里出现，而这两条
-// 是真人命令。所以托管的入口整体搬到了这条路上，模型那一侧一张句柄也拿不到。
+// 收敛后它是**协调器真人路由的客户端**，不再自己注入凭据。此前它调 custody.inject 并
+// 从返回里 bindFromResult——那份托管就是上面删掉的那一份，而它有零个产品调用者，所以
+// 那条注入路径从未在产品里执行过一次。
 //
-// 真人路径同样按句柄说话，凭据也不进 UI 层。凭据只在这个进程内部存在，UI 拿着句柄就够了：
-// 少一层持有秘密的代码就少一处泄漏面，而 UI 层恰恰是要往屏幕上渲染的那一层。
+// 会话令牌由调用方持有并逐次传进来，本进程不存。存一份等于「谁 require 了这个模块就能
+// 替那一席行动」，而本模块同时导出模型可见的 callTool——两者在同一个进程里，少一处
+// 可被取到的席位能力就少一处越权面。
 //
-// 返回值不过模型可见文本的泄漏扫描——扫描会把句柄之外的东西一并扣下，而真人 UI 需要
-// room.create 的完整返回（邀请码要给人看）。真人路径的对应约束是别把返回原样喂给模型，
-// 那由阶段 2 的 UI Adapter 合同承担。这里只保证凭据字段已被 sanitize 摘掉。
-async function hostCommand(command, params = {}) {
+// 分工：room.create / room.join 打协调器的入口路由（它们不需要先有席位），其余真人命令
+// 打 /api/action（需要会话令牌）。协调器那边按 BROWSER_ACTIONS 再把关一次。
+async function hostCommand(command, params = {}, { sessionToken = null } = {}) {
   if (!HUMAN_COMMANDS.includes(command)) {
     return {
       ok: false,
@@ -189,59 +240,64 @@ async function hostCommand(command, params = {}) {
       },
     };
   }
-  let injected;
-  try {
-    injected = custody.inject(command, params || {});
-  } catch (error) {
-    return { ok: false, status: 400, body: { code: error.code ?? "custody_rejected", command } };
+  if (command === "room.create" || command === "room.join") {
+    const route = command === "room.create" ? "/api/room/create" : "/api/room/join";
+    const result = await tableRequest(route, params || {});
+    return { ok: result.ok, status: result.status, body: result.body };
   }
-  const result = await coreRequest(command, injected);
-  // 凭据只在 room.create / room.join 的返回里产生，托管的入口因此整体落在这条真人路径上。
-  const bound = custody.bindFromResult(result.body);
-  return {
-    ok: result.ok,
-    status: result.status,
-    body: bound.seat_handle === null ? custody.sanitizeResult(result.body) : bound.result,
-    seat_handle: bound.seat_handle,
-  };
+  if (sessionToken === null) {
+    // 不猜。没带会话令牌就是不知道替谁行动，而「反正只有一个会话就用那个」在多席宿主上
+    // 的表现是替错的人行动——与托管层拒绝猜席位同一条理由。
+    return {
+      ok: false,
+      status: 400,
+      body: { code: "web_session_required", command },
+    };
+  }
+  const result = await tableRequest("/api/action", {
+    session_token: sessionToken,
+    command,
+    params: params || {},
+  });
+  return { ok: result.ok, status: result.status, body: result.body };
 }
 
 async function callTool(name, args = {}) {
   if (name === "tokengame_table") {
     const command = args.command;
+    // 本地先拒不在模型面上的命令。挡在协调器里也能拒，而且协调器那一侧才是权威判断——
+    // 这里这一道的作用是让「协调器没起来」和「你发错了命令」有不同的报错：不先拒的话，
+    // 协调器不可达时一条真人命令会得到 table_unavailable，而那读不出真正的原因
+    // （运维会去查协调器，而实际上是调用方发了一条不该模型发的命令）。
+    //
+    // 只重复 MODEL_COMMANDS 这一份清单，因为它本来就在本文件里（工具 schema 的 enum 用
+    // 的是同一个常量）。「模型不得自带哪些身份字段」那份清单不在这里，也不抄过来——
+    // 抄的话漏一条表现为某个越权参数被静默放过。
+    if (!MODEL_COMMANDS.includes(command)) {
+      return errorResult({
+        code: "command_not_model_facing",
+        command: command ?? null,
+        model_commands: [...MODEL_COMMANDS],
+        hint: "下注、按 Ready、确认公开范围、亮牌是真人的决定，不经模型工具。",
+      });
+    }
     try {
-      // 分权 + 托管都在模型命令面里。真人命令、模型自带席位身份、伪造的权威 id 都在
-      // 这一层抛出，一次请求也不发——挡在核心里也能拒，但那说明请求已经出去了。
-      const result = await modelSurface.call(command, args.params || {});
-      // 出门前仍然净化并扫描：模型面不该收到秘密，但「不该」要有一道实测的门兜住。
-      return safeResult(custody.sanitizeResult(result.body), !result.ok, null);
+      // 分权、托管、注入、逐席扇出全在协调器里。本进程只转运。
+      const result = await tableRequest(
+        "/api/model/command",
+        { command, params: args.params || {} },
+        { modelToken: true },
+      );
+      return safeResult(result.body, !result.ok);
     } catch (error) {
-      if (error instanceof CredentialLeak) throw error;
-      if (error instanceof ModelSurfaceError) {
-        // 拒绝理由要说得出来。model_commands 一起回去，模型才知道自己能用什么，
-        // 而不是逐条试探。details 里没有秘密，也没有句柄清单。
-        return errorResult({
-          code: error.code,
-          command: command ?? null,
-          ...(error.details === undefined ? {} : { details: error.details }),
-          ...(error.code === "command_not_model_facing"
-            ? {
-              model_commands: [...MODEL_COMMANDS],
-              hint: "下注、按 Ready、确认公开范围、亮牌是真人的决定，不经模型工具。",
-            }
-            : {}),
-        });
-      }
-      // 注入失败（句柄不认等）当普通工具错误回报，不抛出去：抛出去 MCP 那层会把栈打进
-      // 日志，而参数里可能正带着模型不该有的东西。
-      if (typeof error?.code === "string") {
-        return errorResult({ code: error.code, command: command ?? null });
-      }
-      // 核心的错误消息可能回显了请求参数，而参数里刚被注入过凭据。所以错误文本也要过扫描。
+      // 协调器不可达。回一条说得出下一步的错误，而不是把 fetch 的栈丢给模型。
       return safeResult(
-        { code: "core_unavailable", message: error.message, hint: "核心未启动时先运行 npm run core" },
+        {
+          code: "table_unavailable",
+          message: error.message,
+          hint: "协调器未启动时先运行 npm run web；已启动则检查 TOKENGAME_TABLE_ORIGIN。",
+        },
         true,
-        null,
       );
     }
   }
@@ -332,5 +388,7 @@ if (require.main === module) {
 }
 
 // hostCommand 导出但不登记为工具：它是真人路径，模型经 tools/list 看不到它。
-// custody 一并导出给测试——它是分权的另一半（模型手里有没有句柄），测试要能直接问。
-module.exports = { callTool, custody, handleMessage, hostCommand, tools };
+// custody 不再导出：本进程不持有它。分权的另一半（模型手里有没有句柄）现在由协调器那一侧
+// 回答——test/coordinator-model-route.test.cjs 按「模型路由的返回里没有凭据也没有句柄原文」
+// 钉住它，而那条断言测的是真正出门的那份字节，比问一个进程内对象更接近事实。
+module.exports = { callTool, handleMessage, hostCommand, tools };

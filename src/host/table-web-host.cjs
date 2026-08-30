@@ -28,11 +28,20 @@ const { closeServer, listen, readJson, sendJson } = require("../shared/http.cjs"
 const { CoreError } = require("./core-client.cjs");
 const { SeatCustody } = require("./seat-custody.cjs");
 const { ModelCommandSurface, ModelSurfaceError } = require("./model-command-surface.cjs");
+const { sameToken, usableToken } = require("../shared/tokens.cjs");
+// 只取版本常量。模型命令路由是跨进程边界，那条闸门要与核心 /command 用同一个来源——
+// 抄一个字面量的话，改版本时两条边界会分道扬镳。
+const { CONTRACT_VERSION } = require("../contract/adapter-contract.cjs");
 const viewModel = require("./table-view-model.cjs");
 const { LIVELY_V1 } = require("../authority/seat-ai-store.cjs");
 
 const LOOPBACK_HOSTS = Object.freeze(["127.0.0.1", "::1", "localhost"]);
 const MAX_BODY_BYTES = 64 * 1024;
+
+// 模型命令路由的令牌头。沿用权威那条 x-tokengame-* 的命名约定，但**不是**同一个令牌：
+// 权威令牌能发任何命令，这一个只能发模型面那五条。共用一个会让「给宿主配置模型接入」
+// 顺带把权威访问也交出去。
+const MODEL_COMMAND_TOKEN_HEADER = "x-tokengame-model-token";
 
 // 连接租约。每次读视图续一次；超过这个时长没续就按掉线处理。
 //
@@ -128,6 +137,18 @@ class TableWebHost {
       custody: this.custody,
       request: (command, params) => this.coreRequest(command, params),
     });
+    // 模型命令路由的令牌。没配就整条路由关闭——失败关闭，不给开发默认值。
+    //
+    // 为什么不生成一个默认值：那种默认值会跟着文档一起被复制到能被别人打到的地方，
+    // 而它在回环上从来不报错，所以没人会发现。而生成一个随机的又必须打印出来给运维
+    // 抄进宿主配置，那等于把秘密写进 stdout 与 shell 历史。所以由启动脚本从环境变量
+    // 传进来，没传就是没开。
+    //
+    // 关闭必须看得见：/api/health 会如实报 disabled。看不见的失败关闭等于静默卡住——
+    // 宿主那边只看到「模型什么都不做」，而原因是一个没设的环境变量。
+    this.modelCommandToken = usableToken(options.modelCommandToken)
+      ? options.modelCommandToken
+      : null;
     this.modelAdapter = options.modelAdapter ?? null;
     this.now = options.now ?? (() => Date.now());
     this.limits = options.limits ?? LIVELY_V1;
@@ -437,9 +458,9 @@ class TableWebHost {
         const turn = startResult.body.result.started;
         started += 1;
 
-          // 推理运行时要知道自己在替哪一席说话，而意图里没有 seat_id（模型面摘掉了它）。
-          // 从协调器自己的会话表里 join——句柄由模型面按 intent_id 记着。
-          const seatId = this.seatIdForHandle(this.modelSurface.handleForId(turn.turn_id));
+        // 推理运行时要知道自己在替哪一席说话，而意图里没有 seat_id（模型面摘掉了它）。
+        // 从协调器自己的会话表里 join——句柄由模型面按 intent_id 记着。
+        const seatId = this.seatIdForHandle(this.modelSurface.handleForId(turn.turn_id));
 
         // 适配器只看到权威给的上下文。它拿不到对手底牌，因为上下文是权威组装的。
         //
@@ -476,7 +497,7 @@ class TableWebHost {
         }
 
         const params = { turn_id: turn.turn_id, decision: normalized.decision };
-          if (normalized.decision === "public_speech") params.text = normalized.text;
+        if (normalized.decision === "public_speech") params.text = normalized.text;
         const resolveResult = await this.modelCommand("ai.resolve", params);
         if (resolveResult.ok) {
           resolved += 1;
@@ -545,6 +566,9 @@ class TableWebHost {
         service: "tokengame-table-web-host",
         core_transport: this.core.transport ?? "unknown",
         model_adapter_attached: this.modelAdapter !== null,
+        // 报状态，不报令牌。远端宿主要能分辨「我令牌配错了」与「这台机器压根没开模型
+        // 路由」——两者的处置完全不同，混同会让人去改令牌而不是去配上它。
+        model_command_route: this.modelCommandToken === null ? "disabled" : "enabled",
         sessions: this.sessions.size,
       });
       return;
@@ -578,6 +602,7 @@ class TableWebHost {
       case "/api/session/disconnect": return this.postDisconnect(response, body);
       case "/api/view": return this.postView(response, body);
       case "/api/action": return this.postAction(response, body);
+      case "/api/model/command": return this.postModelCommand(request, response, body);
       default:
         sendJson(response, 404, { ok: false, code: "unknown_route" });
     }
@@ -793,6 +818,59 @@ class TableWebHost {
     return { disconnected, cleaned };
   }
 
+  // 远端模型客户端的入口。MCP 进程打这条。
+  //
+  // 它与进程内驱动走的是**同一个** this.modelSurface，所以两边看到的席位、记的
+  // intent_id、注入的凭据全是同一份。这就是「唯一协调器」在网络这一侧的形态：
+  // MCP 进程不持有任何秘密，它只是一条 stdio 到 HTTP 的转运。
+  //
+  // 已知限制，写在代码里而不是只写在文档里：这个令牌是**进程级**的，持有它就能替这个
+  // 协调器上的所有席位发言。一个协调器 = 一台机器 = 一个人的席位，朋友内测的形态是
+  // 每人各跑一个协调器，所以本轮够用。两个朋友共用一台机器时，甲的宿主能替乙席说话——
+  // 要消除得给每席发一张只覆盖该席的令牌，并且有一条把它交到「那一席的宿主」手上的路。
+  async postModelCommand(request, response, body) {
+    // 门在读命令之前。关着的路由不该有机会解析请求内容，也不该回显它。
+    if (this.modelCommandToken === null) {
+      sendJson(response, 503, { ok: false, code: "model_command_route_disabled" });
+      return;
+    }
+    if (!sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)) {
+      // 只回码。回显命令名或席位数会让这条路变成枚举口：不带令牌就能问出
+      // 「这个协调器上有几席」「这条命令存不存在」。
+      sendJson(response, 403, { ok: false, code: "model_command_token_rejected" });
+      return;
+    }
+    // 合同版本闸门。在令牌之后，因为未鉴权的调用者不该问出本机跑的是哪一版。
+    //
+    // 沿用核心 /command 那两个码，不另发明：跨版本这件事在两条边界上是同一件事，两套码
+    // 会让日志里读不出「哪一段跨版本了」。缺失也拒——放行等于让这条检查对任何从不带版本的
+    // 客户端永远不会红。
+    if (body.contract_version === undefined) {
+      sendJson(response, 400, {
+        ok: false,
+        code: "contract_version_missing",
+        details: { expected: CONTRACT_VERSION },
+      });
+      return;
+    }
+    if (body.contract_version !== CONTRACT_VERSION) {
+      sendJson(response, 400, {
+        ok: false,
+        code: "contract_version_mismatch",
+        details: { expected: CONTRACT_VERSION, received: body.contract_version },
+      });
+      return;
+    }
+    const result = await this.modelCommand(body.command, body.params ?? {});
+    // 出门前净化并扫描。模型面不该收到秘密，但「不该」要有一道实测的门兜住——与 MCP
+    // 进程那一侧同一条理由，而现在这道门在协调器里，所以两种传输共用它。
+    const sanitized = this.custody.sanitizeResult(result.body);
+    this.custody.assertNoLeak(JSON.stringify(sanitized), "model_command_response");
+    // ok 由路由补。模型面内部的 body 形状是 { result } / { code }，不带 ok——而 HTTP
+    // 调用方必须能不看状态码就分辨成败：状态码会被代理改写，body 不会。
+    sendJson(response, result.status ?? (result.ok ? 200 : 400), { ok: result.ok, ...sanitized });
+  }
+
   // 刷新页面后重新建连接。
   //
   // 这条路径正是「协调器活着、只有浏览器断了」那种掉线，也就是恢复窗要覆盖的主要场合：
@@ -991,6 +1069,7 @@ function normalizeDecision(value) {
 
 module.exports = {
   MIN_ENTRY_KEY_LENGTH,
+  MODEL_COMMAND_TOKEN_HEADER,
   TableWebHost,
   BROWSER_ACTIONS,
   normalizeDecision,
