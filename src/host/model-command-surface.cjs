@@ -199,6 +199,8 @@ class ModelCommandSurface {
           intents,
           seats_polled: handles.length,
           ...(failures.length === 0 ? {} : { failures }),
+          // 空手而归时说出在等什么。见 emptyHandedReason 的理由。
+          ...(intents.length === 0 ? emptyHandedReason(handles.length) : {}),
         },
       },
     };
@@ -231,6 +233,37 @@ class ModelCommandSurface {
     if (result.ok) this.#issued.delete(params.turn_id);
     return result;
   }
+}
+
+// 空手而归时，模型在等的是两件完全不同的事。
+//
+// 缺陷本体：这两种处境此前返回同一份东西——`{ intents: [], seats_polled: N }`。
+//
+//   一席都没绑     没有人打开牌桌坐下。轮询到世界末日都不会变，要**真人**去建房或加入。
+//   绑了但没待办   此刻确实没有该说话的意图。再轮询一次就对了。
+//
+// 而模型读到的是同一句话，于是它只能做同一件事：继续轮询。宿主那边看起来是「AI 在等」，
+// 实际是没有人告诉过它「你还没有席位」。那正是「缺失时不能静默卡住」要挡的形态：
+// 缺的不是能力，是那句话。
+//
+// 为什么不报错：模型问了一个合法的问题，得到的是一个合法的答案（此刻没有待办）。
+// 报错会让每一次开局前的轮询都进错误计数，而 driveErrors 是诊断真故障的唯一入口，
+// 被这种噪声填满就等于没有。
+//
+// next_step 是给人看的，经模型转达。模型自己解决不了「去浏览器里坐下」这件事，
+// 但它能把这句话说出来——这就是可见兜底与静默卡住的全部差别。
+function emptyHandedReason(seatsPolled) {
+  if (seatsPolled === 0) {
+    return {
+      waiting_on: "human_entry",
+      next_step: "本机协调器上还没有任何席位。请真人在浏览器里打开牌桌，建房或用邀请码加入；"
+        + "入座之后本席才会有待办。在那之前继续轮询不会有变化。",
+    };
+  }
+  return {
+    waiting_on: "table",
+    next_step: "本席在座，此刻没有该说话的意图。稍后再取一次即可，不需要真人做任何事。",
+  };
 }
 
 module.exports = {

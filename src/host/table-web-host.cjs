@@ -38,6 +38,11 @@ const { LIVELY_V1 } = require("../authority/seat-ai-store.cjs");
 const LOOPBACK_HOSTS = Object.freeze(["127.0.0.1", "::1", "localhost"]);
 const MAX_BODY_BYTES = 64 * 1024;
 
+// 约定端口取自共享常量。协调器不定义它自己的默认端口——MCP 插件在没配
+// TOKENGAME_TABLE_ORIGIN 时打的是同一个地址，两处各写一遍的话改动一侧会表现为
+// 「模型说连不上牌桌，而牌桌明明开着」。
+const { DEFAULT_TABLE_ORIGIN, DEFAULT_TABLE_PORT } = require("../shared/endpoints.cjs");
+
 // 模型命令路由的令牌头。沿用权威那条 x-tokengame-* 的命名约定，但**不是**同一个令牌：
 // 权威令牌能发任何命令，这一个只能发模型面那五条。共用一个会让「给宿主配置模型接入」
 // 顺带把权威访问也交出去。
@@ -1068,6 +1073,8 @@ function normalizeDecision(value) {
 }
 
 module.exports = {
+  DEFAULT_TABLE_ORIGIN,
+  DEFAULT_TABLE_PORT,
   MIN_ENTRY_KEY_LENGTH,
   MODEL_COMMAND_TOKEN_HEADER,
   TableWebHost,

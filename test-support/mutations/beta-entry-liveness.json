@@ -1,0 +1,114 @@
+{
+  "name": "内测入口与模型面可见兜底",
+  "note": "B7。两件事：`ai.take_intents` 空手而归时必须说出在等什么（一席都没绑 vs 此刻没待办，两者读起来一样而该做的事相反），以及内测入口必须真的把模型命令口打开、把令牌交到人手上而不打印在终端里。都是「缺失时不能静默卡住」的具体形态。",
+  "test": "test/model-liveness-fallback.test.cjs",
+  "mutations": [
+    {
+      "id": "empty-hand-says-nothing",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "          ...(intents.length === 0 ? emptyHandedReason(handles.length) : {}),",
+      "replace": "",
+      "note": "空手而归时不说在等什么。这是缺陷本体：模型读到的两种处境一样，于是它只能继续轮询，而一席都没绑的那种轮询到世界末日都不会变。宿主那边看起来是「AI 在等」。"
+    },
+    {
+      "id": "no-seat-looks-like-idle",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "  if (seatsPolled === 0) {\n    return {\n      waiting_on: \"human_entry\",",
+      "replace": "  if (false) {\n    return {\n      waiting_on: \"human_entry\",",
+      "note": "一席都没绑也报「继续轮询」。比不报更坏：它明确地说了一句错话——「不需要真人做任何事」，而实际上非要真人去入座不可。"
+    },
+    {
+      "id": "idle-looks-like-no-seat",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "  return {\n    waiting_on: \"table\",",
+      "replace": "  return {\n    waiting_on: \"human_entry\",",
+      "note": "反向：席位在、只是没待办，却告诉模型去叫人入座。人会照着去建一间已经建好的房，或以为自己那一席掉了。"
+    },
+    {
+      "id": "waiting-reported-with-intents",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "          ...(intents.length === 0 ? emptyHandedReason(handles.length) : {}),",
+      "replace": "          ...emptyHandedReason(handles.length),",
+      "note": "有待办时也报在等待。模型在同一份回答里读到「这是你的待办」和「本席此刻没有该说话的意图」，两句互相矛盾，而它只能挑一句信。"
+    },
+    {
+      "id": "next-step-emptied",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "      next_step: \"本机协调器上还没有任何席位。请真人在浏览器里打开牌桌，建房或用邀请码加入；\"\n        + \"入座之后本席才会有待办。在那之前继续轮询不会有变化。\",",
+      "replace": "      next_step: \"\",",
+      "note": "只报机器可判定的枚举，不给人话。模型自己解决不了「去浏览器里坐下」，它能做的就是把这句话转达——空字符串等于它无话可转。"
+    },
+    {
+      "id": "empty-round-counted-as-drive-error",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      for (const failure of claim.body?.result?.failures ?? []) {",
+      "replace": "      for (const failure of claim.body?.result?.waiting_on === undefined ? [] : [{ code: claim.body.result.waiting_on }]) {",
+      "note": "把「在等」记成驱动故障。一张还没有人入座的桌子会每个驱动周期积一条错误，而 driveErrors 是诊断真故障的唯一入口，被这种噪声填满就等于没有。"
+    },
+    {
+      "id": "beta-route-left-disabled",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "  const host = new TableWebHost({ core, modelAdapter: adapter, modelCommandToken: token });",
+      "replace": "  const host = new TableWebHost({ core, modelAdapter: adapter });",
+      "note": "内测入口生成了令牌却没接上协调器。这正是 `npm run web` 的现状：牌桌照常能玩，模型路由关着，而它关着的方式是安静的——没有任何一席的宿主 AI 能发言，而 /api/health 里那行 disabled 不会有人主动去看。"
+    },
+    {
+      "id": "beta-token-hardcoded",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "  return { token: crypto.randomBytes(32).toString(\"hex\"), generated: true };",
+      "replace": "  return { token: \"tokengame-local-beta-token\", generated: true };",
+      "note": "写死一个「本地够用了」的令牌。本机任何进程都能替这个协调器上所有席位发言，而每一台装了这个仓库的机器用的是同一个值。"
+    },
+    {
+      "id": "beta-token-not-random",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "  return { token: crypto.randomBytes(32).toString(\"hex\"), generated: true };",
+      "replace": "  return { token: crypto.createHash(\"sha256\").update(\"tokengame\").digest(\"hex\"), generated: true };",
+      "note": "看起来随机但是确定的。长度、字符集、熵下界全部通过，两次启动却是同一个值——这条钉住的是「两次不同」，那是随机性唯一能从外面观察到的性质。"
+    },
+    {
+      "id": "beta-token-printed",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "    `  1. 模型令牌在 ${tokenFile}`,",
+      "replace": "    `  1. 模型令牌：${require(\"node:fs\").readFileSync(tokenFile, \"utf8\").trim()}`,",
+      "note": "把令牌印在终端里。人拿到它的难易没变，它被不小心带到别处的概率变了——终端回滚、`> log.txt`、一张截屏。"
+    },
+    {
+      "id": "beta-claims-proactive-wake",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "    proactive_wake_verified: false,",
+      "replace": "    proactive_wake_verified: true,",
+      "note": "声称主动唤醒已验证。它在任何宿主上都没有实机验证过，而这一行会被读成证据。"
+    },
+    {
+      "id": "beta-drops-polling-fallback",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "    \"关于唤醒：没有任何宿主验证过无点击主动唤醒，所以本机不提供它。\",\n    \"模型靠**轮询** ai.take_intents 拿待办；还没有人入座时它会明确回一句\",\n    \"「等真人入座」，而不是静默地空转。需要有人按一下才动的地方就是需要按一下。\",",
+      "replace": "",
+      "note": "不说兜底是什么。缺主动唤醒时「不静默卡住」的全部内容就是这句话——去掉它，人会以为 AI 会自己醒过来，然后等一个不会到的东西。"
+    },
+    {
+      "id": "beta-hides-token-path",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "  process.stdout.write(joinInstructions({ origin, tokenFile, adapter }));",
+      "replace": "",
+      "note": "只打机器可读的启动行，不打人话。既不打印令牌又不告诉人它在哪，等于没给——而启动行里那个相对路径读的人不一定知道拼在哪个目录下。"
+    },
+    {
+      "id": "beta-falls-back-to-random-port",
+      "file": "src/run-beta.cjs",
+      "test": "test/beta-entry.test.cjs",
+      "find": "  const webPort = readPort(process.env.TOKENGAME_WEB_PORT, \"TOKENGAME_WEB_PORT\", DEFAULT_TABLE_PORT);",
+      "replace": "  const webPort = readPort(process.env.TOKENGAME_WEB_PORT, \"TOKENGAME_WEB_PORT\");",
+      "note": "回落到随机端口。人刚把地址填进宿主配置，重启一次就指向了上一个端口，表现是「模型说连不上牌桌，而牌桌明明开着」。"
+    }
+  ],
+  "excluded": []
+}

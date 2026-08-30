@@ -34,7 +34,9 @@ const { requestEnvelope } = require("../../../src/contract/adapter-contract.cjs"
 // 因为直接打核心就必须自己持有席位凭据——那正是上面删掉的东西。留着两个变量名而不是
 // 复用一个，是为了让配错的人看得出自己配的是哪一层：指向核心时模型命令会因为缺
 // seat_id 被核心拒，那个报错读不出「你把协调器地址填成了核心地址」。
-const DEFAULT_TABLE_ORIGIN = "http://127.0.0.1:7802";
+// 协调器地址的默认值取自共享常量，不在这里抄一个数字。抄一份的坏法很具体：改了一侧的
+// 端口，表现是「模型说连不上牌桌，而牌桌明明开着」——读起来像网络问题，实际是两个数字。
+const { DEFAULT_TABLE_ORIGIN } = require("../../../src/shared/endpoints.cjs");
 const MODEL_TOKEN_HEADER = "x-tokengame-model-token";
 
 // 本进程不再直接打核心。

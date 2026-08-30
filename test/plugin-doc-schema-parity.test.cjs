@@ -130,6 +130,60 @@ test("SKILL 与 MCP schema 对账", async (t) => {
     assert.match(directiveText(skill), /intent_id|turn_id/, "SKILL 必须告诉模型用什么出示身份");
   });
 
+  await t.test("SKILL 的启动说明指向的命令真的能让模型发出命令", () => {
+    // B7 补的一条。此前 SKILL 写的是「`npm run core` 起权威核心，然后用 tokengame_table
+    // 发命令」——B6 之后那句不成立了：模型命令走协调器，而协调器要有模型令牌才开那条路。
+    // 照着旧说明做的模型会拿到 model_command_token_not_configured，而它手上没有任何
+    // 线索说明为什么。
+    //
+    // 判定方式不是查关键词，是**跟着说明走一遍**：把 SKILL 里点名的 npm 脚本取出来，
+    // 查它在不在 package.json 里，再查那个脚本的入口源码有没有真的接上 modelCommandToken。
+    // 只查关键词的话，把 `npm run beta` 改成 `npm run 随便什么` 也能绿。
+    const text = directiveText(skill);
+    const scripts = [...text.matchAll(/npm run ([a-z][a-z0-9:-]*)/g)].map((m) => m[1]);
+    assert.ok(scripts.length > 0, "SKILL 里没有任何启动命令——模型不知道该先做什么");
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    for (const name of scripts) {
+      assert.ok(pkg.scripts[name] !== undefined,
+        `SKILL 让人跑 npm run ${name}，而 package.json 里没有这个脚本`);
+    }
+
+    // 至少有一条被点名的脚本必须真的打开模型路由。
+    const enabling = scripts.filter((name) => {
+      const entry = /node\s+(\S+\.cjs)/.exec(pkg.scripts[name] ?? "");
+      if (entry === null) return false;
+      const file = path.join(ROOT, entry[1]);
+      if (!fs.existsSync(file)) return false;
+      return /modelCommandToken/.test(fs.readFileSync(file, "utf8"));
+    });
+    assert.notEqual(enabling.length, 0,
+      `SKILL 点名的启动命令（${scripts.join("、")}）没有一条会接上模型命令令牌。`
+      + "照着做的模型会拿到 model_command_token_not_configured，而它读不出原因。");
+
+    // 而且要说清那个令牌得配。缺它时的报错已经带 hint，但模型在**读文档的时候**就该知道
+    // 这一步存在——否则第一次调用必然失败，而第一次失败会被当成「这个项目坏了」。
+    assert.match(text, /TOKENGAME_MODEL_TOKEN/,
+      "SKILL 没提模型令牌这一步，而没有它模型一条命令都发不出去");
+  });
+
+  await t.test("SKILL 说清了空手而归时怎么分辨在等什么", () => {
+    // B7 的另一半。ai.take_intents 空手而归时会带 waiting_on，而模型只有知道去读它
+    // 才能分辨「再轮询一次」和「得叫人来入座」。文档不写的话，那个字段等于不存在——
+    // 模型不会去读一个没人告诉过它的字段，于是它继续轮询，表现为静默空转。
+    const text = directiveText(skill);
+    assert.match(text, /waiting_on/, "SKILL 没告诉模型去读 waiting_on");
+    for (const value of ["human_entry", "table"]) {
+      assert.ok(text.includes(value), `SKILL 没说 waiting_on 的取值 ${value} 是什么意思`);
+    }
+    // 取值必须与实现一致，不是文档里另起一套名字。
+    const surface = fs.readFileSync(path.join(ROOT, "src/host/model-command-surface.cjs"), "utf8");
+    for (const value of ["human_entry", "table"]) {
+      assert.match(surface, new RegExp(`waiting_on: "${value}"`),
+        `实现里没有 waiting_on: "${value}"，文档写的是另一套名字`);
+    }
+  });
+
   await t.test("这些断言在旧文本上会红", () => {
     // 自证：把当时的原句喂给同一组判定，必须被抓住。否则上面几条可能只是碰巧成立——
     // 一份改对了的文档让所有 doesNotMatch 都通过，而一份被删空的文档也让它们全部通过。
