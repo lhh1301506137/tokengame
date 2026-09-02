@@ -233,9 +233,20 @@ test("客户端：stopPolling 会掐掉已经在飞的那一次", () => {
 test("客户端：refresh 拿到结果之后会确认这条结果还有人要", () => {
   const body = handlerBody(clientCode(), "async function refresh");
   assert.ok(body.includes("AbortController"), "refresh 应当为本次拉取建一个中止句柄");
-  assert.ok(body.includes("state.pollAbort !== controller"),
+  // 只检查整个函数会假绿：catch 的错误围栏也含同一句。成功响应必须在首次写入
+  // wakeControls/state.view 之前自行核对控制器身份，否则删掉成功围栏的变异仍会被 catch
+  // 里的字符串遮住。这里把检查窗口收窄到「请求已返回 → 第一次交付结果」。
+  const resultAt = body.indexOf("const result = await post");
+  const deliveryAt = body.indexOf("wakeControls?.acceptView");
+  assert.notEqual(resultAt, -1, "refresh 没有发出视图请求");
+  assert.ok(deliveryAt > resultAt, "refresh 应在请求返回后才交付视图");
+  const successFence = body.slice(resultAt, deliveryAt);
+  assert.ok(successFence.includes("state.pollAbort !== controller"),
     "refresh 应当在 await 之后确认自己还是当前那一次——否则两条重叠响应里后到的"
     + "那条会把新画面覆盖回旧的");
+  assert.ok(successFence.includes("session !== state.sessionToken")
+    && successFence.includes("generation !== state.viewGeneration"),
+  "成功响应还必须属于同一会话与同一视图世代");
   assert.ok(body.includes("AbortError"),
     "自己掐掉的那一次不该被当成故障显示");
 });

@@ -7,7 +7,8 @@
   理由不是省事——一旦页面自己算一份，它就会和权威分叉，而分叉的那一刻玩家看到的牌桌
   就不再是真的那一桌。
 
-  它也拿不到席位凭据。浏览器手上只有一个会话令牌，凭据留在本机协调器进程里（F6）。
+  它拿不到核心席位凭据。浏览器持续保存的权限只有真人会话令牌；逐席 AI 受限令牌
+  只经用户确认后的临时下载交付，不进入页面状态。核心凭据留在协调器进程里（F6）。
 
   会话令牌存在 sessionStorage，不存 localStorage，也不进 URL。三者的差别正是这里要的：
   - localStorage 跨标签页、跨会话长期留存，等于把一份能代表席位行动的东西留在磁盘上，
@@ -34,6 +35,8 @@ const state = {
   // 当前那次轮询的中止句柄。stopPolling 要掐的不只是「下一次」，还有「这一次」——
   // 理由写在 stopPolling 里。
   pollAbort: null,
+  // 通知/授权控制前后的屏障：旧轮询不能覆盖较新的控制回执或恢复旧绑定。
+  viewGeneration: 0,
   disconnected: false,
   // 上一次渲染时时间线的长度，用来决定要不要把滚动条推到底。
   lastMessageCount: 0,
@@ -46,6 +49,11 @@ const state = {
 };
 
 const el = (id) => document.getElementById(id);
+let wakeControls = null;
+// 可选模块未到达时授权请求也能进行。票据只记录本标签页的在途传输，
+// 不代表服务器模式或绑定事实；交叠请求必须全部完成后才能解除通知表单屏障。
+const wakeAuthorizationOperations = new Set();
+let wakePauseTicket = null;
 
 // ---- 会话令牌的标签页级留存 ----
 
@@ -105,6 +113,7 @@ async function post(route, body, { signal } = {}) {
   if (!response.ok || payload.ok === false) {
     const error = new Error(payload.code ?? `http_${response.status}`);
     error.code = payload.code ?? `http_${response.status}`;
+    error.status = response.status;
     error.details = payload.details ?? null;
     throw error;
   }
@@ -114,7 +123,10 @@ async function post(route, body, { signal } = {}) {
 // 动作一律经 /api/action。协调器按白名单把关，并注入席位句柄——页面既不知道
 // 自己的凭据，也无法替别席行动。
 function act(command, params = {}) {
-  return post("/api/action", { session_token: state.sessionToken, command, params });
+  const guarded = command === "ai.set_mode" || command === "seat.leave";
+  const ticket = guarded ? pauseWakeControls(command === "seat.leave" ? "正在离桌" : "正在更改本席 AI 状态") : null;
+  const result = post("/api/action", { session_token: state.sessionToken, command, params });
+  return guarded ? result.finally(() => resumeWakeControls(ticket)) : result;
 }
 
 // 错误码到人话。看不懂的码原样显示：编一句更顺的话会把真实原因藏起来。
@@ -137,6 +149,12 @@ const MESSAGES = {
   credential_leak: "协调器检测到凭据可能外泄，已经拦下这次响应。这是本机缺陷，请报告。",
   local_bridge_auth_unresolved: "本机桥接认证尚未设计完成，拒绝对外监听。",
   action_not_permitted: "这个操作不允许从浏览器发起。",
+  model_command_route_disabled: "这个入口未开启 AI 绑定，请使用 npm run beta 启动。",
+  model_binding_changed: "本席 AI 权限已变化，这次旧请求已失效。请刷新后重试。",
+  model_binding_request_conflict: "这次下载请求已过期。请刷新页面，重新确认并下载。",
+  model_binding_history_full: "本会话的连接换发次数已用完；可继续手动打牌，结束本次参与后重新入座再连接 AI。",
+  model_connection_invalid: "连接文件响应无效，未下载。请重试或报告问题。",
+  secure_random_unavailable: "浏览器不支持安全随机数，无法建立 AI 连接。请使用本机回环地址打开。",
 };
 
 function explain(error) {
@@ -201,6 +219,7 @@ el("join-form").addEventListener("submit", (event) => {
 
 function enterTable(result) {
   state.sessionToken = result.session_token;
+  wakeControls?.setSession(state.sessionToken);
   state.connectionId = result.connection_id ?? null;
   state.seatId = result.seat_id ?? null;
   rememberSession(state.sessionToken);
@@ -256,6 +275,9 @@ function stopPolling() {
 
 async function refresh() {
   if (state.sessionToken === null) return;
+  const session = state.sessionToken;
+  const generation = state.viewGeneration;
+  const wakeTicket = wakeControls?.viewTicket();
   // 每次轮询自带一个可中止句柄，但**这里不掐上一次**。
   //
   // 重叠确实要处理：服务端慢下来时两次拉取会同时在飞，而哪一条先回来是不定的，
@@ -280,6 +302,8 @@ async function refresh() {
     // 回来之后再确认一次会话还在。中止只保证 fetch 会拒，不保证「已经解析出结果的那次」
     // 不往下走；而这一跳之后要动的是全局画面。
     if (state.sessionToken === null || state.pollAbort !== controller) return;
+    if (session !== state.sessionToken || generation !== state.viewGeneration) return;
+    wakeControls?.acceptView(wakeTicket, result.view);
     state.view = result.view;
     clearError(el("global-error"));
     render(result.view);
@@ -287,6 +311,7 @@ async function refresh() {
     // 自己掐的不算错误。AbortError 是「这条结果已经没人要了」，不是故障——
     // 把它当故障显示会在离桌与掉线时闪一条无意义的红字。
     if (error?.name === "AbortError") return;
+    if (session !== state.sessionToken || generation !== state.viewGeneration || state.pollAbort !== controller) return;
     // 会话终结要停下来，否则会一秒一次地刷同一个错误——每一次还是一条控制台 403。
     // seat_credential_revoked 不只在自愿离桌时出现：掉线满 120 秒后座位被释放，
     // 那个还开着的标签页会一直撞在这个码上。两种情况的正确收尾都是回到入口。
@@ -313,6 +338,8 @@ function render(view) {
   renderSeats(view);
   renderActions(view);
   renderSeatControls(view);
+  renderModelConnection(view);
+  renderModelWake();
   renderTimeline(view);
 }
 
@@ -394,6 +421,7 @@ function returnToEntry(message) {
   // 让下一次刷新拿一个必然被拒的令牌去试恢复，然后在控制台留一条 403。
   rememberSession(null);
   state.sessionToken = null;
+  wakeControls?.setSession(null);
   state.connectionId = null;
   state.seatId = null;
   state.view = null;
@@ -401,6 +429,10 @@ function returnToEntry(message) {
   // 待落座的意图跟着一起清。留着的话下次回到入口时 renderScopeGate 会把对话框顶起来，
   // 而它对应的那次意图早就作废了。
   state.pendingEntry = null;
+  modelBindingRequest = null;
+  el("model-consent").checked = false;
+  el("model-connection-feedback").textContent = "";
+  clearError(el("model-connection-error"));
   el("scope-gate").hidden = true;
   el("table-main").hidden = true;
   el("entry-view").hidden = false;
@@ -441,10 +473,10 @@ function renderRoom(view) {
   // "还差一个人"会在开局规则变化时说错话，而玩家看到的解释必须和权威的判定一致。
   el("start-reason").textContent = describeStart(room?.start_decision ?? null, room);
 
-  const adapter = view.model_adapter;
+  const adapter = view.model_adapter ?? {};
   if (adapter.attached !== true) {
     // 未接入就说未接入。把"本机没有模型"画成"AI 选择了沉默"是不能做的那种冒充。
-    el("adapter-state").textContent = "未接入";
+    el("adapter-state").textContent = modelConnectionLabel(view.model_connection);
   } else {
     el("adapter-state").textContent = adapter.simulated === true
       ? `${adapter.label ?? "适配器"}（模拟）`
@@ -875,6 +907,177 @@ async function submitAction(type, to, panel, button) {
 
 // ---- 座位控制 ----
 
+// 本人授权后下载的 token 只存活在下载函数局部，不进入状态对象、DOM、URL 或 storage。
+let modelBindingBusy = false;
+let modelBindingRequest = null;
+
+function pauseWakeControls(reason) {
+  const ticket = { sessionToken: state.sessionToken, reason };
+  wakeAuthorizationOperations.add(ticket);
+  if (wakeControls !== null) wakePauseTicket = wakeControls.pause(reason);
+  else state.viewGeneration += 1;
+  return ticket;
+}
+
+function resumeWakeControls(ticket) {
+  if (!wakeAuthorizationOperations.delete(ticket) || ticket.sessionToken !== state.sessionToken) return;
+  const pending = [...wakeAuthorizationOperations].find((item) => item.sessionToken === state.sessionToken);
+  if (wakeControls === null) { state.viewGeneration += 1; return; }
+  if (pending !== undefined) {
+    wakePauseTicket = wakeControls.pause(pending.reason);
+    return;
+  }
+  if (wakePauseTicket !== null) wakeControls.resume(wakePauseTicket);
+  wakePauseTicket = null;
+}
+
+function renderModelWake() {
+  if (wakeControls === null) return;
+  const view = wakeControls.snapshot();
+  el("modelWakeControls").disabled = false;
+  el("modelWakeControls").dataset.state = view.ui_state;
+  el("modelWakeForm").setAttribute("aria-busy", String(["starting", "stopping"].includes(view.ui_state)));
+  const fixedTarget = view.target_configured === true;
+  const taskInput = el("modelWakeTaskId");
+  if (taskInput.value !== view.fields.threadId) taskInput.value = view.fields.threadId;
+  taskInput.disabled = fixedTarget || !view.editable;
+  el("modelWakeTaskField").hidden = fixedTarget;
+  el("modelWakeFixedTarget").hidden = !fixedTarget;
+  el("modelWakeFixedTarget").textContent = "发送器已固定当前游戏任务，UUID不向页面公开。开启前请让目标任务结束当前回复并保持空闲；任务正在运行时，通知可能已接收却不能并发结清。";
+  for (const [id, name] of [["modelWakeMaxNotifications", "maxNotifications"],
+    ["modelWakeDurationSeconds", "durationSeconds"]]) {
+    const input = el(id);
+    if (input.value !== view.fields[name]) input.value = view.fields[name];
+    input.disabled = !view.editable;
+  }
+  if (view.limits !== null) {
+    el("modelWakeMaxNotifications").max = String(view.limits.max_notifications);
+    el("modelWakeDurationSeconds").max = String(view.limits.max_duration_ms / 1000);
+  } else {
+    el("modelWakeMaxNotifications").removeAttribute("max");
+    el("modelWakeDurationSeconds").removeAttribute("max");
+  }
+  el("modelWakeConsent").checked = view.consent;
+  el("modelWakeConsent").disabled = !view.editable;
+  el("modelWakeStart").disabled = !view.can_start;
+  el("modelWakeStop").disabled = !view.can_stop;
+  el("modelWakeRetry").disabled = !view.can_retry;
+  el("modelWakeRetry").hidden = !["start_unknown", "stop_unknown"].includes(view.ui_state);
+  el("modelWakeRetry").textContent = view.retry_text;
+  el("modelWakeLimits").textContent = view.limits === null ? "通知能力或限制未知，已禁用开启。"
+    : `本服务实际上限：${view.limits.max_notifications} 次、${view.limits.max_duration_ms / 1000} 秒。次数是上限，不保证 AI 回复。`;
+  for (const [id, value] of [["modelWakeStatus", view.status_text], ["modelWakeCounts", view.counts_text],
+    ["modelWakeTiming", view.timing_text], ["modelWakeCleanup", view.cleanup_text], ["modelWakeValidation", view.validation],
+    ["modelWakeError", view.error]]) el(id).textContent = value;
+  el("modelWakeError").hidden = view.error === "";
+}
+
+for (const [id, name] of [["modelWakeTaskId", "threadId"], ["modelWakeMaxNotifications", "maxNotifications"],
+  ["modelWakeDurationSeconds", "durationSeconds"]]) {
+  el(id).addEventListener("input", () => wakeControls?.setField(name, el(id).value));
+}
+el("modelWakeConsent").addEventListener("change", () => wakeControls?.setConsent(el("modelWakeConsent").checked));
+el("modelWakeForm").addEventListener("submit", (event) => { event.preventDefault(); void wakeControls?.start(); });
+el("modelWakeRetry").addEventListener("click", () => { void wakeControls?.retry(); });
+el("modelWakeStop").addEventListener("click", () => { void wakeControls?.stop(); });
+
+function modelConnectionLabel(connection) {
+  return {
+    disabled: "本入口未开启 AI 连接",
+    unbound: "尚未绑定本席 AI",
+    awaiting_host: "已授权，等待宿主连接",
+    host_seen: "已收到本席宿主请求",
+  }[connection?.state] ?? "未接入";
+}
+
+function renderModelConnection(view) {
+  const connection = view.model_connection;
+  const me = view.seats.find((seat) => seat.is_viewer) ?? null;
+  el("model-connection-state").textContent = modelConnectionLabel(connection);
+  const available = connection !== undefined && connection.state !== "disabled"
+    && me !== null && me.leave_requested !== true && me.public_scope_confirmed === true;
+  const bound = ["awaiting_host", "host_seen"].includes(connection?.state);
+  el("model-consent").disabled = !available || modelBindingBusy;
+  el("model-bind-download").disabled = !available || modelBindingBusy || !el("model-consent").checked;
+  el("model-unbind").disabled = !available || !bound || modelBindingBusy;
+  el("model-connection-help").textContent = connection?.state === "host_seen"
+    ? "协调器收到过本席宿主请求，不代表持续在线或无点击主动唤醒。宿主停止后可能需要你发消息或点击继续。"
+    : "使用你当前宿主会话的模型，不需要另填模型 API。此处只建立本席通道，不证明宿主能无点击主动唤醒。";
+}
+
+el("model-consent").addEventListener("change", () => {
+  if (state.view !== null) renderModelConnection(state.view);
+});
+
+el("model-bind-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (modelBindingBusy || state.sessionToken === null || !el("model-consent").checked) return;
+  const session = state.sessionToken;
+  const seat = state.seatId;
+  const wakeTicket = pauseWakeControls("正在换发本席 AI 连接");
+  modelBindingBusy = true;
+  clearError(el("model-connection-error"));
+  renderModelConnection(state.view);
+  try {
+    if (typeof globalThis.crypto?.randomUUID !== "function") {
+      throw new Error("secure_random_unavailable");
+    }
+    modelBindingRequest ??= `model-bind-${crypto.randomUUID()}`;
+    const result = await post("/api/model/bind", {
+      session_token: session,
+      acknowledged: true,
+      binding_request_id: modelBindingRequest,
+    });
+    if (session !== state.sessionToken) return;
+    const connection = result.connection;
+    if (connection?.schema !== "tokengame.model-connection.v1"
+      || typeof connection.model_token !== "string" || typeof connection.table_origin !== "string") {
+      throw new Error("model_connection_invalid");
+    }
+    const blob = new Blob([JSON.stringify(connection, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tokengame-ai-${seat}.json`;
+    try { link.click(); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    modelBindingRequest = null;
+    el("model-consent").checked = false;
+    el("model-connection-feedback").textContent = "下载请求已发出。请由真人运行 npm run connection:activate -- \"<下载文件绝对路径>\"；成功后无需重启 MCP。原下载文件不会自动删除，也不要粘贴其内容。";
+    resumeWakeControls(wakeTicket);
+    await refresh();
+  } catch (error) {
+    if (session === state.sessionToken) showError(el("model-connection-error"), error);
+  } finally {
+    resumeWakeControls(wakeTicket);
+    modelBindingBusy = false;
+    if (state.view !== null) renderModelConnection(state.view);
+  }
+});
+
+el("model-unbind").addEventListener("click", async () => {
+  if (modelBindingBusy || state.sessionToken === null) return;
+  const session = state.sessionToken;
+  const wakeTicket = pauseWakeControls("正在撤销本席 AI 连接");
+  modelBindingBusy = true;
+  renderModelConnection(state.view);
+  clearError(el("model-connection-error"));
+  try {
+    await post("/api/model/unbind", { session_token: session });
+    if (session !== state.sessionToken) return;
+    modelBindingRequest = null;
+    el("model-consent").checked = false;
+    el("model-connection-feedback").textContent = "本席 AI 连接已撤销，旧文件不能发起后续请求。再由真人运行 npm run connection:clear 清本地活动槽位；已提交处理的请求可能仍完成。";
+    resumeWakeControls(wakeTicket);
+    await refresh();
+  } catch (error) {
+    if (session === state.sessionToken) showError(el("model-connection-error"), error);
+  } finally {
+    resumeWakeControls(wakeTicket);
+    modelBindingBusy = false;
+    if (state.view !== null) renderModelConnection(state.view);
+  }
+});
+
 function renderSeatControls(view) {
   const me = view.seats.find((seat) => seat.is_viewer) ?? null;
   const readyBtn = el("ready-toggle");
@@ -1176,6 +1379,22 @@ el("copy-invite").addEventListener("click", async () => {
 
 updateCounter();
 
+// 只读机器视图与测试采样钩子，不暴露会话/连接文件，也不能快进权威牌局时钟。
+window.render_game_to_text = () => JSON.stringify({
+  coordinate_system: "DOM 布局，左上为原点；所有扑克动作由权威决定",
+  screen: state.view === null ? "entry" : "table",
+  room: state.view?.room ?? null,
+  hand: state.view?.hand ?? null,
+  seats: state.view?.seats ?? [],
+  messages: state.view?.messages ?? [],
+  action_panel: state.view?.action_panel ?? null,
+  model_connection: state.view?.model_connection ?? null,
+  model_wake: wakeControls?.visibleState() ?? null,
+});
+window.advanceTime = async () => {
+  if (state.sessionToken !== null && !state.disconnected) await refresh();
+};
+
 // ---- 启动：刷新之后先试着回到原座位 ----
 //
 // 顶层 await 在经典脚本里不可用（这个文件是 <script> 不是 module），所以用一个立即
@@ -1184,10 +1403,28 @@ updateCounter();
 //
 // 恢复失败时静默回入口，不弹错误：一个刚打开的新标签页里 sessionStorage 是空的，
 // 那不是异常；一个过了保留窗的旧令牌被拒也不是玩家做错了什么。只有恢复成功才改画面。
+(async function initializeWakeControls() {
+  // 独立启动可选控件，不让其网络请求悬挂拖住下面的原会话恢复。
+  try {
+    const { WakeControls } = await import("/wake-controls.mjs");
+    wakeControls = new WakeControls({ request: post, onChange: renderModelWake,
+      onFence: () => { state.viewGeneration += 1; } });
+    wakeControls.setSession(state.sessionToken);
+    const pending = [...wakeAuthorizationOperations].find((item) => item.sessionToken === state.sessionToken);
+    if (pending !== undefined) wakePauseTicket = wakeControls.pause(pending.reason);
+    renderModelWake();
+  } catch {
+    el("modelWakeControls").dataset.state = "unavailable";
+    el("modelWakeStatus").textContent = "通知控件加载失败，未启用自动通知；手动打牌、聊天和撤销连接仍可使用。";
+  }
+})();
+
 (async function resumeIfPossible() {
+  if (state.sessionToken !== null) return;
   const token = recallSession();
   if (token === null) return;
   state.sessionToken = token;
+  wakeControls?.setSession(token);
   try {
     const result = await post("/api/session/resume", { session_token: token });
     // 不传 connection_id，让协调器铸一个新的。理由在 table-web-host.cjs 的 postResume
@@ -1204,5 +1441,6 @@ updateCounter();
   } catch {
     rememberSession(null);
     state.sessionToken = null;
+    wakeControls?.setSession(null);
   }
 })();

@@ -626,6 +626,25 @@ class TableOrchestrator {
     return this.ai.startEvaluation(input);
   }
 
+  // ai.start 的私有响应与启动在同次同步命令内完成。source_event 来自实际启动的 turn，
+  // 不用领取时的快照：工作项在 claim 后仍可能被更新为更新的合法事件。
+  modelContext({ seatId, turnId }) {
+    const sourceEvent = this.ai.evaluationContext(seatId, turnId);
+    const timeline = this.ai.publicTimeline();
+    return {
+      schema: "tokengame.seat-ai-context.v1",
+      seat_id: seatId,
+      player_id: this.requirePlayerId(seatId),
+      turn_id: turnId,
+      source_event: sourceEvent,
+      room: this.rooms.roomState(),
+      hand: this.seatHandView(seatId),
+      timeline: timeline.slice(-50),
+      timeline_total: timeline.length,
+      timeline_truncated: timeline.length > 50,
+    };
+  }
+
   // 把到期的 claim 放回可领状态。由到期驱动调用。
   releaseExpiredIntentClaims() {
     return this.ai.releaseExpiredIntentClaims();

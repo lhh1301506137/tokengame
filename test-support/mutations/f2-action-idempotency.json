@@ -126,16 +126,16 @@
     {
       "id": "F2-16-命令面不透传-hand_id",
       "file": "src/authority/command-surface.cjs",
-      "needle": "        handId: p.hand_id,",
-      "replacement": "        handId: o.requireHand().id,",
+      "needle": "          ...(p.amount === undefined ? {} : { amount: p.amount }),\n          handId: p.hand_id,",
+      "replacement": "          ...(p.amount === undefined ? {} : { amount: p.amount }),\n          handId: o.requireHand().id,",
       "test": "test/action-idempotency.test.cjs",
       "guards": "命令面用当前手号覆盖调用方给的手号，hand_id 门禁永远自我满足，指向旧手的请求照常执行。"
     },
     {
       "id": "F2-17-命令面不透传-expected_revision",
       "file": "src/authority/command-surface.cjs",
-      "needle": "        expectedRevision: p.expected_revision,",
-      "replacement": "        expectedRevision: o.requireHand().revision,",
+      "needle": "          ...(p.amount === undefined ? {} : { amount: p.amount }),\n          handId: p.hand_id,\n          expectedRevision: p.expected_revision,",
+      "replacement": "          ...(p.amount === undefined ? {} : { amount: p.amount }),\n          handId: p.hand_id,\n          expectedRevision: o.requireHand().revision,",
       "test": "test/action-idempotency.test.cjs",
       "guards": "命令面用当前版本覆盖调用方给的版本，revision 门禁永远自我满足，跨街重放恢复。"
     },

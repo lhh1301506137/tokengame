@@ -1,21 +1,21 @@
 {
   "name": "协调器模型命令口：远端模型客户端与进程内驱动同一条实现",
-  "note": "B6-2。收敛前 MCP 进程自己持有一份 SeatCustody，而它唯一的绑定入口有零个产品调用者——于是 ai.take_intents 在一张空表上扇出，seats_polled 恒为 0，真实宿主 AI 永远驱动不了任何一席。收敛后模型命令由协调器出口，MCP 进程只是 stdio 到 HTTP 的转运。这条边界因此需要一道鉴权、一道版本闸门，以及两侧各一道出门扫描；这份变异谱只覆盖这几项新增行为。",
+  "note": "B6/B8。模型经唯一协调器的同一托管与命令面访问，但令牌由真人逐席绑定，不再授予进程级全席能力。此谱覆盖失败关闭、鉴权、版本和出门净化扫描；绑定生命周期另见 seat-model-binding.json。",
   "test": "test/coordinator-model-route.test.cjs",
   "mutations": [
     {
       "id": "route-open-without-token",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (this.modelCommandToken === null) {\n      sendJson(response, 503, { ok: false, code: \"model_command_route_disabled\" });\n      return;\n    }",
+      "find": "    if (!this.modelBindingEnabled) {\n      sendJson(response, 503, { ok: false, code: \"model_command_route_disabled\" });\n      return;\n    }",
       "replace": "",
-      "note": "没配令牌时这条路照样开着。失败关闭是这一档的全部内容：未配置的默认必须是关，否则一台机器只要跑起协调器就把所有席位的发言权对局域网敞开。"
+      "note": "未开启逐席接入时不再如实失败关闭，匿名调用变成令牌错误而不是配置关闭。"
     },
     {
       "id": "token-check-removed",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (!sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)) {",
-      "replace": "    if (false) {",
-      "note": "令牌不再校验。配了令牌但谁都能进，比不配更坏——运维会以为已经关上了。"
+      "find": "    const binding = [...this.modelBindings.values()].find((entry) => sameToken(token, entry.token));",
+      "replace": "    const binding = [...this.modelBindings.values()][0];",
+      "note": "不校验逐席令牌而替调用者选第一席；匿名/错误令牌会真正取得该席能力。"
     },
     {
       "id": "empty-string-counts-as-configured",
@@ -48,14 +48,14 @@
     {
       "id": "health-always-reports-enabled",
       "file": "src/host/table-web-host.cjs",
-      "find": "        model_command_route: this.modelCommandToken === null ? \"disabled\" : \"enabled\",",
+      "find": "        model_command_route: this.modelBindingEnabled ? \"enabled\" : \"disabled\",",
       "replace": "        model_command_route: \"enabled\",",
       "note": "健康检查永远说这条路开着。一条内测启动脚本会照着它判断该不该把令牌发给宿主，读到 enabled 而实际关着会让排查转向宿主一侧。"
     },
     {
       "id": "version-gate-removed",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (body.contract_version !== CONTRACT_VERSION) {\n      sendJson(response, 400, {\n        ok: false,\n        code: \"contract_version_mismatch\",\n        details: { expected: CONTRACT_VERSION, received: body.contract_version },\n      });\n      return;\n    }",
+      "find": "    if (body.contract_version !== CONTRACT_VERSION) {\n      sendJson(response, 400, {\n        ok: false,\n        code: \"contract_version_mismatch\",\n        details: { expected: CONTRACT_VERSION, received: typeof body.contract_version === \"number\" ? body.contract_version : null },\n      });\n      return;\n    }",
       "replace": "",
       "note": "跨版本放行。插件装在宿主自己的配置里，协调器从仓库跑，两者会停在不同提交上——没有闸门时旧插件发来的字段被静默忽略，表现为「某个参数不起作用」而不是一个可判定的错误码。"
     },
@@ -69,28 +69,28 @@
     {
       "id": "version-gate-before-token-gate",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (!sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)) {\n      // 只回码。回显命令名或席位数会让这条路变成枚举口：不带令牌就能问出\n      // 「这个协调器上有几席」「这条命令存不存在」。\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\" });\n      return;\n    }",
-      "replace": "    const tokenOk = sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken);",
-      "note": "把令牌闸门挪到版本闸门之后（这里的写法是先算不拒，于是版本先答）。未鉴权的调用者因此能问出本机跑的是哪一版合同——一次不用令牌就能拿到的指纹。"
+      "find": "    const binding = [...this.modelBindings.values()].find((entry) => sameToken(token, entry.token));",
+      "replace": "    if (body.contract_version !== CONTRACT_VERSION) {\n      sendJson(response, 400, { ok: false, code: \"contract_version_mismatch\", details: { expected: CONTRACT_VERSION } });\n      return;\n    }\n    const binding = [...this.modelBindings.values()].find((entry) => sameToken(token, entry.token));",
+      "note": "先回答版本再鉴权，使无令牌的请求能探测协调器合同版本。"
     },
     {
       "id": "rejection-echoes-command",
       "file": "src/host/table-web-host.cjs",
-      "find": "      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\" });",
-      "replace": "      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\", command: body.command ?? null });",
+      "find": "    if (binding === undefined) {\n      // 只回码。回显命令名或席位数会让这条路变成枚举口：不带令牌就能问出\n      // 「这个协调器上有几席」「这条命令存不存在」。\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\" });",
+      "replace": "    if (binding === undefined) {\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\", command: body.command ?? null });",
       "note": "拒绝时回显命令名。这让 403 变成一个命令面的探测口：不带令牌就能逐个试出哪些命令存在。"
     },
     {
       "id": "response-not-scanned",
       "file": "src/host/table-web-host.cjs",
-      "find": "    this.custody.assertNoLeak(JSON.stringify(sanitized), \"model_command_response\");",
+      "find": "    this.assertNoModelLeak(sanitized, \"model_command_response\");",
       "replace": "",
       "note": "出门前不再扫描。sanitizeResult 已经摘了已知字段，所以这条删掉后功能不变——它兜的是「将来某个新字段带出了秘密」，而那时没有这道门就没有人会知道。"
     },
     {
       "id": "response-not-sanitized",
       "file": "src/host/table-web-host.cjs",
-      "find": "    const sanitized = this.custody.sanitizeResult(result.body);",
+      "find": "    const sanitized = this.sanitizeModelTokens(this.custody.sanitizeResult(result.body));",
       "replace": "    const sanitized = result.body;",
       "note": "不再净化，只靠下面那道扫描。两者不同：净化是摘掉该摘的，扫描是命中就整份扣下。只剩扫描时，一次本该被摘掉的字段会让整个响应变成一条安全错误，模型面从此完全不可用。"
     },

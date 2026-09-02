@@ -37,7 +37,7 @@ async function coreAt(t, { token = DEFAULT_AUTHORITY_TOKEN } = {}) {
 
   // 协调器接同一个核心。真人命令与模型命令都落到它这一份托管上。
   const core = new HttpCoreClient({ origin, token });
-  const host = new TableWebHost({ core, modelCommandToken: MODEL_TOKEN });
+  const host = new TableWebHost({ core, modelBindingEnabled: true });
   const tableOrigin = await host.start({ port: 0 });
   t.after(() => host.stop());
 
@@ -46,17 +46,20 @@ async function coreAt(t, { token = DEFAULT_AUTHORITY_TOKEN } = {}) {
     authority: process.env.TOKENGAME_AUTHORITY_TOKEN,
     table: process.env.TOKENGAME_TABLE_ORIGIN,
     model: process.env.TOKENGAME_MODEL_TOKEN,
+    file: process.env.TOKENGAME_MODEL_CONNECTION_FILE,
   };
   process.env.TOKENGAME_COMMAND_ORIGIN = origin;
   process.env.TOKENGAME_AUTHORITY_TOKEN = token;
   process.env.TOKENGAME_TABLE_ORIGIN = tableOrigin;
   process.env.TOKENGAME_MODEL_TOKEN = MODEL_TOKEN;
+  delete process.env.TOKENGAME_MODEL_CONNECTION_FILE;
   t.after(() => {
     for (const [key, value] of [
       ["TOKENGAME_COMMAND_ORIGIN", saved.command],
       ["TOKENGAME_AUTHORITY_TOKEN", saved.authority],
       ["TOKENGAME_TABLE_ORIGIN", saved.table],
       ["TOKENGAME_MODEL_TOKEN", saved.model],
+      ["TOKENGAME_MODEL_CONNECTION_FILE", saved.file],
     ]) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -78,6 +81,17 @@ async function tableRoute(tableOrigin, route, body) {
     body: JSON.stringify(body),
   });
   return { status: response.status, body: await response.json() };
+}
+
+// 真人显式授权这一席；MCP 的兼容环境变量路径也只能携带逐席令牌。
+async function bindModel(tableOrigin, sessionToken) {
+  const response = await tableRoute(tableOrigin, "/api/model/bind", {
+    session_token: sessionToken, acknowledged: true, binding_request_id: "mcp-test-binding-request-0001",
+  });
+  assert.equal(response.body.ok, true, response.body.code);
+  const token = response.body.connection.model_token;
+  process.env.TOKENGAME_MODEL_TOKEN = token;
+  return token;
 }
 
 // 经模型可见的 MCP 工具发一条命令。这是模型能走的唯一一条路。
@@ -263,6 +277,8 @@ test("MCP：两面配合就能进入牌局，且开局由核心自己走表", as
     assert.equal(asModel.body.code, "command_not_model_facing", asModel.raw);
   }
 
+  await bindModel(tableOrigin, seats[0].token);
+
   // 从这里往下，不再发任何能推进规则的命令。只读投影，等核心自己开局。
   // 只读命令不写状态，所以这个轮询不构成「宿主在推进规则」。
   let started = false;
@@ -285,8 +301,8 @@ test("MCP：两面配合就能进入牌局，且开局由核心自己走表", as
     assert.equal(seat.hole_cards, null, `公开投影漏了底牌: ${JSON.stringify(seat)}`);
   }
 
-  // 底牌只走真人面。view.hand 是全系统唯一吐底牌的出口，分权后它归真人：座位 AI 的上下文
-  // 由权威裁剪后随 intent 一起给出（F5 要求 2），给模型第二条自取底牌的路等于绕过那次裁剪。
+  // 模型不能主动索取任意席位底牌。B8 由授权后的 ai.start 在同次权威派发中返回
+  // model_context（含本席底牌），而不是把 view.hand 扩进模型面。
   const holeByModel = await table("view.hand", {});
   assert.equal(holeByModel.isError, true, "模型工具居然能读底牌");
   assert.equal(holeByModel.body.code, "command_not_model_facing", holeByModel.raw);
@@ -367,6 +383,7 @@ test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t)
   for (const seat of seats) {
     assert.equal((await human("room.confirm_public_scope", { acknowledged: true }, seat.token)).isError, false);
   }
+  const modelToken = await bindModel(tableOrigin, seats[0].token);
 
   // 掉线 -> 恢复。协调器这一侧的恢复是 /api/session/resume，它内部铸一个新连接 id 再连；
   // 核心那条 seat.recover 由协调器的租约扫描按需发，不在 BROWSER_ACTIONS 里。
@@ -425,6 +442,7 @@ test("F6：模型可见的整段 transcript 不含任何席位凭据", async (t)
   // ---- 断言 ----
   const text = transcript.join("\n");
   const secrets = credentialsInCore(service);
+  assert.equal(text.includes(modelToken), false, "逐席模型传输令牌不得进入工具 transcript");
 
   // 先证明「要扫的东西确实存在」。少了这一步，凭据若是空串或 undefined，下面的 includes
   // 会永真，整条测试变成一个看起来很绿的空壳。
@@ -507,11 +525,18 @@ async function stubTableAt(t, body) {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
-  const saved = { table: process.env.TOKENGAME_TABLE_ORIGIN, model: process.env.TOKENGAME_MODEL_TOKEN };
+  const saved = {
+    table: process.env.TOKENGAME_TABLE_ORIGIN, model: process.env.TOKENGAME_MODEL_TOKEN,
+    file: process.env.TOKENGAME_MODEL_CONNECTION_FILE,
+  };
   process.env.TOKENGAME_TABLE_ORIGIN = `http://127.0.0.1:${server.address().port}`;
   process.env.TOKENGAME_MODEL_TOKEN = MODEL_TOKEN;
+  delete process.env.TOKENGAME_MODEL_CONNECTION_FILE;
   t.after(() => {
-    for (const [key, value] of [["TOKENGAME_TABLE_ORIGIN", saved.table], ["TOKENGAME_MODEL_TOKEN", saved.model]]) {
+    for (const [key, value] of [
+      ["TOKENGAME_TABLE_ORIGIN", saved.table], ["TOKENGAME_MODEL_TOKEN", saved.model],
+      ["TOKENGAME_MODEL_CONNECTION_FILE", saved.file],
+    ]) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }

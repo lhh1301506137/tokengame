@@ -35,7 +35,7 @@ const HOST_COMMANDS = Object.freeze([
   "ai.resolve",
   "ai.set_mode",
   "ai.hide_local",
-  // 看牌桌。view.hand 是唯一吐底牌的出口，凭据把关。
+  // 看牌桌。view.hand 是独立私有读取口；ai.start 的私有上下文也投影本席底牌。
   "view.projection",
   "view.timeline",
   "view.hand",
@@ -133,8 +133,8 @@ const CREDENTIAL_COMMANDS = Object.freeze([
 // 能出示的只有权威铸造的 intent_id / turn_id，一次性，且只有这三条命令认它。
 // 席位身份的补齐在 src/host/model-command-surface.cjs。
 //
-// view.hand 刻意不在这里：它是唯一吐底牌的出口，而座位 AI 的上下文由权威裁剪后随 intent
-// 一起给出（F5 要求 2）。给模型第二条自取底牌的路等于让它绕过那次裁剪。
+// view.hand 刻意不在这里：座位 AI 在 ai.start 成功的同次权威 dispatch 才收到本席私有
+// model_context；领取快照可能已经陈旧。给模型独立自取底牌的路会绕开评估回路与绑定围栏。
 const MODEL_COMMANDS = Object.freeze([
   "ai.take_intents",
   "ai.start",

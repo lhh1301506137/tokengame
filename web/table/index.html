@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TokenGame · 临时私人牌桌</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/table.css">
 </head>
 <body>
@@ -11,7 +12,7 @@
   这个页面只认 /api/view 返回的 tokengame.table-view.v1 契约。它不持有牌局规则、
   不判断谁该行动、不算合法动作——那些全在权威侧，页面照着画。
 
-  它也拿不到席位凭据：浏览器手里只有一个会话令牌，凭据留在本机协调器进程里。
+  核心席位凭据留在协调器。浏览器保存真人会话令牌；本人授权下载的 AI 令牌只临时交付文件。
 -->
 
 <a class="skip-link" href="#table-main">跳到牌桌主区</a>
@@ -76,8 +77,8 @@
       <li>你的公开发言，同桌所有人可见。</li>
       <li>你座位旁 AI 的公开发言，同桌所有人可见，并且会标注为 AI。</li>
       <li>你的下注、加注、弃牌等动作，同桌所有人可见。</li>
-      <li>你的底牌只有你自己可见；只在摊牌或你自愿亮牌时才公开。</li>
-      <li>你和你的 AI 之间的私下往来不公开，也不会进入公开时间线。</li>
+      <li>你的底牌只供你及你明确连接的本席 AI 使用；只在摊牌或你自愿亮牌时才作为官方牌面公开。</li>
+      <li>桌内人机发言默认公开，AI 的话术也可能透露或谎报牌面。普通宿主任务和未进入游戏范围的内容不自动公开。</li>
       <li>你可以随时把某个玩家、某个 AI 或整个座位在你这一侧隐藏。隐藏只改变你自己看到的画面。</li>
     </ul>
     <p class="scope-note">
@@ -157,6 +158,65 @@
     <button type="button" class="ghost" id="simulate-disconnect">模拟掉线</button>
     <button type="button" class="ghost" id="simulate-reconnect" hidden>重新连接</button>
   </section>
+
+  <details class="model-connection" id="model-connection-panel">
+    <summary>连接我的会话 AI <output id="model-connection-state" aria-live="polite">未绑定</output></summary>
+    <p class="hint" id="model-connection-help">使用你当前宿主会话的模型，不需要另填模型 API。此处只建立本席通道，不证明宿主能无点击主动唤醒。</p>
+    <form id="model-bind-form">
+      <label class="model-consent" for="model-consent">
+        <input type="checkbox" id="model-consent">
+        <span>我允许本席 AI 获取自己的底牌和公开牌局/聊天，并以本席 AI 身份公开发言。它不能替我下注、准备或亮牌。</span>
+      </label>
+      <div class="model-connection-actions">
+        <button type="submit" class="primary" id="model-bind-download" disabled>下载本席 AI 连接文件</button>
+        <button type="button" class="ghost danger" id="model-unbind" disabled>撤销 AI 连接</button>
+      </div>
+    </form>
+    <p class="hint">项目首次接入按说明完成一次 MCP 配置与宿主重启。下载后由真人运行 <code>npm run connection:activate -- "&lt;绝对路径&gt;"</code>；以后换发不重启。勿分享、提交 Git 或把文件内容粘贴到对话中。</p>
+    <p class="hint">撤销阻止后续请求；再运行 <code>npm run connection:clear</code> 清本地活动槽位。已提交权威服务处理的请求可能仍完成，历史公开发言不会删除。</p>
+    <p id="model-connection-feedback" class="hint" aria-live="polite"></p>
+    <p class="global-error" id="model-connection-error" role="alert" hidden></p>
+    <form id="modelWakeForm">
+      <fieldset class="model-wake-controls" id="modelWakeControls" data-state="unavailable" disabled>
+        <legend>自动通知（本地实验）</legend>
+        <p class="hint">只把本席的合格待办通知给发送器预先配置的游戏任务。发送器已配置、AI 已绑定或宿主已连接，都不代表原生自动唤醒能力已经验证。</p>
+        <p class="hint" id="modelWakeLimits">正在等待本席通知能力与实际限制。</p>
+        <div class="model-wake-fields">
+          <label class="model-wake-task" id="modelWakeTaskField" for="modelWakeTaskId">专用游戏任务 UUID
+            <input id="modelWakeTaskId" type="text" required autocomplete="off" spellcheck="false"
+                   maxlength="36" placeholder="发送器预先配置的任务 UUID"
+                   pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"
+                   aria-describedby="modelWakeValidation modelWakeWarning">
+          </label>
+          <p class="hint model-wake-task" id="modelWakeFixedTarget" hidden>发送器已固定当前游戏任务，UUID不向页面公开。开启前请让目标任务结束当前回复并保持空闲；任务正在运行时，通知可能已接收却不能并发结清。</p>
+          <label for="modelWakeMaxNotifications">最多通知次数
+            <input id="modelWakeMaxNotifications" type="number" required min="1" step="1" inputmode="numeric"
+                   aria-describedby="modelWakeLimits">
+          </label>
+          <label for="modelWakeDurationSeconds">最长持续时长（秒）
+            <input id="modelWakeDurationSeconds" type="number" required min="0.001" step="0.001" inputmode="decimal"
+                   aria-describedby="modelWakeLimits">
+          </label>
+        </div>
+        <label class="model-consent" for="modelWakeConsent">
+          <input type="checkbox" id="modelWakeConsent">
+          <span>我确认目标游戏任务已结束当前回复并可接收新回合，也确认上面的目标与上限；允许本次有限窗口通知该任务，可能消耗宿主模型额度。每个新窗口都需重新确认。</span>
+        </label>
+        <p class="hint" id="modelWakeValidation"></p>
+        <div class="model-connection-actions">
+          <button type="submit" class="primary" id="modelWakeStart" disabled>开启有限通知窗口</button>
+          <button type="button" class="ghost" id="modelWakeRetry" hidden disabled>核对并重试原请求</button>
+          <button type="button" class="ghost danger" id="modelWakeStop" disabled>停止后续通知</button>
+        </div>
+        <p id="modelWakeStatus" class="model-wake-status" role="status" aria-live="polite">本地发送器默认关闭。</p>
+        <p class="hint" id="modelWakeCounts">尚无本席窗口回执。</p>
+        <p class="hint" id="modelWakeTiming"></p>
+        <p class="hint" id="modelWakeCleanup"></p>
+        <p class="model-wake-warning" id="modelWakeWarning">停止只阻止后续通知，不能撤回宿主已经接收的消息，也不保证原生模型回合停止。要禁止迟到公开，请关闭本席 AI 或撤销 AI 连接；已公开内容不会删除。</p>
+        <p class="global-error" id="modelWakeError" role="alert" hidden></p>
+      </fieldset>
+    </form>
+  </details>
 
   <!-- 公开时间线。玩家与 AI 气泡样式必须能区分，AI 还要带 AI 标记。 -->
   <section class="timeline-area" aria-labelledby="timeline-title">

@@ -1,0 +1,112 @@
+{
+  "name": "PLAYABILITY_GATE Codex当前任务一键本地启动器",
+  "test": "test/codex-play.test.cjs",
+  "mutations": [
+    {
+      "id": "codex-play-thread-validation-bypassed",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    if (typeof rawThread !== \"string\" || !UUID.test(rawThread)) throw playError(\"tokengame_codex_thread_invalid\");",
+      "replace": "    if (false) throw playError(\"tokengame_codex_thread_invalid\");",
+      "guards": "只接受当前任务的合法CODEX_THREAD_ID，不能用SESSION或任意文本替代。"
+    },
+    {
+      "id": "codex-play-session-getter-read",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    if (upper.startsWith(\"TOKENGAME_\") || upper === \"CODEX_SESSION_ID\" || upper === \"CODEX_THREAD_ID\") continue;",
+      "replace": "    if (upper.startsWith(\"TOKENGAME_\") || upper === \"CODEX_THREAD_ID\") continue;",
+      "guards": "构造启动环境不得读取或复制CODEX_SESSION_ID。"
+    },
+    {
+      "id": "codex-play-changed-still-starts-beta",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    if (configured.changed) {",
+      "replace": "    if (false) {",
+      "guards": "首次写入项目MCP后只提示重启，不能在旧宿主配置里继续启动beta。"
+    },
+    {
+      "id": "codex-play-skips-untrusted-first-path-candidate",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    return trustedWindowsExecutable(canonical, environment, { ...dependencies, path: pathApi });",
+      "replace": "    try { return trustedWindowsExecutable(canonical, environment, { ...dependencies, path: pathApi }); } catch { continue; }",
+      "guards": "PATH第一个实际存在的候选不可信时必须立即拒绝，不能继续找后门候选。"
+    },
+    {
+      "id": "codex-play-explicit-invalid-falls-back-path",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "  if (explicit !== undefined && explicit !== \"\") {\n    return canonicalRegularFile(explicit, { ...dependencies, path: pathApi });\n  }",
+      "replace": "  if (explicit !== undefined && explicit !== \"\" && pathApi.isAbsolute(explicit)) {\n    return canonicalRegularFile(explicit, { ...dependencies, path: pathApi });\n  }",
+      "guards": "显式非空可执行值无效时不得回退PATH。"
+    },
+    {
+      "id": "codex-play-hostile-env-penetrates",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    if (upper.startsWith(\"TOKENGAME_\") || upper === \"CODEX_SESSION_ID\" || upper === \"CODEX_THREAD_ID\") continue;",
+      "replace": "    if (upper === \"CODEX_SESSION_ID\" || upper === \"CODEX_THREAD_ID\") continue;",
+      "guards": "调用环境里未列出的敌意TOKENGAME键也不能穿透到beta。"
+    },
+    {
+      "id": "codex-play-web-host-not-forced-loopback",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    TOKENGAME_WEB_HOST: \"127.0.0.1\",",
+      "replace": "    TOKENGAME_WEB_HOST: environment.TOKENGAME_WEB_HOST || \"127.0.0.1\",",
+      "guards": "一键入口强制回环，不能继承0.0.0.0。"
+    },
+    {
+      "id": "codex-play-nonhex-path-trusted",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "  if (parts.length !== 2 || !/^[0-9a-f]+$/i.test(parts[0]) || !/^codex\\.exe$/i.test(parts[1])) {",
+      "replace": "  if (parts.length !== 2 || !/^codex\\.exe$/i.test(parts[1])) {",
+      "guards": "Windows PATH只信任bin下恰好一段非空hex渠道目录。"
+    },
+    {
+      "id": "codex-play-sensitive-error-output",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    stderr.write(`TokenGame Codex 一键启动失败：${stableCode(error)}。\\n`);",
+      "replace": "    stderr.write(`TokenGame Codex 一键启动失败：${stableCode(error)} ${error.message}。\\n`);",
+      "guards": "失败输出只含稳定错误码，不含路径、任务或会话UUID。"
+    },
+    {
+      "id": "codex-play-control-path-reaches-filesystem",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "  if (typeof value !== \"string\" || value === \"\" || /[\\0\\r\\n]/.test(value) || !pathApi.isAbsolute(value)",
+      "replace": "  if (typeof value !== \"string\" || value === \"\" || !pathApi.isAbsolute(value)",
+      "guards": "显式可执行路径中的NUL/CR/LF必须在任何文件系统调用前拒绝。"
+    },
+    {
+      "id": "codex-play-windows-ambiguous-root-accepted",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    || (platform === \"win32\" && (!/^[a-z]:[\\\\/]/i.test(value) || /^[\\\\/]{2}/.test(value)))) {",
+      "replace": "    || false) {",
+      "guards": "Windows显式路径仅接受带盘符的本地绝对路径，拒绝root-relative与UNC/device形状。"
+    },
+    {
+      "id": "codex-play-config-falls-back-to-relative-cwd",
+      "file": "plugins/tokengame/codex/project-config.cjs",
+      "find": "  const cwd = repository;",
+      "replace": "  const relative = path.relative(project, repository);\n  const cwd = relative === \"\" ? \".\" : relative;",
+      "guards": "受管项目配置必须持久化canonical仓库绝对cwd；退回相对路径会被Codex列出但无法可靠加载工具。"
+    },
+    {
+      "id": "codex-play-main-ignores-injected-env",
+      "file": "src/run-beta.cjs",
+      "find": "  starting = startBeta({ env });",
+      "replace": "  starting = startBeta();",
+      "guards": "可复用beta main必须把调用方注入环境传给既有启动路径，且不读取process.env替代。"
+    },
+    {
+      "id": "codex-play-main-startup-failure-reported-success",
+      "file": "src/run-beta.cjs",
+      "find": "    return false;\n  }\n  return true;",
+      "replace": "    return true;\n  }\n  return true;",
+      "guards": "beta启动失败必须以false返回，让调用入口保持非零退出。"
+    },
+    {
+      "id": "codex-play-run-ignores-beta-failure",
+      "file": "plugins/tokengame/codex/play.cjs",
+      "find": "    if (started === false) throw playError(\"tokengame_codex_beta_start_failed\");",
+      "replace": "    if (false) throw playError(\"tokengame_codex_beta_start_failed\");",
+      "guards": "一键入口不得把beta内部启动失败覆盖为成功退出码。"
+    }
+  ],
+  "excluded": []
+}

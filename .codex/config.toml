@@ -33,3 +33,20 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 enabled = true
 max_concurrent_threads_per_session = 6
 min_wait_timeout_ms = 480000
+
+# TokenGame's project-scoped MCP is loaded once for this trusted project. The
+# launcher fixes the credential slot under .tokengame-private/ before the MCP
+# module starts, so joining or rotating a seat never changes this server
+# definition. Only the model-facing table tool is exposed; legacy bridge-probe
+# tools remain available to their dedicated test harness, not to project tasks.
+# BEGIN TOKENGAME MANAGED PROJECT MCP
+[mcp_servers.tokengame_project]
+command = "node"
+args = ["src/run-project-mcp.cjs"]
+cwd = "."
+enabled = true
+required = false
+enabled_tools = ["tokengame_table"]
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+# END TOKENGAME MANAGED PROJECT MCP

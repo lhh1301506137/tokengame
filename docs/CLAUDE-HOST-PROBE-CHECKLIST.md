@@ -1,8 +1,10 @@
 # Claude 宿主 Hook + MCP Apps 共存探针清单
 
-状态：`planned_not_executed`
+状态：Claude各门禁仍未执行；Codex的B14固定版本单席queue探针已满足Gate5的直接观察条件，但Gate9清理仍`blocked`，不能据此作架构/产品完成裁决。B10跨手丢弃、B12接入失败保留历史身份。
 
 日期：2026-08-27（Asia/Shanghai）
+
+最新执行记录及状态收尾：2026-08-31。
 
 对应问题：`CLAUDE-SEMANTIC-REVIEW-20260826.md` 的 F8 / F8-bis
 
@@ -92,13 +94,80 @@ Claude Cowork
 | Gate 3 · Remote connector | Claude Cowork | 公网 remote MCP 可认证、调用并撤销，不依赖本地 `.mcpb` 假设 | `not_run` | 改用有证据的 connector 形态，不得冒充已接通 |
 | Gate 4a · Cowork MCP App | Claude Cowork | 同一会话内 UI 可渲染并完成一次交互 | `not_run` | F8-bis 的 UI 顾虑成立 |
 | Gate 4b · 同 surface 共存 | Claude Cowork | Gate 2 与 Gate 4a 在同一会话完成，期间不切换到 Chat 或外部浏览器 | `not_run` | 不能把两个分别成功的实验拼成一个产品能力 |
-| Gate 5 · 事件驱动主动唤醒 | Codex 与 Claude 分别记录 | 牌局事件在无新玩家提示的情况下恰好启动一次真实模型评估，并产生 `silent` 或 `public_speech` 终态 | `not_run_both_hosts` | 主动 AI 功能未成立；被动回答只能作为待重新确认的降级候选 |
+| Gate 5 · 事件驱动主动唤醒 | Codex 与 Claude 分别记录 | 牌局事件在无新玩家提示的情况下恰好启动一次真实模型评估，并产生 `silent` 或 `public_speech` 终态 | Codex B14限定探针`pass`、B20牌局内样本`fail`；Claude `not_run` | 单项通过不等于产品交付；失败后被动回答只能作为待重新确认的降级候选 |
 | Gate 6 · 稳定关联 | 目标真实宿主 | 能用宿主字段或显式协议绑定 session / room / seat / binding generation | `not_run` | 只能展示 UI，不能安全路由公开消息 |
 | Gate 7 · Exactly-once | 目标真实宿主 | 正常、重复、重连、取消和超时均只有一个权威终态 | `not_run` | 不得进入真实桌聊实现 |
 | Gate 8 · 失败关闭 | 目标真实宿主 | 无可靠绑定、服务故障或凭据失效时不公开、不误配座位、不双跑 AI | `not_run` | 隐私与完整性门禁失败 |
-| Gate 9 · 证据与清理 | 两个目标宿主 | 证据可复核，插件、connector、凭据、端点和临时数据按授权清理 | `not_run` | 运行不能用于架构或产品结论 |
+| Gate 9 · 证据与清理 | 两个目标宿主 | 证据可复核，插件、connector、凭据、端点和临时数据按授权清理 | Codex B14 `blocked`、B20 `partial`；Claude `not_run` | 运行不能用于架构或产品结论 |
 
 ### Gate 5 逐宿主记录
+
+Codex历史实测见 [B10 实机探针](../REVIEW-LOG.md#b10-native-queue-wake-probe)：一次同任务自动唤醒已观察，`user_click_required: no`、`new_user_prompt_required: no`。B12补读原任务工具输出，确认一次ai.start、一次ai.resolve，权威返回hand_advanced，回答跨手丢弃；当时没有成功公开或silent，不能判pass。B12新授权窗口的两次只读准备未发现新MCP，queue和游戏评估均为0，本窗口Gate5为not_run，点击/新提示要求不作测量；详见 [B12记录](../REVIEW-LOG.md#b12-native-receipts-window)。
+
+B14明确席位权限后，原任务1次只读MCP准备成功，3个不同来源各经一次queue启动一次真实评估并成功公开，A无额外点击或提示；三条因果链分别完整保存，不靠拼接历史或queue退出码判定。前两例为等待区，以下单列第3例进行中手牌的记录；完整样本及唯一本批裁决见[B14](../REVIEW-LOG.md#b14-native-public-replies)。
+
+B17随后验证B16连续窗口，但三批4次原任务输入/1次queue只得到第一批readiness的1次MCP调用；第一批专用外壳过早退出，修正后同一既有任务又没有重新启动项目MCP。全程0次`ai.start`、0次`ai.resolve`、0条AI公开，不能形成新的Gate 5通过样本，也不撤销B14限定样本本身。该结果只把连续产品阻塞收窄到宿主工具激活/生命周期边界；精确缓存规则unknown，详见[B17](../REVIEW-LOG.md#b17-native-managed-wake-carrier-boundary)。
+
+B18稳定项目入口解除上述工具重激活载体阻塞；B19在等待区连续两次达到尝试/接收/权威结清
+2/2/2，两次均`user_click_required: no`、`new_user_prompt_required: no`并公开。B20首次把有界窗口放进
+真实行动期：原生任务同样无需点击或新提示而启动一次，但窗口以尝试1/接收1/结清0、
+`wake_start_failed`停止，生命周期记录为0次评估开始、0个turn、0个终态。刻意发送的B消息晚于任务
+启动，不是该次queue来源；更早的具体扑克来源unknown。B20因此是失败样本，不是新的Gate 5通过，
+也不撤销B14固定版本单席限定样本；B19/B20详见[B19](../REVIEW-LOG.md#b19-stable-managed-wake-native)
+与[B20](../REVIEW-LOG.md#b20-hand-active-managed-wake-diagnostic)。
+
+B25在一次已确认的Codex重启后发现：CLI配置列表可识别相对`cwd`的项目服务器，但当前任务没有加载
+`tokengame_table`；同一任务旧canonical绝对仓库`cwd`曾实际加载该工具。真实固定目标页面已观察，
+但就绪失败时没有开启通知窗口，实际0通知/模型/queue。因此本批Gate 5为`not_run`，
+`user_click_required`与`new_user_prompt_required`均为`unknown`，不能用0通知推断主动能力失败或通过；
+它只证伪相对`cwd`这一Codex Desktop载体配置。生成器的绝对路径修复尚未迁移或经第二次重启验证，
+详见[B25](../REVIEW-LOG.md#b25-relative-cwd-host-failure)。
+
+```yaml
+gate_5_run:
+  status: pass
+  probe_run_id: 2a88e350-cb7d-453b-a742-f13999fcdddb
+  host: codex
+  host_version: Desktop_26.825.6671.0_local_package_path_and_codex_cli_0.151.0-alpha.7.2
+  surface: codex_visible_task
+  source_game_event: sae-feee4783-e05d-49ca-9125-e19792ee163c
+  source_event_seq: 12
+  expected_model_evaluations: one
+  observed_model_evaluations: 1
+  terminal_result: public_speech
+  user_click_required: no
+  new_user_prompt_required: no
+  same_visible_context_proven: 同一原游戏任务01a052c9-5259-7a61-b26f-35731734994e，无新游戏任务；不代表应用前台焦点全程录像。
+  direct_evidence_refs:
+    - evidence/probes/b14-codex-queue-native-20260831/native-tools.json
+    - evidence/probes/b14-codex-queue-native-20260831/authority-lifecycle.jsonl
+    - evidence/probes/b14-codex-queue-native-20260831/browser-observations.json
+  caveats:
+    - 第1手同手preflop到flop迟到公开，原生样本当时UI漏标，修复另以脚本UI验证。
+    - 来源到公开43660ms不是纯推理耗时、实时SLA或长期稳定性。
+    - 单次本地queue桥默认关闭，不是完整连续产品入口。
+    - Gate9清理blocked，本记录不能用于架构或产品完成裁决，默认能力声明不改。
+
+claude_gate_5_current:
+  status: not_run
+  host: claude
+  host_version: unknown
+  surface: unknown
+  observed_model_evaluations: unknown
+  terminal_result: unknown
+  user_click_required: unknown
+  new_user_prompt_required: unknown
+  same_visible_context_proven: unknown
+  direct_evidence_refs: []
+```
+
+Gate9本批缺口：权限已撤销且旧连接被拒，临时配置、beta及页面已关闭，捕获完整；但失效私有文件删除与宿主管理MCP终止命令被工具策略拒绝，未尝试替代路径。因此不进入`evidence/accepted/`，最小可复核事实放在`evidence/probes/b14-codex-queue-native-20260831/`并附manifest，未提交。
+
+后续本地 beta 窗口可按[本地 AI 终态记录](./AI-LIFECYCLE-RECEIPTS.md)另行启用去敏记录，用于确认权威接受的评估开始及可观察终态。它不能证明模型身份、用户点击情况或被拒的 MCP 请求次数；记录不完整时仍是 unknown。不得拿 B11 脚本测试改写上述 B10 结果，也不得沿用已用尽的实机调用授权。
+
+Codex接入准备须另分三层：磁盘配置被读取、独立MCP客户端可用、原游戏任务真正加载并暴露工具。前两层不能替代第三层。B13只读检查本机`0.151.0-alpha.7.2`生成协议发现`mcpServerStatus/list`可带`threadId`并返回`runtimeStatus`，但接口存在不等于已读到实际实例。B14通过原任务真实发现并成功调用游戏MCP证明当批可用，而非拿配置、独立stdio或`null`状态替代；后续新批次仍需实际就绪检查。
+
+[此前核对的官方App Server文档](https://developers.openai.com/codex/app-server#api-overview)说明`config/mcpServer/reload`会为已加载任务排队刷新；当时本机协议中该请求无单任务参数。不能把它称为“只刷新这个游戏任务”，也不能由请求成功推断工具已可用。涉及其他任务的刷新须先说明影响并取得授权；准备失败就停止后续queue，不靠重复模型输入探测连接。B13/B14没有执行全局刷新或宿主重启；B14新批次成功并不能确定B12当时的工具发现失败根因。
 
 Gate 5 必须为 Codex 与 Claude 各保存一份记录，不能用一侧结果外推另一侧。每次运行复制下面字段并填写真实观察：
 

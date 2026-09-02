@@ -8,6 +8,7 @@
 
 - Node.js 服务、测试和插件入口使用 CommonJS `.cjs`、`require()`、`module.exports` 与 `"use strict"`。
 - 浏览器 UI 使用普通脚本加 `"use strict"`：产品路径是 `web/table/table.js`，旧探针栈是 `web/app.js`。两者都不是 ESM 模块。
+- B16 的纯通知控制器 `web/table/wake-controls.mjs` 是独立 ESM，由普通 `table.js` 动态 `import()`；这不把主脚本改成 ESM。加载失败只禁用通知控件，不能阻断牌桌、聊天和撤权；服务端只对该精确静态路径开放 JavaScript 响应。
 - Playwright 验收脚本与浏览器侧辅助加载器使用 ESM `.mjs`。
 - 不在同一模块内混用 CommonJS 和 ESM。
 
@@ -30,6 +31,13 @@ if (!Number.isFinite(duration) || duration < 1 || duration > 10 * 60_000) {
 ```
 
 ## 协议字段
+
+### B8 本地逐席模型连接
+
+- 协调器、MCP、浏览器的精确形状与失败边界以 `TAKEOVER-PLAN.md` 为本批工作合同。
+- `model_token` 是本人显式授权的、只能驱动本席 AI 的传输能力，不是 `recovery_credential`。只经本人认证的下载响应交给私有连接文件，不进入模型文本、DOM、URL、storage、公共投影或日志；核心席位凭据仍仅在托管进程内存中。
+- `model_context` 只能来自已授权的权威 `ai.start`，是私有工具返回，不得写入公共事件。模型命令白名单不增加 `view.hand`，席位与绑定世代不接受模型输入。
+- 旧进程级令牌只能给迁移拒绝，不能静默保留跨席访问。测试须同时证明正常逐席调用和错席/旧绑定失败。
 
 - 线协议 JSON 使用 snake_case：`session_id`、`turn_id`、`deadline_at`、`idempotency_key`。
 - JavaScript 内部变量使用 camelCase：`sessionId`、`turnId`、`actionWindow`。

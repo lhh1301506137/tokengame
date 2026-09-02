@@ -62,8 +62,8 @@
     {
       "id": "claim-wake-in-prose",
       "file": "plugins/tokengame/.codex-plugin/plugin.json",
-      "find": "把显式赛时提示",
-      "replace": "支持主动唤醒，把显式赛时提示",
+      "find": "真人下载本席私有连接文件后",
+      "replace": "支持主动唤醒，真人下载本席私有连接文件后",
       "note": "能力声明藏在正文里而不在 capabilities 数组里——只查数组的测试会漏掉它。"
     }
   ],

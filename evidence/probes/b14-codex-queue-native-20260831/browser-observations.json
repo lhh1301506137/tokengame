@@ -1,0 +1,79 @@
+{
+  "queue_01": {
+    "observed_at": "2026-08-31T10:24:41.038Z",
+    "a": "公开时间线\nb14a-bob\n第 2 席\n\nb14a-alice，你家 AI 准备好陪我们打牌了吗？还没发牌，先打个招呼吧。\n\nb14a-alice\n第 1 席\nAI\n\n大家好，我在旁边看牌聊两句，开局和出手交给你们。\n\n公开发言\n0/140\n发言",
+    "b": "公开时间线\nb14a-bob\n第 2 席\n\nb14a-alice，你家 AI 准备好陪我们打牌了吗？还没发牌，先打个招呼吧。\n\nb14a-alice\n第 1 席\nAI\n\n大家好，我在旁边看牌聊两句，开局和出手交给你们。\n\n公开发言\n0/140\n发言"
+  },
+  "queue_02": {
+    "samples": 31,
+    "firstVisible": {
+      "observed_at": "2026-08-31T10:27:34.824Z",
+      "a": [
+        {
+          "hidden": "false",
+          "seat_id": "seat-cdccccdd-020e-47b8-b084-291b6a8a9a5c",
+          "speaker": "SEAT_AI",
+          "text": "牌还没发，气氛组倒是先开工了。",
+          "visible": true
+        }
+      ],
+      "b": [
+        {
+          "hidden": "false",
+          "seat_id": "seat-cdccccdd-020e-47b8-b084-291b6a8a9a5c",
+          "speaker": "SEAT_AI",
+          "text": "牌还没发，气氛组倒是先开工了。",
+          "visible": true
+        }
+      ]
+    },
+    "screenshots": true
+  },
+  "queue_03": {
+    "samples": 36,
+    "firstVisible": {
+      "observed_at": "2026-08-31T10:33:26.330Z",
+      "a": [
+        {
+          "hidden": "false",
+          "seat_id": "seat-cdccccdd-020e-47b8-b084-291b6a8a9a5c",
+          "speaker": "SEAT_AI",
+          "text": "桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。",
+          "visible": true
+        }
+      ],
+      "b": [
+        {
+          "hidden": "false",
+          "seat_id": "seat-cdccccdd-020e-47b8-b084-291b6a8a9a5c",
+          "speaker": "SEAT_AI",
+          "text": "桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。",
+          "visible": true
+        }
+      ]
+    },
+    "a_screenshot": true,
+    "b_screenshot": "not_taken_to_avoid_capturing_other_seat_hole_cards"
+  },
+  "late_label_defect": {
+    "observed_at": "2026-08-31T10:37:22.510Z",
+    "authority": {
+      "scope": "TABLE_PUBLIC",
+      "player_id": "b14a-alice",
+      "speaker_type": "SEAT_AI",
+      "text": "桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。",
+      "graphemes": 27,
+      "turn_id": "turn-6ec3a79f-308e-47b1-a2e3-3e334113e9b2",
+      "source_event_id": "sae-feee4783-e05d-49ca-9125-e19792ee163c",
+      "hand_index": 1,
+      "street": "flop",
+      "based_on_street": "preflop",
+      "late_annotation": "延迟 · 基于前一街",
+      "poker_action_effect": null
+    },
+    "history_a": "公开时间线\nb14a-bob\n第 2 席\n\nb14a-alice，你家 AI 准备好陪我们打牌了吗？还没发牌，先打个招呼吧。\n\nb14a-alice\n第 1 席\nAI\n\n大家好，我在旁边看牌聊两句，开局和出手交给你们。\n\nb14a-bob\n第 2 席\n\n你的招呼大家都看见了。再来一句开局前的轻松吐槽吧，不用分析牌。\n\nb14a-alice\n第 1 席\nAI\n\n牌还没发，气氛组倒是先开工了。\n\nb14a-bob\n第 2 席\n\n牌局开始了，b14a-alice 的 AI，你怎么评价现在这桌的气氛和局面？别替玩家操作。\n\nb14a-alice\n第 1 席\nAI\n\n桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。\n\n公开发言\n0/140\n发言",
+    "history_b": "公开时间线\nb14a-bob\n第 2 席\n\nb14a-alice，你家 AI 准备好陪我们打牌了吗？还没发牌，先打个招呼吧。\n\nb14a-alice\n第 1 席\nAI\n\n大家好，我在旁边看牌聊两句，开局和出手交给你们。\n\nb14a-bob\n第 2 席\n\n你的招呼大家都看见了。再来一句开局前的轻松吐槽吧，不用分析牌。\n\nb14a-alice\n第 1 席\nAI\n\n牌还没发，气氛组倒是先开工了。\n\nb14a-bob\n第 2 席\n\n牌局开始了，b14a-alice 的 AI，你怎么评价现在这桌的气氛和局面？别替玩家操作。\n\nb14a-alice\n第 1 席\nAI\n\n桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。\n\n公开发言\n0/140\n发言",
+    "live_screenshot": "queue-03-A.png",
+    "private_context_saved": false
+  }
+}

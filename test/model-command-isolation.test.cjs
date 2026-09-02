@@ -327,3 +327,87 @@ test("分权：需凭据的模型命令仍然经托管注入，模型面没有�
       `${command} 若不再需要凭据，本文件的注入断言就失去意义，要重新审`);
   }
 });
+
+test("可信第三参数限定领取席位，同席另一个 binding_id 也不能使用已发 id", async () => {
+  const custody = new SeatCustody();
+  const a = custody.bind({ seatId: "scope-a", credential: "scope-secret-a" });
+  const b = custody.bind({ seatId: "scope-b", credential: "scope-secret-b" });
+  const sent = [];
+  const surface = new ModelCommandSurface({ custody, request: async (command, params) => {
+    sent.push({ command, params });
+    return command === "ai.take_intents"
+      ? { ok: true, status: 200, body: { result: { intents: [{ intent_id: `intent-${params.seat_id}`, seat_id: params.seat_id, claim_token: "core-claim" }] } } }
+      : { ok: true, status: 200, body: { result: { started: { turn_id: `turn-${params.seat_id}` } } } };
+  } });
+  const scope = { seat_handle: a.seat_handle, binding_id: "binding-one" };
+  const claim = await surface.call("ai.take_intents", {}, scope);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].params.seat_id, "scope-a");
+  assert.equal(claim.body.result.seats_polled, 1);
+  assert.equal(claim.body.result.intents.length, 1);
+  for (const rejectedScope of [
+    { seat_handle: b.seat_handle, binding_id: "binding-one" },
+    { seat_handle: a.seat_handle, binding_id: "binding-two" },
+  ]) {
+    await assert.rejects(surface.call("ai.start", { intent_id: "intent-scope-a" }, rejectedScope),
+      (error) => error.code === "authority_id_scope_mismatch");
+  }
+  assert.equal(sent.length, 1, "跨席/跨binding必须在打核心之前拒绝");
+  await surface.call("ai.start", { intent_id: "intent-scope-a" }, scope);
+  await assert.rejects(surface.call("ai.resolve", { turn_id: "turn-scope-a", decision: "silent" },
+    { seat_handle: a.seat_handle, binding_id: "binding-two" }), (error) => error.code === "authority_id_scope_mismatch");
+  assert.equal(sent.length, 2);
+  await surface.call("ai.resolve", { turn_id: "turn-scope-a", decision: "silent" }, scope);
+  assert.equal(sent.length, 3);
+});
+
+test("可信 scope 必须完整；释放/换代会围住已经发出但尚未返回的领取", async () => {
+  const custody = new SeatCustody();
+  const seat = custody.bind({ seatId: "pending-seat", credential: "pending-secret" });
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const surface = new ModelCommandSurface({ custody, request: () => pending });
+  for (const scope of [null, {}, { seat_handle: seat.seat_handle }, { seat_handle: seat.seat_handle, binding_id: "" },
+    { seat_handle: "unknown-handle", binding_id: "known-binding" }]) {
+    await assert.rejects(surface.call("view.projection", {}, scope), (error) => error.code === "model_scope_rejected");
+  }
+  const waiting = surface.call("ai.take_intents", {}, { seat_handle: seat.seat_handle, binding_id: "pending-binding" });
+  surface.clearIssued();
+  release({ ok: true, status: 200, body: { result: { intents: [{ intent_id: "pending-intent", seat_id: "pending-seat" }] } } });
+  await assert.rejects(waiting, (error) => error.code === "model_binding_changed");
+  assert.equal(surface.trackedCount, 0);
+  assert.throws(() => new ModelCommandSurface({ custody, request: async () => ({}), scopeIsCurrent: true }),
+    (error) => error.code === "invalid_field");
+});
+
+test("一致性seed只计数不授权；未来出现同名真实句柄也不能激活旧seed", async () => {
+  const { SeatModelAdapter } = require("../src/host/seat-model-adapter.cjs");
+  const custody = new SeatCustody({ handleFactory: () => "handle-conformance-seed" });
+  let dispatched = 0;
+  const adapter = new SeatModelAdapter({ custody, dispatch: async () => { dispatched += 1; return {}; } });
+  adapter.negotiate();
+  adapter.seedForRelease();
+  const attempts = [
+    ["ai.start", { intent_id: "intent-conformance-seed" }],
+    ["ai.resolve", { turn_id: "turn-conformance-seed", decision: "silent" }],
+  ];
+  for (const [command, params] of attempts) {
+    const rejected = await adapter.call(command, params);
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.code, "model_scope_rejected");
+  }
+  assert.equal(dispatched, 0);
+  custody.bind({ seatId: "later-real-seat", credential: "later-real-secret" });
+  for (const [command, params] of attempts) {
+    const rejected = await adapter.call(command, params);
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.code, "model_binding_changed");
+  }
+  assert.equal(dispatched, 0, "seed的null世代永不匹配真实句柄的正整数世代");
+  adapter.seedForRelease();
+  for (const [command, params] of attempts) {
+    assert.equal((await adapter.call(command, params)).ok, false);
+  }
+  assert.equal(dispatched, 0, "句柄已经存在时再seed也只能计数，不能铸造调用能力");
+  adapter.release();
+});

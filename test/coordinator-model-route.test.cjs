@@ -11,14 +11,8 @@
 // 这个文件钉住收敛后的那条路：MCP 进程不持有任何秘密，模型命令经 HTTP 打到协调器，
 // 落在浏览器建的那些席位上。
 //
-// 令牌这道门为什么必须有：协调器的真人路由不带鉴权（只听回环，会话令牌本身就是能力），
-// 而模型路由是**进程级**的——持有它就能替这个协调器上所有席位发言。没有门的话，本机
-// 任何一个进程都能挂上来替别人的 AI 说话。
-//
-// 已知限制，写在这里而不是只写在文档里：一个协调器 = 一台机器 = 一个人的席位。两个朋友
-// 共用一个协调器时，甲的宿主持有令牌就能替乙席发言。朋友内测的形态是每人各跑一个协调器，
-// 所以本轮不做逐席配对；要做的话是给每席发一张只覆盖该席的令牌，而那需要一条把令牌
-// 交到「那一席的宿主」手上的路，属于入口那一步（B7）。
+// B8：凭据仍托管在同一协调器，但真人会话必须先逐席确认并下载受限连接文件。
+// 模型令牌只覆盖一席，不能再把「协调器有全部凭据」误读成「任一模型能替全席说话」。
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
@@ -56,6 +50,7 @@ async function withHost(t, options = {}) {
   const host = new TableWebHost({ core, now: clock.now, ...options });
   const origin = await host.start({ port: 0 });
   t.after(() => host.stop());
+  let activeModelToken = TOKEN;
   const post = async (route, body, headers = {}) => {
     const response = await fetch(`${origin}${route}`, {
       method: "POST",
@@ -66,17 +61,20 @@ async function withHost(t, options = {}) {
   };
   const client = {
     post,
+    bindingEnabled: options.modelBindingEnabled === true,
+    useModelToken: (token) => { activeModelToken = token; },
+    get modelToken() { return activeModelToken; },
     act: (token, command, params = {}) => post("/api/action", { session_token: token, command, params }),
     // 按 requestEnvelope 构造，与 MCP 进程那条真实客户端同形。手写一份 {command, params}
     // 的话，测试就是一个比产品更旧的客户端——而版本闸门正是为这种客户端存在的，于是
     // 每条断言都会先撞在闸门上，测不到它本来要测的东西。
-    model: (command, params = {}, token = TOKEN) => post(
+    model: (command, params = {}, token = activeModelToken) => post(
       "/api/model/command",
       requestEnvelope(command, params),
       token === null ? {} : { [MODEL_COMMAND_TOKEN_HEADER]: token },
     ),
     // 原样发一份 body，供版本闸门的负向断言用。
-    modelRaw: (body, token = TOKEN) => post(
+    modelRaw: (body, token = activeModelToken) => post(
       "/api/model/command",
       body,
       token === null ? {} : { [MODEL_COMMAND_TOKEN_HEADER]: token },
@@ -95,22 +93,29 @@ async function seatTwo(client) {
   for (const token of [created.session_token, joined.session_token]) {
     await client.act(token, "room.confirm_public_scope", { acknowledged: true });
   }
+  if (client.bindingEnabled) {
+    const bound = await client.post("/api/model/bind", {
+      session_token: created.session_token, acknowledged: true, binding_request_id: require("node:crypto").randomUUID(),
+    });
+    assert.equal(bound.status, 200, JSON.stringify(bound.body));
+    client.useModelToken(bound.body.connection.model_token);
+  }
   return { created, joined, a: created.session_token, b: joined.session_token };
 }
 
-test("带对令牌的模型命令落在浏览器建的那些席位上", async (t) => {
-  const { client } = await withHost(t, { modelCommandToken: TOKEN });
+test("带对令牌的模型命令只落在浏览器明确绑定的本席上", async (t) => {
+  const { client } = await withHost(t, { modelBindingEnabled: true });
   await seatTwo(client);
 
   const result = await client.model("ai.take_intents");
   assert.equal(result.status, 200, JSON.stringify(result.body));
   assert.equal(result.body.ok, true, JSON.stringify(result.body));
-  assert.equal(result.body.result.seats_polled, 2,
-    "远端模型客户端必须看到协调器托管的全部席位——0 说明它看的是另一份托管");
+  assert.equal(result.body.result.seats_polled, 1,
+    "远端模型客户端必须用同一托管，但只能领取绑定席位，不能扇出到另一真人席位");
 });
 
 test("没带令牌、带错令牌都拒，且不透露命令是否存在", async (t) => {
-  const { client } = await withHost(t, { modelCommandToken: TOKEN });
+  const { client } = await withHost(t, { modelBindingEnabled: true });
   await seatTwo(client);
 
   for (const [label, token] of [["没带", null], ["带错", "wrong-token-same-length-padding0"]]) {
@@ -125,12 +130,12 @@ test("没带令牌、带错令牌都拒，且不透露命令是否存在", async
   }
 
   // 等长但不同的令牌必须走完逐字符比较，不能靠长度短路——否则长度本身成了旁路。
-  const sameLength = "x".repeat(TOKEN.length);
+  const sameLength = "x".repeat(client.modelToken.length);
   const rejected = await client.model("ai.take_intents", {}, sameLength);
   assert.equal(rejected.status, 403);
 });
 
-test("没配令牌时模型路由整条关闭，而且关得看得见", async (t) => {
+test("未开启逐席绑定时模型路由整条关闭，而且关得看得见", async (t) => {
   // 失败关闭。默认开一个开发用令牌是本轮明确禁止的事：那种默认值会跟着文档一起
   // 被复制到能被别人打到的地方，而它在回环上从来不报错，所以没人会发现。
   const { client } = await withHost(t);
@@ -152,8 +157,8 @@ test("没配令牌时模型路由整条关闭，而且关得看得见", async (t
   assert.equal(health.model_command_route, "disabled",
     "健康检查必须如实说模型路由是关的");
 
-  // 反面：配了令牌时它得说 enabled，否则上面那条断言对任何实现都成立。
-  const { client: on } = await withHost(t, { modelCommandToken: TOKEN });
+  // 反面：明确开启绑定时它得说 enabled，尚未绑定则后续调用需要本人配对。
+  const { client: on } = await withHost(t, { modelBindingEnabled: true });
   assert.equal((await on.health()).model_command_route, "enabled");
 });
 
@@ -161,7 +166,7 @@ test("跨版本的模型客户端被挡在门外，缺版本与错版本各有�
   // 为什么这条边界需要闸门：插件登记在宿主自己的配置里，协调器从仓库跑起来，两者完全
   // 可能停在不同的提交上。没有闸门的话，跨版本表现为某个字段静默地被忽略——而那种失败
   // 会被读成「这个功能坏了」，排查方向完全错。
-  const { client } = await withHost(t, { modelCommandToken: TOKEN });
+  const { client } = await withHost(t, { modelBindingEnabled: true });
   await seatTwo(client);
 
   const missing = await client.modelRaw({ command: "view.projection", params: {} });
@@ -190,7 +195,7 @@ test("跨版本的模型客户端被挡在门外，缺版本与错版本各有�
 });
 
 test("模型路由上发不出真人命令，也不许自带席位身份", async (t) => {
-  const { client } = await withHost(t, { modelCommandToken: TOKEN });
+  const { client } = await withHost(t, { modelBindingEnabled: true });
   const { created } = await seatTwo(client);
 
   for (const command of ["hand.act", "seat.ready", "room.confirm_public_scope", "hand.reveal", "view.hand"]) {
@@ -208,7 +213,7 @@ test("模型路由上发不出真人命令，也不许自带席位身份", async
 });
 
 test("模型路由的返回里没有凭据也没有句柄原文", async (t) => {
-  const { client } = await withHost(t, { modelCommandToken: TOKEN });
+  const { client } = await withHost(t, { modelBindingEnabled: true });
   await seatTwo(client);
 
   for (const command of ["view.projection", "view.timeline", "ai.take_intents"]) {
@@ -300,7 +305,7 @@ test("出门那两道门各有各的活，缺一道都会实际漏或实际坏",
   // 正常流量里协调器的模型命令结果不含秘密字段，所以两道门平时都无事可做——而「平时
   // 无事可做」正是它们容易被当成冗余删掉的原因。注入的那份结果模拟的是「将来某一版核心
   // 在结果里多带了一个字段」，也就是它们唯一会起作用的场合。
-  const { host, client } = await withHost(t, { modelCommandToken: TOKEN });
+  const { host, client } = await withHost(t, { modelBindingEnabled: true });
   await seatTwo(client);
 
   const original = host.coreRequest.bind(host);

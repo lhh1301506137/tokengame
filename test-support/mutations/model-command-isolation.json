@@ -38,7 +38,7 @@
       "id": "guess-the-only-bound-seat",
       "file": "src/host/model-command-surface.cjs",
       "needle": "      throw new ModelSurfaceError(\"unknown_authority_id\", { field });",
-      "replacement": "      return this.custody.handles()[0];",
+      "replacement": "      return { ...this.captureScope(undefined, this.#custody.handles()[0]), claimToken: null };",
       "test": "test/model-command-isolation.test.cjs",
       "note": "伪造的 intent_id 回落到「反正只绑了一席」。单席时猜对了，多席时是替错的人行动。"
     },
@@ -65,6 +65,14 @@
       "replacement": "  if (false) {",
       "test": "test/mcp-table-surface.test.cjs",
       "note": "真人入口不再校验命令归属，于是它同时接受模型面命令——两条路合成一条，分权作废。"
+    },
+    {
+      "id": "trusted-scope-does-not-match-issued",
+      "file": "src/host/model-command-surface.cjs",
+      "needle": "    if (entry.handle !== scope.handle || entry.bindingId !== scope.bindingId) {",
+      "replacement": "    if (false) {",
+      "test": "test/model-command-isolation.test.cjs",
+      "note": "只证明token有效，不证明其scope与issued相同；同席另一个binding或另一席可使用他人意图/回合。"
     }
   ]
 }

@@ -1,0 +1,64 @@
+{
+  "name": "B8 权威 ai.start 私有上下文",
+  "note": "上下文在同次同步dispatch内取实际启动turn；来源、本人底牌、公开时间线与截断信息不可漂移，也不能写入公开事件。沿用牌局已有摊牌/自愿亮牌投影。",
+  "test": "test/model-context.test.cjs",
+  "mutations": [
+    {
+      "id": "start-omits-private-context",
+      "file": "src/authority/command-surface.cjs",
+      "find": "        return { started, model_context: o.modelContext({ seatId: p.seat_id, turnId: started.turn_id }) };",
+      "replace": "        return { started };",
+      "note": "恢复旧started-only响应，宿主没有任何本席手牌上下文。"
+    },
+    {
+      "id": "context-returns-live-source-reference",
+      "file": "src/authority/seat-ai-store.cjs",
+      "find": "    return clone(seat.active_turn.context);",
+      "replace": "    return seat.active_turn.context;",
+      "note": "进程内调用方修改响应能改掉权威的来源审计事实。"
+    },
+    {
+      "id": "context-hand-reveals-every-seat",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      hand: this.seatHandView(seatId),",
+      "replace": "      hand: this.hand === null ? null : { ...this.seatHandView(seatId), seats: this.seatHandView(seatId).seats.map((seat) => ({ ...seat, hole_cards: [...this.hand.seats.find((other) => other.id === seat.id).hole_cards] })) },",
+      "note": "私有上下文将对手尚未公开的底牌一并送给本席模型。"
+    },
+    {
+      "id": "context-hand-public-only",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      hand: this.seatHandView(seatId),",
+      "replace": "      hand: this.publicHandView(),",
+      "note": "只传公开投影，模型连本人手牌也收不到。"
+    },
+    {
+      "id": "context-keeps-oldest-not-newest-timeline",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      timeline: timeline.slice(-50),",
+      "replace": "      timeline: timeline.slice(0, 50),",
+      "note": "超过50条后最新公开发言被排除，模型使用的历史越来越陈旧。"
+    },
+    {
+      "id": "context-lies-about-truncation",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      timeline_truncated: timeline.length > 50,",
+      "replace": "      timeline_truncated: false,",
+      "note": "历史已截断却声称完整。"
+    },
+    {
+      "id": "context-total-means-returned-count",
+      "file": "src/authority/table-orchestrator.cjs",
+      "find": "      timeline_total: timeline.length,",
+      "replace": "      timeline_total: Math.min(50, timeline.length),",
+      "note": "total退化成返回条数，丢失真实公开历史总量。"
+    },
+    {
+      "id": "private-context-stored-in-start-event",
+      "file": "src/authority/command-surface.cjs",
+      "find": "        return { started, model_context: o.modelContext({ seatId: p.seat_id, turnId: started.turn_id }) };",
+      "replace": "        const modelContext = o.modelContext({ seatId: p.seat_id, turnId: started.turn_id });\n        started.model_context = modelContext;\n        return { started, model_context: modelContext };",
+      "note": "把私有上下文塞进started事件payload，权威事件记录于是含本席底牌，而不是仅在私有响应中返回。"
+    }
+  ],
+  "excluded": []
+}

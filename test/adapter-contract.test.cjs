@@ -90,7 +90,23 @@ test("核心与合同里不以宿主名字做判断", () => {
   assert.deepEqual(offenders, [], `以宿主名字做判断：\n${offenders.join("\n")}`);
 });
 
-test("宿主名字只出现在剖面登记与默认剖面这两处", () => {
+// B15增加专有发送器和beta显式接线；只豁免这两条精确import，不豁免整个模块。
+const ADAPTER_WIRING = new Map([
+  ["src/host/codex-queue-sender.cjs", '} = require("./codex-queue-transport.cjs");'],
+  ["src/run-beta.cjs", 'const { loadCodexWakeQueue } = require("./host/codex-queue-sender.cjs");'],
+]);
+function allowedAdapterImport(file, line) { return ADAPTER_WIRING.get(file) === line.trim(); }
+
+test("专有接线例外只接受两个指定模块的精确import，不能借此在核心按宿主分支", () => {
+  assert.equal(ADAPTER_WIRING.size, 2);
+  for (const [file, line] of ADAPTER_WIRING) {
+    assert.equal(allowedAdapterImport(file, line), true);
+    assert.equal(allowedAdapterImport("src/authority/command-surface.cjs", line), false);
+    assert.equal(allowedAdapterImport(file, `if (host === "codex") ${line}`), false);
+  }
+});
+
+test("宿主名字只出现在剖面登记、默认剖面与专有发送器的精确接线", () => {
   // 上一条盯的是分支，这一条盯射程。允许写名字之后，最容易发生的下一件事不是加 if，
   // 而是名字开始往别的模块渗——一处渗进去就多一个「这个文件也知道宿主是谁」的地方，
   // 而每一处都是将来加分支的落点。
@@ -108,6 +124,7 @@ test("宿主名字只出现在剖面登记与默认剖面这两处", () => {
     const lines = executablePart(raw).split("\n");
     lines.forEach((line, index) => {
       if (!HOST_SPECIFIC.test(line)) return;
+      if (allowedAdapterImport(rel, line)) return;
       const permitted = allowed.get(rel);
       if (permitted === undefined) {
         offenders.push(`${rel}:${index + 1} 这个文件不该知道宿主叫什么：${line.trim()}`);

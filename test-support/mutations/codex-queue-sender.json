@@ -1,0 +1,49 @@
+{
+  "name": "B15 opt-in pinned-task queue sender",
+  "test": "test/codex-queue-sender.test.cjs",
+  "mutations": [
+    {
+      "id": "b15-sender-default-off",
+      "file": "src/host/codex-queue-sender.cjs",
+      "find": "if (enabled === undefined || enabled === \"\" || enabled === \"0\") return null;",
+      "replace": "if (false) return null;",
+      "guards": "未开启时不读取执行配置，不创建发送器"
+    },
+    {
+      "id": "b15-sender-pinned-task",
+      "file": "src/host/codex-queue-sender.cjs",
+      "find": "    const threadId = selectThread(input.threadId);\n    if (threadId === null) return { ...result, reason: \"wake_thread_not_authorized\" };",
+      "replace": "    const threadId = input.threadId.toLowerCase();",
+      "guards": "不能向任意普通任务发送queue"
+    },
+    {
+      "id": "playability-sender-server-selects-default",
+      "file": "src/host/codex-queue-sender.cjs",
+      "find": "    if (candidate === undefined) return config.threadId;",
+      "replace": "    if (candidate === undefined) return null;",
+      "guards": "服务端固定sender在浏览器省略目标时仍能只选择预配置任务"
+    },
+    {
+      "id": "b15-sender-post-await-abort",
+      "file": "src/host/codex-queue-sender.cjs",
+      "find": "if (input.signal?.aborted || controller.signal.aborted) throw new ProbeFailure(\"cancelled\");\n      if (exit?.exit_code",
+      "replace": "if (exit?.exit_code",
+      "guards": "queue close与取消同拍仍不报接收已知成功"
+    },
+    {
+      "id": "b15-sender-no-game-secrets",
+      "file": "src/host/codex-queue-sender.cjs",
+      "find": "Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith(\"TOKENGAME_\"))",
+      "replace": "Object.entries(process.env)",
+      "guards": "通知进程不继承游戏凭据"
+    },
+    {
+      "id": "b15-sender-cleanup-visible",
+      "file": "src/host/codex-queue-sender.cjs",
+      "find": "if (!result.cleanup_ok) { result.queued = false; result.reason = \"queue_cleanup_failed\"; }",
+      "replace": "// MUTANT: lose cleanup failure reason.",
+      "guards": "自身子进程清理未确认必须独立可见"
+    }
+  ],
+  "excluded": []
+}

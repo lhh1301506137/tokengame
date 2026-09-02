@@ -734,8 +734,9 @@ async function main() {
     const bullets = await alice.page.$$eval("#scope-gate .scope-list li",
       (nodes) => nodes.map((n) => n.textContent.trim()));
     check("公开范围逐条列出（六条）", bullets.length === 6, `实际 ${bullets.length} 条`);
-    check("公开范围说明了底牌只对自己可见",
-      bullets.some((b) => b.includes("底牌") && b.includes("只有你自己")));
+    check("公开范围限定本人与明确授权的本席 AI，官方亮牌仍需摊牌或自愿",
+      bullets.some((b) => b.includes("底牌只供你及你明确连接的本席 AI")
+        && b.includes("只在摊牌或你自愿亮牌时") && b.includes("官方牌面公开")));
     check("公开范围说明了 AI 发言会被标注",
       bullets.some((b) => b.includes("AI") && b.includes("标注")));
     check("公开范围说明了本地隐藏只影响自己",

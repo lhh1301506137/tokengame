@@ -111,6 +111,12 @@ test("[hidden] 的 display:none 规则仍在，且带 !important", () => {
     "缺了这条规则时，display 不是 none 的元素带着 hidden 仍然显示");
 });
 
+test("牌桌声明空 data favicon，浏览器不会为缺省图标制造 404 控制台错误", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../web/table/index.html"), "utf8");
+  assert.match(html, /<link\s+rel="icon"\s+href="data:,"\s*>/,
+    "没有显式 favicon 时，真实浏览器会自动请求 /favicon.ico 并在控制台记录 404");
+});
+
 test("入口幂等：同一个入口键重复创建回到同一个会话，不建第二个房", async () => {
   const ctx = host();
 

@@ -1,6 +1,10 @@
 node_modules/
 .playwright/
+.playwright-cli/
 artifacts/
+output/
 test-results/
 *.log
-
+# 本人下载的 AI 发言权限文件不可提交；不包含核心席位凭据。
+tokengame-ai-*.json
+.tokengame-private/

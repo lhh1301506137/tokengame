@@ -25,6 +25,8 @@ const { MODEL_COMMANDS, HUMAN_COMMANDS } = require("../src/authority/host-surfac
 const ROOT = path.join(__dirname, "..");
 const SKILL = path.join(ROOT, "plugins", "tokengame", "skills", "tokengame", "SKILL.md");
 const skill = fs.readFileSync(SKILL, "utf8");
+const pluginReadme = fs.readFileSync(path.join(ROOT, "plugins/tokengame/README.md"), "utf8");
+const managedWakeDoc = fs.readFileSync(path.join(ROOT, "docs/MANAGED-WAKE-SESSION.md"), "utf8");
 
 // 拿真实 schema，不重新推导一份。手抄 schema 的测试只能证明我抄得一致。
 const serverSource = fs.readFileSync(path.join(ROOT, "plugins", "tokengame", "mcp", "server.cjs"), "utf8");
@@ -137,7 +139,7 @@ test("SKILL 与 MCP schema 对账", async (t) => {
     // 线索说明为什么。
     //
     // 判定方式不是查关键词，是**跟着说明走一遍**：把 SKILL 里点名的 npm 脚本取出来，
-    // 查它在不在 package.json 里，再查那个脚本的入口源码有没有真的接上 modelCommandToken。
+    // 查它在不在 package.json 里，再查入口有没有启用逐席绑定；真实启动行为另由 beta-entry 覆盖。
     // 只查关键词的话，把 `npm run beta` 改成 `npm run 随便什么` 也能绿。
     const text = directiveText(skill);
     const scripts = [...text.matchAll(/npm run ([a-z][a-z0-9:-]*)/g)].map((m) => m[1]);
@@ -155,16 +157,33 @@ test("SKILL 与 MCP schema 对账", async (t) => {
       if (entry === null) return false;
       const file = path.join(ROOT, entry[1]);
       if (!fs.existsSync(file)) return false;
-      return /modelCommandToken/.test(fs.readFileSync(file, "utf8"));
+      return /modelBindingEnabled:\s*true/.test(fs.readFileSync(file, "utf8"));
     });
     assert.notEqual(enabling.length, 0,
-      `SKILL 点名的启动命令（${scripts.join("、")}）没有一条会接上模型命令令牌。`
-      + "照着做的模型会拿到 model_command_token_not_configured，而它读不出原因。");
+      `SKILL 点名的启动命令（${scripts.join("、")}）没有一条会启用逐席模型绑定。`
+      + "真人无法为自己的座位下载连接文件。");
 
-    // 而且要说清那个令牌得配。缺它时的报错已经带 hint，但模型在**读文档的时候**就该知道
-    // 这一步存在——否则第一次调用必然失败，而第一次失败会被当成「这个项目坏了」。
-    assert.match(text, /TOKENGAME_MODEL_TOKEN/,
-      "SKILL 没提模型令牌这一步，而没有它模型一条命令都发不出去");
+    // 主流程必须能从项目配置走到逐席激活与清理，不能继续让用户逐局改服务器环境变量。
+    for (const command of ["codex:play", "connection:activate", "connection:clear"]) {
+      assert.match(text, new RegExp(command.replace(":", "\\:")),
+        `SKILL 缺少 ${command}，真人无法完成稳定项目接入的授权生命周期`);
+    }
+    assert.match(text, /重启[^。\n]{0,40}重跑|重跑[^。\n]{0,40}同一命令/,
+      "SKILL 必须说明首次配置变化后重启并重跑同一命令");
+    assert.match(text, /CODEX_THREAD_ID/, "SKILL 首选入口必须只锚定当前Codex任务");
+    assert.match(text, /CODEX_SESSION_ID/, "SKILL 必须明确session ID不参与任务身份");
+    assert.match(text, /Windows[^。\n]{0,80}PATH/, "SKILL 必须把受限PATH解析限定在codex:play的Windows路径");
+    assert.match(text, /非Windows[^。]{0,60}显式/, "SKILL 必须说明非Windows需要显式可执行文件");
+    assert.match(text, /不会自动开启通知窗|不自动开启通知窗/,
+      "SKILL 必须说明一键入口不会替真人开启通知窗口");
+    assert.match(text, /结束[^。\n]{0,30}回复[^。\n]{0,30}空闲/,
+      "SKILL 必须要求固定游戏任务先结束当前回复并保持空闲");
+    assert.match(text, /已接收[^。\n]{0,40}(不等于|不是)[^。\n]{0,20}模型/,
+      "SKILL 不能把queue接收写成模型已开始或完成");
+    assert.match(text, /不需重启|无需重启/,
+      "SKILL 必须区分首次加载服务器与后续逐席热切换");
+    assert.match(text, /TOKENGAME_MODEL_CONNECTION_FILE/,
+      "SKILL 应保留 launcher 内部/高级兼容边界，便于解释错误但不能把变量当主入口");
   });
 
   await t.test("SKILL 说清了空手而归时怎么分辨在等什么", () => {
@@ -182,6 +201,60 @@ test("SKILL 与 MCP schema 对账", async (t) => {
       assert.match(surface, new RegExp(`waiting_on: "${value}"`),
         `实现里没有 waiting_on: "${value}"，文档写的是另一套名字`);
     }
+  });
+
+  await t.test("插件 README 与逐席下载入口一致，不再教人共享进程令牌", () => {
+    const text = directiveText(pluginReadme);
+    for (const command of ["codex:play", "connection:activate", "connection:clear"]) {
+      assert.match(text, new RegExp(command.replace(":", "\\:")),
+        `插件入口缺少稳定项目流程 ${command}`);
+    }
+    assert.match(text, /重启[^。\n]{0,40}重跑|重跑[^。\n]{0,40}同一命令/,
+      "插件入口必须说明首次配置变化后重启并重跑同一命令");
+    assert.match(text, /CODEX_THREAD_ID/, "插件入口必须只锚定当前Codex任务");
+    assert.match(text, /CODEX_SESSION_ID/, "插件入口必须明确session ID不参与任务身份");
+    assert.match(text, /Windows[^。\n]{0,80}PATH/, "插件入口必须把受限PATH解析限定在codex:play的Windows路径");
+    assert.match(text, /非Windows[^。]{0,60}显式/, "插件入口必须说明非Windows需要显式可执行文件");
+    assert.match(text, /不会自动开启通知窗|不自动开启通知窗/,
+      "插件入口必须说明一键入口不会替真人开启通知窗口");
+    assert.match(text, /结束[^。\n]{0,30}回复[^。\n]{0,30}空闲/,
+      "插件入口必须要求固定游戏任务先结束当前回复并保持空闲");
+    assert.match(text, /已接收[^。\n]{0,40}(不等于|不是)[^。\n]{0,20}(AI|模型)/,
+      "插件入口不能把queue接收写成AI已完成");
+    for (const variable of [
+      "TOKENGAME_CODEX_WAKE",
+      "TOKENGAME_CODEX_EXECUTABLE",
+      "TOKENGAME_CODEX_CWD",
+      "TOKENGAME_CODEX_THREAD",
+    ]) {
+      assert.match(text, new RegExp(variable), `插件高级手工入口缺少 ${variable}`);
+    }
+    assert.match(text, /不从PATH猜|不会从PATH猜/,
+      "插件高级手工入口必须明确不从PATH猜Codex可执行文件");
+    assert.match(text, /TOKENGAME_MODEL_CONNECTION_FILE/,
+      "插件入口仍需说明稳定 launcher 的内部变量和手工兼容边界");
+    assert.match(text, /下载/, "授权文件由真人在牌桌下载，而非 beta 自动生成");
+    assert.match(text, /绝对路径/, "MCP 的连接文件配置要求绝对路径");
+    assert.match(text, /源下载不会自动删除|不会自动删除/, "下载源的清理责任必须明确交给真人");
+    assert.match(text, /不能互相代替/, "服务端撤权与本地清除必须分开说明");
+    assert.match(text, /只覆盖本席|只授权本席/, "令牌权限必须明确限制到本人座位");
+    assert.doesNotMatch(text, /令牌是\*\*进程级|所有席位发言|由 `npm run beta` 生成并写进文件/,
+      "不能继续指导用户用一张进程令牌控制全部席位");
+    assert.match(text, /不是 B8|不覆盖 B8/, "旧 CLI 探针不能代替本轮逐席绑定的真宿主验收");
+
+    const wakeText = directiveText(managedWakeDoc);
+    assert.match(wakeText, /官方页面[^。]{0,80}省略`thread_id`/,
+      "固定目标官方页面必须省略thread_id，由服务端选择目标");
+    assert.match(wakeText, /畸形[^。]{0,40}`invalid_field`/,
+      "固定目标API必须把畸形thread_id记为invalid_field");
+    assert.match(wakeText, /合法外来[^。]{0,40}`wake_thread_not_authorized`/,
+      "固定目标API必须把合法外来thread_id记为wake_thread_not_authorized");
+    assert.match(wakeText, /低层兼容请求[^。]{0,80}精确匹配/,
+      "固定sender仍兼容显式提供且精确匹配的合法任务ID");
+    assert.match(wakeText, /成功或错误响应[^。]{0,80}不回显ID|成功或错误响应[^。]{0,80}不返回`thread_id`/,
+      "固定目标成功与错误响应都不得回显任务ID");
+    assert.match(wakeText, /结束[^。\n]{0,30}回复[^。\n]{0,30}空闲/,
+      "固定目标操作说明必须披露活动任务不能并发处理通知");
   });
 
   await t.test("这些断言在旧文本上会红", () => {

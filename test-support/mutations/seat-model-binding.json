@@ -1,0 +1,162 @@
+{
+  "name": "B8 逐席模型绑定与世代围栏",
+  "note": "真人会话显式确认、受限下载、单席scope、换发/撤销/离桌/到期与在途边界。实际运行与结果见 REVIEW-LOG.md 的 B8 记录；变异运行时须独占产品源码。已送入核心的操作不承诺回滚；响应与本地issued仍须围住。128个历史请求键有界保留，未生效的本世代传输失败可用同键重试。离桌失败不自动恢复，所有本地在途leave结束后仅本人新授权能经权威复核恢复，真实privacy fence/已释放不可恢复。",
+  "test": "test/seat-model-binding.test.cjs",
+  "mutations": [
+    {
+      "id": "binding-skips-human-acknowledgement",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (body.acknowledged !== true) throw new CoreError(\"invalid_field\", 400, { field: \"acknowledged\" });",
+      "replace": "",
+      "note": "没明确确认也发连接能力，服务器不能依赖UI记得询问。"
+    },
+    {
+      "id": "binding-allows-short-request-key",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (!usableEntryKey(key) || key.length > MAX_MODEL_BINDING_KEY_LENGTH) {",
+      "replace": "    if (false) {",
+      "note": "空/短请求键也能创建可重放的能力下载。"
+    },
+    {
+      "id": "binding-history-unbounded",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (session.model_requests.size >= MAX_MODEL_BINDING_REQUESTS) throw new CoreError(\"model_binding_history_full\", 409);",
+      "replace": "",
+      "note": "会话可无限积累历史令牌请求，不能以逐出旧键并允许复活解决。"
+    },
+    {
+      "id": "old-request-key-becomes-new-request",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    let request = session.model_requests.get(key);",
+      "replace": "    let request = session.model_requests.get(key);\n    if (request?.generation !== session.model_generation) request = undefined;",
+      "note": "被撤销/换代的旧键被当成首次请求，再次得到可用能力。"
+    },
+    {
+      "id": "binding-origin-trusts-host-header",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      case \"/api/model/bind\": return this.postModelBind(response, body);",
+      "replace": "      case \"/api/model/bind\": this.tableOrigin = `http://${request.headers.host}`; return this.postModelBind(response, body);",
+      "note": "下载文件采用攻击者可控Host头，随后宿主会把模型令牌发给错误地址。"
+    },
+    {
+      "id": "session-generation-not-checked",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      || session.model_generation !== generation) {",
+      "replace": "      || false) {",
+      "note": "新键/撤销比旧资格请求先完成后，旧请求仍能发行连接文件。"
+    },
+    {
+      "id": "issued-generation-gate-disabled",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "    if (this.#generations.get(scope.handle) !== scope.generation\n      || !this.#custody.handles().includes(scope.handle)\n      || !this.#scopeIsCurrent({ seat_handle: scope.handle, binding_id: scope.bindingId })) {",
+      "replace": "    if (false) {",
+      "note": "在途响应可以重新登记已经撤销的intent/turn；HTTP末端扣响应不能替代issued表的世代围栏。"
+    },
+    {
+      "id": "internal-driver-polls-external-bindings",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (bindingId === null) return binding === undefined && !session.model_pending;",
+      "replace": "    if (bindingId === null) return !session.model_pending;",
+      "note": "内部驱动被允许使用外部绑定席位，同一份托管不应意味着内部模拟适配器拥有全部模型发言权。"
+    },
+    {
+      "id": "pending-binding-not-reserved-from-driver",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    if (bindingId === null) return binding === undefined && !session.model_pending;",
+      "replace": "    if (bindingId === null) return binding === undefined;",
+      "note": "外部绑定还在资格检查时，内部驱动抢走该席待办。"
+    },
+    {
+      "id": "driver-uses-old-claim-context",
+      "file": "src/host/table-web-host.cjs",
+      "find": "              context: startResult.body.result.model_context,",
+      "replace": "              context: intent.context,",
+      "note": "模拟驱动退回旧claim快照，缺少本席手牌且source可能已经被新事件替换。"
+    },
+    {
+      "id": "model-token-field-not-sanitized",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (key === \"model_token\") { this.custody.remember(entry); continue; }",
+      "replace": "      if (false) { this.custody.remember(entry); continue; }",
+      "note": "未摘掉新能力字段，只靠末端整份拒绝，合法工具结果变成安全错误。"
+    },
+    {
+      "id": "new-model-token-not-remembered",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      token: this.custody.remember(`model-token-${crypto.randomBytes(32).toString(\"base64url\")}`),",
+      "replace": "      token: `model-token-${crypto.randomBytes(32).toString(\"base64url\")}`,",
+      "note": "新token未立即进入值扫描，藏在任意字段或自由文本中就能穿过公开响应。"
+    },
+    {
+      "id": "model-auth-does-not-settle-expiry",
+      "file": "src/authority/command-surface.cjs",
+      "find": "        this.orchestrator.rooms.releaseExpiredSeats();",
+      "replace": "",
+      "note": "尚未来得及tick时，已经过保留窗的旧模型令牌仍可领取；附加直接ai.take_intents/ai.start案例以未消费意图验证权威claim_count与启动事件无副作用，不借projection/model_context的顺便清理。"
+    },
+    {
+      "id": "failed-binding-request-never-retried",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    } else if (request.retryable && !this.modelBindings.has(session.seat_handle)) {",
+      "replace": "    } else if (false) {",
+      "note": "临时核心失败会把同键Promise永久缓存为rejected，核心恢复后UI依然下载不了。"
+    },
+    {
+      "id": "legacy-token-uses-first-binding",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    const token = request.headers[MODEL_COMMAND_TOKEN_HEADER];\n    if (this.modelCommandToken !== null && sameToken(token, this.modelCommandToken)) {\n      sendJson(response, 403, { ok: false, code: \"model_binding_required\" });\n      return;\n    }",
+      "replace": "    let token = request.headers[MODEL_COMMAND_TOKEN_HEADER];\n    if (this.modelCommandToken !== null && sameToken(token, this.modelCommandToken)) {\n      token = [...this.modelBindings.values()][0]?.token;\n    }",
+      "note": "旧进程级令牌变成第一席的别名，迁移配置重新授予模型权限。"
+    },
+    {
+      "id": "failed-leave-permanently-blocks-new-authorization",
+      "file": "src/host/table-web-host.cjs",
+      "find": "    const reauthorize = request?.reauthorize ?? session.model_left;",
+      "replace": "    const reauthorize = false;",
+      "note": "离桌未到达权威却被本地永久记成已退出，显式新授权也无法在权威复核后恢复。"
+    },
+    {
+      "id": "reauthorization-ignores-pending-leave",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      || (session.model_left && (!reauthorize || session.model_leave_pending !== 0))",
+      "replace": "      || (session.model_left && !reauthorize)",
+      "note": "尚未结束的leave可能稍后生效；在它结束前不能把一次仍alive的快照当成重新授权依据。"
+    },
+    {
+      "id": "first-leave-completion-clears-all-pending",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (leaving) session.model_leave_pending -= 1;",
+      "replace": "      if (leaving) session.model_leave_pending = 0;",
+      "note": "较早的离桌失败把较晚请求的在途计数一并清空，允许它完成前恢复绑定。"
+    },
+    {
+      "id": "leave-failure-silently-reenables-internal-driver",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (leaving) session.model_leave_pending -= 1;",
+      "replace": "      if (leaving) { session.model_leave_pending -= 1; session.model_left = false; }",
+      "note": "离桌失败自动撤回本地退出意图，使内部AI在没有本人新授权时又开始领取。"
+    },
+    {
+      "id": "reauthorization-skips-authoritative-privacy-fence",
+      "file": "src/host/table-web-host.cjs",
+      "find": "      if (seat.privacy_fence || seat.leave_requested || seat.state === \"RELEASED\") {",
+      "replace": "      if (false) {",
+      "note": "真正离桌但仍在手的席位凭据尚未吊销；只验凭据不能判定允许重新绑定。"
+    },
+    {
+      "id": "failed-reauthorization-cannot-retry-transport",
+      "file": "src/host/table-web-host.cjs",
+      "find": "        && session.model_generation === request.generation && (!session.model_left || request.reauthorize)",
+      "replace": "        && session.model_generation === request.generation && !session.model_left",
+      "note": "失败离桌后的新授权若遇暂时资格传输失败，会再次把合法新请求键永久锁死。"
+    },
+    {
+      "id": "external-claim-error-reported-as-idle",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "        if (externalScope !== null) return result;",
+      "replace": "",
+      "note": "外部单席领取失败仍包装成ok:true与waiting_on:table，MCP无法区分核心故障和正常空闲。"
+    }
+  ],
+  "excluded": []
+}

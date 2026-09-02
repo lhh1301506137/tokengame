@@ -55,7 +55,7 @@
     {
       "id": "configuration-class-removed",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "  configuration: Object.freeze([\n    \"model_command_route_disabled\",\n    \"model_command_token_not_configured\",\n  ]),",
+      "find": "  configuration: Object.freeze([\n    \"invalid_configuration\",\n    \"child_start_failed\",\n    \"wake_disabled\",\n    // B11 本地回执：远程核心没有本地事实源；文件目标、已有证据与存储可用性需要操作者\n    // 检查后另开一次捕获。write 可能已经产生效果，绝不能按网络故障自动重发或覆盖旧文件。\n    \"ai_receipt_remote_core_unsupported\",\n    \"ai_receipt_invalid_file\",\n    \"ai_receipt_file_exists\",\n    \"ai_receipt_open_failed\",\n    \"ai_receipt_write_failed\",\n    \"ai_receipt_read_failed\",\n    \"model_command_route_disabled\",\n    \"model_command_token_not_configured\",\n    \"model_binding_required\",\n    \"model_connection_unavailable\",\n  ]),",
       "replace": "",
       "note": "两条配置码落回 unknown。处置里 retryable / is_defect 与 configuration 只差 is_defect 一位，所以这条能不能杀取决于测试有没有真的问「归的是哪一类」，而不是只问处置。"
     },
@@ -69,8 +69,8 @@
     {
       "id": "invalid-core-response-marked-retryable",
       "file": "src/contract/adapter-contract.cjs",
-      "find": "  internal: Object.freeze([\n    \"internal_error\",\n    \"invalid_core_response\",\n  ]),",
-      "replace": "  internal: Object.freeze([\n    \"internal_error\",\n  ]),",
+      "find": "  internal: Object.freeze([\n    \"wake_protocol_invalid\",\n    \"wake_clock_invalid\",\n    // 观察源/事件形状与订阅接线不符合本地契约；和用户选择了不可用文件路径不是一类。\n    \"ai_receipt_invalid_source\",\n    \"ai_receipt_invalid_event\",\n    \"ai_receipt_subscription_failed\",\n    \"ai_receipt_startup_failed\",\n    \"internal_error\",\n    \"invalid_core_response\",\n  ]),",
+      "replace": "  internal: Object.freeze([\n    \"wake_protocol_invalid\",\n    \"wake_clock_invalid\",\n    // 观察源/事件形状与订阅接线不符合本地契约；和用户选择了不可用文件路径不是一类。\n    \"ai_receipt_invalid_source\",\n    \"ai_receipt_invalid_event\",\n    \"ai_receipt_subscription_failed\",\n    \"ai_receipt_startup_failed\",\n    \"internal_error\",\n  ]),",
       "note": "invalid_core_response 落回未归类。它与 core_unreachable 读起来都像「对面有问题」而处置相反：对面答了，只是答的不是 JSON，重发会得到同一份坏响应。"
     },
     {

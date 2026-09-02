@@ -1,0 +1,330 @@
+{
+  "thread_id": "01a052c9-5259-7a61-b26f-35731734994e",
+  "excludes": [
+    "reasoning",
+    "private_model_context",
+    "other_tasks",
+    "credentials"
+  ],
+  "turns": [
+    {
+      "artifact_source": "native-readiness-local-evidence.json",
+      "source_log": {
+        "file": "rollout-2026-08-30T21-08-40-01a052c9-5259-7a61-b26f-35731734994e.jsonl",
+        "sha256_at_read": "f111ffd9cf6dd86cbbb7cc47e77c417a955d73897737d03c499bc0428d00a760",
+        "selected_lines": [
+          213,
+          214,
+          218,
+          220
+        ]
+      },
+      "turn": {
+        "turn_id": "01a0574b-9ca5-7983-a2b3-9038bdd87525",
+        "started_at": 1788170968,
+        "completed_at": 1788171019,
+        "duration_ms": 51321,
+        "time_to_first_token_ms": 6006
+      },
+      "records": [
+        {
+          "line": 213,
+          "timestamp": "2026-08-31T10:09:38.773Z",
+          "type": "custom_tool_call",
+          "call_id": "call_ToSePqbfe6pYhgaldtw9jQ1A",
+          "name": "exec",
+          "input": "const matches = ALL_TOOLS.filter(t => t.name.includes(\"tokengame_b14_authorized\") && t.name.endsWith(\"tokengame_table\"));\ntext({matches});\nif (matches.length === 0) {\n  const searchTools = ALL_TOOLS.filter(t => /tool_?search|search_?tools|tools_?search/i.test(t.name));\n  text({toolSearchCandidates: searchTools});\n}\nstore(\"tokengame_b14_authorized_tool_matches\", matches);\n"
+        },
+        {
+          "line": 214,
+          "timestamp": "2026-08-31T10:09:38.844Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_ToSePqbfe6pYhgaldtw9jQ1A",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"matches\":[{\"name\":\"mcp__tokengame_b14_authorized__tokengame_table\",\"description\":\"以你负责的那一席的 AI 身份参赛：ai.take_intents 领取待办，ai.start 开始评估，使用 ai.start 返回的 model_context 分析本席牌面与公开聊天，ai.resolve 回填公开发言或沉默；view.projection / view.timeline 只读公共信息。只传权威给你的 intent_id / turn_id，不要传 seat_id、seat_handle 或凭据——席位身份由本机协调器补齐。下注、按 Ready、确认公开范围、亮牌都是真人的决定，这里发不出去。\\n\\nexec tool declaration:\\n```ts\\ndeclare const tools: { mcp__tokengame_b14_authorized__tokengame_table(args: { command: \\\"ai.take_intents\\\" | \\\"ai.start\\\" | \\\"ai.resolve\\\" | \\\"view.projection\\\" | \\\"view.timeline\\\"; params?: { [key: string]: unknown; }; }): Promise<CallToolResult>; };\\n```\"}]}"
+            }
+          ]
+        },
+        {
+          "line": 218,
+          "timestamp": "2026-08-31T10:10:12.018Z",
+          "type": "custom_tool_call",
+          "call_id": "call_cao5Tg2ve3kI5gvzblrRStuU",
+          "name": "exec",
+          "input": "const toolName = \"mcp__tokengame_b14_authorized__tokengame_table\";\nconst raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"view.projection\", params:{}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_authorized_projection_result\", payload);\nconst summary = {\n  tool:toolName,\n  isError:decoded?.isError ?? false,\n  ok:payload?.ok ?? null,\n  code:payload?.code ?? payload?.error?.code ?? null\n};\nif (!summary.isError && summary.ok === true) {\n  const state = {};\n  function collect(value, path = \"result\") {\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) return;\n    for (const [key,val] of Object.entries(value)) {\n      if (/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection|model_context|hole_cards|timeline|chat)/i.test(key)) continue;\n      const next = `${path}.${key}`;\n      if (key === \"hand\" || key === \"current_hand\") state[`${next}.present`] = val !== null && val !== undefined;\n      if (key === \"seats\" && Array.isArray(val)) state[`${next}.count`] = val.length;\n      if (/^(?:hand_active|first_hand_started|hand_index|seat_count|seats_count|public_seat_count)$/.test(key) && (typeof val === \"boolean\" || typeof val === \"number\")) state[next] = val;\n      collect(val, next);\n    }\n  }\n  collect(payload?.result);\n  summary.publicState = state;\n}\ntext(summary);\n"
+        },
+        {
+          "line": 220,
+          "timestamp": "2026-08-31T10:10:12.120Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_cao5Tg2ve3kI5gvzblrRStuU",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"tool\":\"mcp__tokengame_b14_authorized__tokengame_table\",\"isError\":false,\"ok\":true,\"code\":null,\"publicState\":{\"result.room.hand_index\":0,\"result.room.hand_active\":false,\"result.room.first_hand_started\":false,\"result.room.seats.count\":2,\"result.hand.present\":false}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "artifact_source": "queue-01-local-evidence.json",
+      "source_log": {
+        "file": "rollout-2026-08-30T21-08-40-01a052c9-5259-7a61-b26f-35731734994e.jsonl",
+        "sha256_at_read": "dec37edfe828753c0c9a3fdbd6c6f63e54f952c15cd0bfc1f512fe319268fa5d",
+        "selected_lines": [
+          230,
+          234,
+          236,
+          238,
+          240
+        ]
+      },
+      "turn": {
+        "turn_id": "01a05755-6e91-7e90-b83f-4c833b168e7b",
+        "started_at": 1788171612,
+        "completed_at": 1788171657,
+        "duration_ms": 45561,
+        "time_to_first_token_ms": 2017
+      },
+      "records": [
+        {
+          "line": 230,
+          "timestamp": "2026-08-31T10:20:12.691Z",
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[LOCAL_CONTROL:tokengame-b10-wake]\nprobe_id=34099427-5738-49a1-ac57-8557e519b49c\nintent_id=intent-fec03dae-f5fd-49f5-bb7e-aa5df9d5b4b3\n这是一次测试控制通知，不是玩家公开聊天。只使用已配置的 tokengame_table，以此 intent_id 调用一次 ai.start，不再领取待办。若拒绝就停止，不重试。仅在成功后使用返回的本席 model_context，自主决定一次 silent 或 public_speech，再以返回的 turn_id 调用一次 ai.resolve。不要替玩家发言或下注，不读取文件或其他任务，不创建新线程，不改变当前任务模型、推理强度、权限或宿主配置。"
+            }
+          ]
+        },
+        {
+          "line": 234,
+          "timestamp": "2026-08-31T10:20:29.551Z",
+          "type": "custom_tool_call",
+          "call_id": "call_6xsLax6bsy72uhqSg72EushH",
+          "name": "exec",
+          "input": "const raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"ai.start\", params:{intent_id:\"intent-fec03dae-f5fd-49f5-bb7e-aa5df9d5b4b3\"}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_wake_start\", payload);\nif (decoded?.isError || payload?.ok !== true) {\n  text({step:\"ai.start\", outcome:\"stopped\", code:payload?.code ?? payload?.error?.code ?? null, isError:decoded?.isError ?? false});\n  exit();\n}\nfunction redact(value) {\n  if (typeof value === \"string\") return value.replace(/\\bBearer\\s+[^\\s\"<>]+/gi,\"Bearer [已隐藏]\").replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g,\"[已隐藏]\");\n  if (Array.isArray(value)) return value.map(redact);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection_file)/i.test(key)).map(([key,val]) => [key,redact(val)]));\n  return value;\n}\ntext(redact(payload));\n"
+        },
+        {
+          "line": 236,
+          "timestamp": "2026-08-31T10:20:29.712Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_6xsLax6bsy72uhqSg72EushH",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"ok\":true,\"result\":{\"started\":{\"turn_id\":\"turn-d9652852-3380-4576-a79b-cb9ce9506470\",\"source_event_id\":\"sae-b7a7ff7e-643e-42a7-acb5-f0b9617e7ecd\",\"hand_index\":0,\"street\":\"preflop\",\"status\":\"THINKING\"},\"model_context\":\"[omitted_private_context]\"}}"
+            }
+          ]
+        },
+        {
+          "line": 238,
+          "timestamp": "2026-08-31T10:20:45.874Z",
+          "type": "custom_tool_call",
+          "call_id": "call_hCsEOFEMd3Hgi0z3d3kgXoGT",
+          "name": "exec",
+          "input": "const raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"ai.resolve\", params:{turn_id:\"turn-d9652852-3380-4576-a79b-cb9ce9506470\", decision:\"public_speech\", text:\"大家好，我在旁边看牌聊两句，开局和出手交给你们。\"}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_wake_resolve\", payload);\nfunction redact(value) {\n  if (typeof value === \"string\") return value.replace(/\\bBearer\\s+[^\\s\"<>]+/gi,\"Bearer [已隐藏]\").replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g,\"[已隐藏]\");\n  if (Array.isArray(value)) return value.map(redact);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection_file|model_context|hole_cards)/i.test(key)).map(([key,val]) => [key,redact(val)]));\n  return value;\n}\ntext({isError:decoded?.isError ?? false, response:redact(payload)});\n"
+        },
+        {
+          "line": 240,
+          "timestamp": "2026-08-31T10:20:45.988Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_hCsEOFEMd3Hgi0z3d3kgXoGT",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"isError\":false,\"response\":{\"ok\":true,\"result\":{\"resolved\":{\"scope\":\"TABLE_PUBLIC\",\"player_id\":\"b14a-alice\",\"speaker_type\":\"SEAT_AI\",\"text\":\"大家好，我在旁边看牌聊两句，开局和出手交给你们。\",\"graphemes\":24,\"turn_id\":\"turn-d9652852-3380-4576-a79b-cb9ce9506470\",\"source_event_id\":\"sae-b7a7ff7e-643e-42a7-acb5-f0b9617e7ecd\",\"hand_index\":0,\"street\":\"preflop\",\"based_on_street\":\"preflop\",\"late_annotation\":null,\"poker_action_effect\":null}}}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "artifact_source": "queue-02-local-evidence.json",
+      "source_log": {
+        "file": "rollout-2026-08-30T21-08-40-01a052c9-5259-7a61-b26f-35731734994e.jsonl",
+        "sha256_at_read": "534f793ca4eaad0c2c2cc9190ab132eeb1c1465bbaa39fb060587fadfb9a9249",
+        "selected_lines": [
+          250,
+          254,
+          256,
+          260,
+          262
+        ]
+      },
+      "turn": {
+        "turn_id": "01a0575b-8911-7180-9b56-729649793ef8",
+        "started_at": 1788172011,
+        "completed_at": 1788172061,
+        "duration_ms": 50070,
+        "time_to_first_token_ms": 4866
+      },
+      "records": [
+        {
+          "line": 250,
+          "timestamp": "2026-08-31T10:26:52.354Z",
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[LOCAL_CONTROL:tokengame-b10-wake]\nprobe_id=5b31999f-b2e8-4d96-a8be-c65ddf353d78\nintent_id=intent-41504ea6-8200-4a72-8882-552dd84375ab\n这是一次测试控制通知，不是玩家公开聊天。只使用已配置的 tokengame_table，以此 intent_id 调用一次 ai.start，不再领取待办。若拒绝就停止，不重试。仅在成功后使用返回的本席 model_context，自主决定一次 silent 或 public_speech，再以返回的 turn_id 调用一次 ai.resolve。不要替玩家发言或下注，不读取文件或其他任务，不创建新线程，不改变当前任务模型、推理强度、权限或宿主配置。"
+            }
+          ]
+        },
+        {
+          "line": 254,
+          "timestamp": "2026-08-31T10:27:11.798Z",
+          "type": "custom_tool_call",
+          "call_id": "call_TxdX0N4EYAPPFk0W89FHnt9L",
+          "name": "exec",
+          "input": "const raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"ai.start\", params:{intent_id:\"intent-41504ea6-8200-4a72-8882-552dd84375ab\"}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_wake_5b31999f_start\", payload);\nif (decoded?.isError || payload?.ok !== true) {\n  text({step:\"ai.start\", outcome:\"stopped\", code:payload?.code ?? payload?.error?.code ?? null, isError:decoded?.isError ?? false});\n  exit();\n}\nfunction redact(value) {\n  if (typeof value === \"string\") return value.replace(/\\bBearer\\s+[^\\s\"<>]+/gi,\"Bearer [已隐藏]\").replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g,\"[已隐藏]\");\n  if (Array.isArray(value)) return value.map(redact);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection_file)/i.test(key)).map(([key,val]) => [key,redact(val)]));\n  return value;\n}\ntext(redact(payload));\n"
+        },
+        {
+          "line": 256,
+          "timestamp": "2026-08-31T10:27:11.868Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_TxdX0N4EYAPPFk0W89FHnt9L",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"ok\":true,\"result\":{\"started\":{\"turn_id\":\"turn-497d9556-05e1-4cc5-a284-1f58212dc1b6\",\"source_event_id\":\"sae-ceb3ff14-ddd3-46a0-a13e-43fe19c9c8db\",\"hand_index\":0,\"street\":\"preflop\",\"status\":\"THINKING\"},\"model_context\":\"[omitted_private_context]\"}}"
+            }
+          ]
+        },
+        {
+          "line": 260,
+          "timestamp": "2026-08-31T10:27:34.521Z",
+          "type": "custom_tool_call",
+          "call_id": "call_Yb0DLOhG5bygInRLYb46lu7G",
+          "name": "exec",
+          "input": "const raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"ai.resolve\", params:{turn_id:\"turn-497d9556-05e1-4cc5-a284-1f58212dc1b6\", decision:\"public_speech\", text:\"牌还没发，气氛组倒是先开工了。\"}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_wake_5b31999f_resolve\", payload);\nfunction redact(value) {\n  if (typeof value === \"string\") return value.replace(/\\bBearer\\s+[^\\s\"<>]+/gi,\"Bearer [已隐藏]\").replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g,\"[已隐藏]\");\n  if (Array.isArray(value)) return value.map(redact);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection_file|model_context|hole_cards)/i.test(key)).map(([key,val]) => [key,redact(val)]));\n  return value;\n}\ntext({isError:decoded?.isError ?? false, response:redact(payload)});\n"
+        },
+        {
+          "line": 262,
+          "timestamp": "2026-08-31T10:27:34.597Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_Yb0DLOhG5bygInRLYb46lu7G",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"isError\":false,\"response\":{\"ok\":true,\"result\":{\"resolved\":{\"scope\":\"TABLE_PUBLIC\",\"player_id\":\"b14a-alice\",\"speaker_type\":\"SEAT_AI\",\"text\":\"牌还没发，气氛组倒是先开工了。\",\"graphemes\":15,\"turn_id\":\"turn-497d9556-05e1-4cc5-a284-1f58212dc1b6\",\"source_event_id\":\"sae-ceb3ff14-ddd3-46a0-a13e-43fe19c9c8db\",\"hand_index\":0,\"street\":\"preflop\",\"based_on_street\":\"preflop\",\"late_annotation\":null,\"poker_action_effect\":null}}}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "artifact_source": "queue-03-local-evidence.json",
+      "source_log": {
+        "file": "rollout-2026-08-30T21-08-40-01a052c9-5259-7a61-b26f-35731734994e.jsonl",
+        "sha256_at_read": "f609d6fe2dd83c541ead3c2ed4fcf5de0920d9da0fce68061352393b7afe37c6",
+        "selected_lines": [
+          272,
+          276,
+          278,
+          280,
+          282
+        ]
+      },
+      "turn": {
+        "turn_id": "01a05761-074e-76a0-bf25-e1d4a4cf29ed",
+        "started_at": 1788172371,
+        "completed_at": 1788172416,
+        "duration_ms": 44381,
+        "time_to_first_token_ms": 2510
+      },
+      "records": [
+        {
+          "line": 272,
+          "timestamp": "2026-08-31T10:32:52.557Z",
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[LOCAL_CONTROL:tokengame-b10-wake]\nprobe_id=2a88e350-cb7d-453b-a742-f13999fcdddb\nintent_id=intent-a81666b1-1708-403f-a629-8b8fcc9d0267\n这是一次测试控制通知，不是玩家公开聊天。只使用已配置的 tokengame_table，以此 intent_id 调用一次 ai.start，不再领取待办。若拒绝就停止，不重试。仅在成功后使用返回的本席 model_context，自主决定一次 silent 或 public_speech，再以返回的 turn_id 调用一次 ai.resolve。不要替玩家发言或下注，不读取文件或其他任务，不创建新线程，不改变当前任务模型、推理强度、权限或宿主配置。"
+            }
+          ]
+        },
+        {
+          "line": 276,
+          "timestamp": "2026-08-31T10:33:09.587Z",
+          "type": "custom_tool_call",
+          "call_id": "call_Zr1bL435YYTipYlijwBYTGYt",
+          "name": "exec",
+          "input": "const raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"ai.start\", params:{intent_id:\"intent-a81666b1-1708-403f-a629-8b8fcc9d0267\"}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_wake_2a88e350_start\", payload);\nif (decoded?.isError || payload?.ok !== true) {\n  text({step:\"ai.start\", outcome:\"stopped\", code:payload?.code ?? payload?.error?.code ?? null, isError:decoded?.isError ?? false});\n  exit();\n}\nfunction redact(value) {\n  if (typeof value === \"string\") return value.replace(/\\bBearer\\s+[^\\s\"<>]+/gi,\"Bearer [已隐藏]\").replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g,\"[已隐藏]\");\n  if (Array.isArray(value)) return value.map(redact);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection_file)/i.test(key)).map(([key,val]) => [key,redact(val)]));\n  return value;\n}\ntext(redact(payload));\n"
+        },
+        {
+          "line": 278,
+          "timestamp": "2026-08-31T10:33:09.670Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_Zr1bL435YYTipYlijwBYTGYt",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"ok\":true,\"result\":{\"started\":{\"turn_id\":\"turn-6ec3a79f-308e-47b1-a2e3-3e334113e9b2\",\"source_event_id\":\"sae-feee4783-e05d-49ca-9125-e19792ee163c\",\"hand_index\":1,\"street\":\"preflop\",\"status\":\"THINKING\"},\"model_context\":\"[omitted_private_context]\"}}"
+            }
+          ]
+        },
+        {
+          "line": 280,
+          "timestamp": "2026-08-31T10:33:25.844Z",
+          "type": "custom_tool_call",
+          "call_id": "call_AZ2V3jG1m5mEvNxgywFTFjVE",
+          "name": "exec",
+          "input": "const raw = await tools.mcp__tokengame_b14_authorized__tokengame_table({command:\"ai.resolve\", params:{turn_id:\"turn-6ec3a79f-308e-47b1-a2e3-3e334113e9b2\", decision:\"public_speech\", text:\"桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。\"}});\nfunction decode(value) {\n  if (typeof value === \"string\") {\n    try { return decode(JSON.parse(value)); } catch { return value; }\n  }\n  if (Array.isArray(value)) return value.map(decode);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,decode(v)]));\n  return value;\n}\nconst decoded = decode(raw);\nlet payload = decoded;\nif (decoded?.structuredContent && typeof decoded.structuredContent.ok === \"boolean\") payload = decoded.structuredContent;\nelse {\n  const block = decoded?.content?.find(item => item.type === \"text\" && item.text && typeof item.text === \"object\");\n  if (block) payload = block.text;\n}\nstore(\"tokengame_b14_wake_2a88e350_resolve\", payload);\nfunction redact(value) {\n  if (typeof value === \"string\") return value.replace(/\\bBearer\\s+[^\\s\"<>]+/gi,\"Bearer [已隐藏]\").replace(/\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b/g,\"[已隐藏]\");\n  if (Array.isArray(value)) return value.map(redact);\n  if (value && typeof value === \"object\") return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:token|secret|password|credential|api[_-]?key|seat[_-]?(?:handle|id)|connection_file|model_context|hole_cards)/i.test(key)).map(([key,val]) => [key,redact(val)]));\n  return value;\n}\ntext({isError:decoded?.isError ?? false, response:redact(payload)});\n"
+        },
+        {
+          "line": 282,
+          "timestamp": "2026-08-31T10:33:25.950Z",
+          "type": "custom_tool_call_output",
+          "call_id": "call_AZ2V3jG1m5mEvNxgywFTFjVE",
+          "output": [
+            {
+              "type": "input_text",
+              "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+            },
+            {
+              "type": "input_text",
+              "text": "{\"isError\":false,\"response\":{\"ok\":true,\"result\":{\"resolved\":{\"scope\":\"TABLE_PUBLIC\",\"player_id\":\"b14a-alice\",\"speaker_type\":\"SEAT_AI\",\"text\":\"桌上挺热闹，底池还小，公共牌未亮，胜负先别急着下结论。\",\"graphemes\":27,\"turn_id\":\"turn-6ec3a79f-308e-47b1-a2e3-3e334113e9b2\",\"source_event_id\":\"sae-feee4783-e05d-49ca-9125-e19792ee163c\",\"hand_index\":1,\"street\":\"flop\",\"based_on_street\":\"preflop\",\"late_annotation\":\"延迟 · 基于前一街\",\"poker_action_effect\":null}}}}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

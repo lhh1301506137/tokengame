@@ -7,7 +7,10 @@
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/install-create-invite-flow.md","reason":"INSTALL_CREATE_JOIN_V1 的安装、公告确认、邀请兑换与幂等 create/join 动线"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/codex-plugin-ui-seat-binding.md","reason":"席位绑定与 UI bridge 能力边界，含 handoff URL 回退的约束"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/codex-visible-task-proactive-turn-boundary.md","reason":"SAME_VISIBLE_TASK_SPIKE_V1 的尖峰门禁项与禁止双跑上下文的边界"}
-{"file":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","reason":"最新宿主主动回合能力刷新；实现前必须据此判断哪些主动唤醒仍未证明"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","reason":"2026-08-27宿主候选的历史边界；B10已补查queue候选，均不能替代实机唤醒证据"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b10-codex-queue-wake-spike-20260830.md","reason":"B10单次同任务queue探针的默认关闭、事件来源、授权预算、清理和Gate5证据边界"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b11-ai-lifecycle-receipts-20260831.md","reason":"B11默认关闭的本地终态记录、去敏有界写入、离线时序分析与冻结验收范围；禁止追加真实模型调用"}
+{"file":"docs/AI-LIFECYCLE-RECEIPTS.md","reason":"B13受控beta子进程关闭方式；文件完整、写入关闭回执和真实进程退出分别判断，IPC不等于PTY或原生AI验证"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/codex-model-detection-boundaries.md","reason":"当前模型标识可观察但不可作为不可伪造来源证明的边界"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md","reason":"PLAYABILITY_GATE_V1 的自动化层与真人层证据要求"}
 {"file":".trellis/spec/frontend/index.md","reason":"当前技术边界与规范索引；先读它再进入具体分层规范"}
@@ -18,3 +21,5 @@
 {"file":".trellis/spec/frontend/hook-guidelines.md","reason":"宿主适配器进程的 stdio 协议、零桥流量与失败关闭约定"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务跨越权威内核、命令面/传输面与浏览器投影三层"}
 {"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"新旧两套牌桌栈共存期间，防止再复制一份规则判定"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b16-managed-wake-controls-20260831.md","reason":"B16本人启停UI、实际能力投影、幂等未知结果和异步世代围栏；不调用真实模型"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b18-stable-project-mcp-activation-20260901.md","reason":"实现一次加载的项目MCP、固定私有槽位、原子激活/清除与Codex插件层受管配置；保留宿主重启授权门"}

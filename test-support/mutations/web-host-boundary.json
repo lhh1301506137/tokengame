@@ -66,14 +66,14 @@
     {
       "id": "WEB-08-视图出口不扫泄漏",
       "file": "src/host/table-web-host.cjs",
-      "find": "    this.custody.assertNoLeak(JSON.stringify(view), \"web_view\");",
+      "find": "    this.assertNoModelLeak(view, \"web_view\");",
       "replace": "",
       "why": "视图这条出口不再扫凭据。视图是唯一每秒都往浏览器发的东西，它漏一次就等于一直在漏。"
     },
     {
       "id": "WEB-09-动作返回不扫泄漏",
       "file": "src/host/table-web-host.cjs",
-      "find": "    this.custody.assertNoLeak(JSON.stringify(sanitized), \"web_action_result\");",
+      "find": "    this.assertNoModelLeak(sanitized, \"web_action_result\");",
       "replace": "",
       "why": "动作返回这条出口不再扫。与 WEB-08 互为对照：净化只摘已知字段名，恢复凭据若以未知键名回来，只有扫描抓得到。"
     },

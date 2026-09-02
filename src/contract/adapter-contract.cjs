@@ -109,6 +109,7 @@ class ContractError extends Error {
 const ERROR_CLASSES = Object.freeze({
   // 参数不对。重试同样的请求不会变好，改参数才行。
   invalid_request: Object.freeze([
+    "ai_receipt_invalid_limits",
     // 声明了一项尚未在任何宿主上验证过的能力。归 invalid_request 而不是 state：
     // 重试同一份声明不会变好，改声明才行。也不归 identity——它与谁是谁无关。
     "capability_not_verified",
@@ -117,6 +118,8 @@ const ERROR_CLASSES = Object.freeze({
     "invalid_field",
     "field_too_long",
     "message_too_long",
+    "model_connection_invalid",
+    "model_connection_origin_conflict",
     "unknown_command",
     "seat_stack_missing",
   ]),
@@ -127,6 +130,8 @@ const ERROR_CLASSES = Object.freeze({
     // 同类。未知命令与不允许的命令刻意共用这一个码，区分它们会把那个出口变成命令面的探测口。
     "action_not_permitted",
     "authority_token_rejected",
+    "authority_id_scope_mismatch",
+    "wake_thread_not_authorized",
     // 两面各一个码，刻意不合成一个 command_out_of_face。合成之后日志里读不出是哪一面
     // 越界了，而两个方向的严重性差得很远：真人面越界是宿主自己的路由表写错了，
     // 模型面越界意味着模型可能拿到下注权限。
@@ -138,6 +143,8 @@ const ERROR_CLASSES = Object.freeze({
     // 模型命令口的令牌不对。与 authority_token_rejected 同类同处置，刻意不合成一个码：
     // 两者守的是不同的口，日志里读不出是哪一个被试探等于看不见试探。
     "model_command_token_rejected",
+    "model_scope_rejected",
+    "model_binding_changed",
     "player_credentials_incomplete",
     "player_token_rejected",
     "recovery_credential_rejected",
@@ -157,6 +164,16 @@ const ERROR_CLASSES = Object.freeze({
   // 当前状态下这个动作不成立。牌桌本来就会经过这些状态，UI 该照常显示，不该报错。
   // 这一类最容易被误当成 bug 上报，而那会让正常对局途中弹出一串技术错误。
   state: Object.freeze([
+    "cancelled",
+    "core_request_cancelled",
+    "wake_cancelled",
+    "wake_session_active",
+    "wake_result_pending",
+    "wake_thread_in_use",
+    "wake_request_unknown",
+    "wake_start_failed",
+    "wake_resolve_failed",
+    "wake_intent_already_attempted",
     "action_window_closed",
     "action_window_expired",
     "ai_answer_already_submitted",
@@ -196,10 +213,16 @@ const ERROR_CLASSES = Object.freeze({
     "ai_request_quota_used",
     "player_hand_quota_exhausted",
     "player_rate_limited",
+    "model_binding_history_full",
+    "wake_history_full",
+    "wake_thread_history_full",
+    "wake_intent_history_full",
   ]),
   // 并发冲突。同一个键配了不同内容，或版本号陈旧。适配器该重读再决定，不是重发。
   conflict: Object.freeze([
     "entry_key_conflict",
+    "wake_request_conflict",
+    "model_binding_request_conflict",
     "idempotency_key_conflict",
     "revision_conflict",
     "stale_hand_revision",
@@ -218,6 +241,20 @@ const ERROR_CLASSES = Object.freeze({
     "core_unreachable",
     "table_unavailable",
   ]),
+  // queue可能已经被宿主接收。即使底层表现为I/O错误，也不能按普通网络错误重发。
+  execution_uncertain: Object.freeze([
+    "wake_io_timeout",
+    "wake_queue_timeout",
+    "wake_queue_unknown",
+    "wake_queue_failed",
+    "wake_cleanup_failed",
+    "wake_result_unknown",
+    "wake_receipt_unavailable",
+    "queue_timeout",
+    "queue_child_error",
+    "queue_io_error",
+    "queue_output_limit",
+  ]),
   // 这台机器没配这条路。改配置能好，重试不能，也不是缺陷——不配是合法的默认。
   //
   // 单列一类而不是并入 identity 或 transport，两边都会读错：
@@ -229,8 +266,21 @@ const ERROR_CLASSES = Object.freeze({
   // 两条码分居两侧，刻意不合成一个：协调器没设令牌（路整个关着）与插件没设令牌
   // （路开着但本进程无凭出示）要靠不同的人改不同的配置。合成之后读不出该改哪一边。
   configuration: Object.freeze([
+    "invalid_configuration",
+    "child_start_failed",
+    "wake_disabled",
+    // B11 本地回执：远程核心没有本地事实源；文件目标、已有证据与存储可用性需要操作者
+    // 检查后另开一次捕获。write 可能已经产生效果，绝不能按网络故障自动重发或覆盖旧文件。
+    "ai_receipt_remote_core_unsupported",
+    "ai_receipt_invalid_file",
+    "ai_receipt_file_exists",
+    "ai_receipt_open_failed",
+    "ai_receipt_write_failed",
+    "ai_receipt_read_failed",
     "model_command_route_disabled",
     "model_command_token_not_configured",
+    "model_binding_required",
+    "model_connection_unavailable",
   ]),
   // 例行 HTTP 状况。客户端问的方式不对，不是本地缺陷。
   //
@@ -261,6 +311,13 @@ const ERROR_CLASSES = Object.freeze({
   // 重发同一条请求会得到同一份坏响应，所以它不可重试——这是它与 core_unreachable 的
   // 分界，两者读起来都像「对面有问题」，处置却相反。
   internal: Object.freeze([
+    "wake_protocol_invalid",
+    "wake_clock_invalid",
+    // 观察源/事件形状与订阅接线不符合本地契约；和用户选择了不可用文件路径不是一类。
+    "ai_receipt_invalid_source",
+    "ai_receipt_invalid_event",
+    "ai_receipt_subscription_failed",
+    "ai_receipt_startup_failed",
     "internal_error",
     "invalid_core_response",
   ]),
@@ -301,6 +358,7 @@ const ERROR_DISPOSITIONS = Object.freeze({
   quota: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),
   conflict: Object.freeze({ retryable: false, user_visible: false, is_defect: false }),
   transport: Object.freeze({ retryable: true, user_visible: true, is_defect: false }),
+  execution_uncertain: Object.freeze({ retryable: false, user_visible: true, is_defect: false }),
   contract: Object.freeze({ retryable: false, user_visible: true, is_defect: true }),
   // 配置缺失。user_visible 为真是这一档最要紧的一位：一条静默的「路关着」会让宿主 AI
   // 对着一个永远不答的口轮询下去，而运维那边看不到任何该改配置的信号。

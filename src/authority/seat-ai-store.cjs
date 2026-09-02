@@ -821,6 +821,15 @@ class SeatAiStore {
     });
   }
 
+  // 只给同次权威 dispatch 组装私有响应用。返回副本，不改变公开事件/时间线的内容。
+  evaluationContext(seatId, turnId) {
+    const seat = this.requireSeat(seatId);
+    if (seat.active_turn === null || seat.active_turn.turn_id !== turnId) {
+      throw new ProbeError("turn_not_active", 409);
+    }
+    return clone(seat.active_turn.context);
+  }
+
   // 回合结束即促进（F5 要求 4 的前半句「回合结束后」）。
   //
   // 包一层而不是在 resolveTurn 的每个 return 前各写一遍：那个方法有五个正常出口和两个

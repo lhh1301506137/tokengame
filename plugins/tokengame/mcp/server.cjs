@@ -4,8 +4,12 @@ const readline = require("node:readline");
 const { bridgeRequest } = require("../hooks/hook-lib.cjs");
 const { HUMAN_COMMANDS, MODEL_COMMANDS } = require("../../../src/authority/host-surface.cjs");
 const { requestEnvelope } = require("../../../src/contract/adapter-contract.cjs");
+const {
+  localOrigin,
+  readModelConnectionFile,
+} = require("../../../src/shared/model-connection-file.cjs");
 
-// 这个进程不持有任何秘密。
+// 这个进程不持有核心席位凭据，只从本人的私有连接文件读取受限模型传输令牌。
 //
 // 此前它自己 new SeatCustody()，注释里写着「这个 MCP 服务器就是章程说的本机协调器」。
 // 那句话在当时是意图，不是事实——往那份托管里 bind 句柄的唯一入口是下面的 hostCommand()，
@@ -38,6 +42,17 @@ const { requestEnvelope } = require("../../../src/contract/adapter-contract.cjs"
 // 端口，表现是「模型说连不上牌桌，而牌桌明明开着」——读起来像网络问题，实际是两个数字。
 const { DEFAULT_TABLE_ORIGIN } = require("../../../src/shared/endpoints.cjs");
 const MODEL_TOKEN_HEADER = "x-tokengame-model-token";
+const knownModelTokens = new Set();
+
+function modelConnection() {
+  const file = process.env.TOKENGAME_MODEL_CONNECTION_FILE;
+  if (typeof file === "string" && file !== "") {
+    return readModelConnectionFile(file, { explicitOrigin: process.env.TOKENGAME_TABLE_ORIGIN });
+  }
+  const token = process.env.TOKENGAME_MODEL_TOKEN;
+  if (typeof token !== "string" || token === "") return null;
+  return { origin: localOrigin(process.env.TOKENGAME_TABLE_ORIGIN || DEFAULT_TABLE_ORIGIN), token };
+}
 
 // 本进程不再直接打核心。
 //
@@ -51,27 +66,30 @@ const MODEL_TOKEN_HEADER = "x-tokengame-model-token";
 // 令牌从环境变量来，没配就不发请求：本进程无法自己生成一个（协调器那边校验的是它自己
 // 那份），而带着空令牌发出去只会换回一个 403，读起来像「令牌不对」而真正的原因是没配。
 async function tableRequest(route, body, { modelToken = false } = {}) {
-  const origin = process.env.TOKENGAME_TABLE_ORIGIN || DEFAULT_TABLE_ORIGIN;
+  let origin = process.env.TOKENGAME_TABLE_ORIGIN || DEFAULT_TABLE_ORIGIN;
   const headers = { "content-type": "application/json" };
   if (modelToken) {
-    const token = process.env.TOKENGAME_MODEL_TOKEN;
-    if (typeof token !== "string" || token === "") {
+    const connection = modelConnection();
+    if (connection === null) {
       return {
         ok: false,
         status: 503,
         body: {
           code: "model_command_token_not_configured",
-          hint: "本进程需要 TOKENGAME_MODEL_TOKEN 才能替这一席发言。"
-            + "它由启动内测的那条命令生成并同时交给协调器与本进程；"
-            + "协调器没配同一个值时，它的 /api/health 会显示 model_command_route: disabled。",
+          hint: "请真人先完成一次 npm run codex:configure 并重启宿主；运行 npm run beta 入座下载"
+            + "「本席 AI 连接文件」后，用 npm run connection:activate 激活。"
+            + "手工 MCP 也可显式配置 TOKENGAME_MODEL_CONNECTION_FILE 或该席令牌；不再使用旧全桌令牌。",
         },
       };
     }
-    headers[MODEL_TOKEN_HEADER] = token;
+    origin = connection.origin;
+    headers[MODEL_TOKEN_HEADER] = connection.token;
+    knownModelTokens.add(connection.token);
   }
   const response = await fetch(`${origin}${route}`, {
     method: "POST",
     headers,
+    redirect: "error",
     // 模型命令经 requestEnvelope 构造信封，真人入口不。
     //
     // 差别的理由是「两端会不会各自升级」。本进程与协调器是两个可独立安装的东西：插件登记
@@ -90,7 +108,13 @@ async function tableRequest(route, body, { modelToken = false } = {}) {
   try {
     payload = text ? JSON.parse(text) : {};
   } catch {
-    payload = { code: "invalid_core_response" };
+    payload = { ok: false, code: "invalid_core_response" };
+  }
+  // HTTP 200 / JSON 可解析都不等于协调器信封有效；错端口不能伪装成接入成功。
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)
+    || typeof payload.ok !== "boolean"
+    || (modelToken && payload.ok && (payload.result === null || typeof payload.result !== "object" || Array.isArray(payload.result)))) {
+    payload = { ok: false, code: "invalid_core_response" };
   }
   return { ok: response.ok && payload.ok !== false, status: response.status, body: payload };
 }
@@ -100,7 +124,8 @@ const tools = [
     name: "tokengame_table",
     description:
       "以你负责的那一席的 AI 身份参赛：ai.take_intents 领取待办，ai.start 开始评估，"
-      + "ai.resolve 回填公开发言或沉默；view.projection / view.timeline 读公开牌面。"
+      + "使用 ai.start 返回的 model_context 分析本席牌面与公开聊天，ai.resolve 回填公开发言或沉默；"
+      + "view.projection / view.timeline 只读公共信息。"
       + "只传权威给你的 intent_id / turn_id，不要传 seat_id、seat_handle 或凭据——"
       + "席位身份由本机协调器补齐。下注、按 Ready、确认公开范围、亮牌都是真人的决定，"
       + "这里发不出去。",
@@ -199,6 +224,14 @@ const HANDLE_VALUE_PATTERN = /seat[-_]handle-/;
 // 出问题时才起作用——协调器自己扫自己，两者同处一个进程，那份缺陷两道都躲不过。
 function safeResult(body, isError) {
   const text = JSON.stringify(body, null, 2);
+  if ([...knownModelTokens].some((token) => text.includes(token)) || /"model_token"\s*:/.test(text)) {
+    return errorResult({
+      code: "response_withheld_secret_detected",
+      where: "tool_result",
+      field: "model_token",
+      hint: "返回含模型连接权限，已扣下。请勿把连接文件内容粘贴到会话或公开牌桌。",
+    });
+  }
   const hitKey = SECRET_KEY_PATTERNS.findIndex((pattern) => pattern.test(text));
   if (hitKey !== -1) {
     return errorResult({
@@ -292,12 +325,19 @@ async function callTool(name, args = {}) {
       );
       return safeResult(result.body, !result.ok);
     } catch (error) {
+      if (error.modelConnectionError) {
+        const hints = {
+          model_connection_invalid: "本席 AI 连接文件格式无效或地址不属于本地回环服务。请由真人重新下载，勿粘贴文件内容。",
+          model_connection_unavailable: "无法读取本席 AI 连接文件。请真人重新下载并运行 npm run connection:activate；手工 MCP 再检查 TOKENGAME_MODEL_CONNECTION_FILE。",
+          model_connection_origin_conflict: "连接文件与 TOKENGAME_TABLE_ORIGIN 指向不同牌桌。请真人核对配置，模型不会替你选择另一桌。",
+        };
+        return safeResult({ code: error.code, hint: hints[error.code] }, true);
+      }
       // 协调器不可达。回一条说得出下一步的错误，而不是把 fetch 的栈丢给模型。
       return safeResult(
         {
           code: "table_unavailable",
-          message: error.message,
-          hint: "协调器未启动时先运行 npm run web；已启动则检查 TOKENGAME_TABLE_ORIGIN。",
+          hint: "协调器不可达或拒绝请求。请真人确认 npm run beta 正在运行，并核对本席连接文件；模型不会切换其他服务。",
         },
         true,
       );
@@ -372,25 +412,30 @@ async function handleMessage(message) {
   };
 }
 
-if (require.main === module) {
-  const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+function runStdio(options = {}) {
+  const input = options?.input ?? process.stdin;
+  const output = options?.output ?? process.stdout;
+  const lines = readline.createInterface({ input, crlfDelay: Infinity });
   lines.on("line", async (line) => {
     if (!line.trim()) return;
     try {
       const response = await handleMessage(JSON.parse(line));
-      if (response) process.stdout.write(`${JSON.stringify(response)}\n`);
+      if (response) output.write(`${JSON.stringify(response)}\n`);
     } catch (error) {
-      process.stdout.write(`${JSON.stringify({
+      output.write(`${JSON.stringify({
         jsonrpc: "2.0",
         id: null,
         error: { code: error.code || -32603, message: error.message || "Internal error" },
       })}\n`);
     }
   });
+  return lines;
 }
+
+if (require.main === module) runStdio();
 
 // hostCommand 导出但不登记为工具：它是真人路径，模型经 tools/list 看不到它。
 // custody 不再导出：本进程不持有它。分权的另一半（模型手里有没有句柄）现在由协调器那一侧
 // 回答——test/coordinator-model-route.test.cjs 按「模型路由的返回里没有凭据也没有句柄原文」
 // 钉住它，而那条断言测的是真正出门的那份字节，比问一个进程内对象更接近事实。
-module.exports = { callTool, handleMessage, hostCommand, tools };
+module.exports = { callTool, handleMessage, hostCommand, runStdio, tools };

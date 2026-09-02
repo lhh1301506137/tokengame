@@ -48,7 +48,7 @@ const SEAT_AUTHORIZED = Object.freeze([
   "ai.take_intents",
   "ai.start",
   "ai.resolve",
-  // 唯一需要凭据的只读命令。它是全系统唯一会吐出底牌的出口，viewerId 就是解锁参数：
+  // 需要凭据的独立私有读取命令。ai.start 也会在其私有上下文里投影本席底牌。
   // 不验证就等于谁都能拿别人的 seat_id 读走对手底牌，而「隐藏信息边界」是 L0 定义的
   // 产品核心。公开信息走 view.projection，不需要凭据。
   "view.hand",
@@ -94,6 +94,11 @@ class CommandSurface {
       throw new ProbeError("invalid_field", 400, { field: "params" });
     }
     if (SEAT_AUTHORIZED.includes(name)) {
+      // 私有读取/模型回路不能在到期 tick 之前偷用已经过期的席位。规则仍由 RoomStore
+      // 结算，本层只在这几条认证边界主动问一次，不复制保留窗的时间判断。
+      if (["ai.take_intents", "ai.start", "ai.resolve", "view.hand"].includes(name)) {
+        this.orchestrator.rooms.releaseExpiredSeats();
+      }
       // 凭据授权。内核在进程内可信，命令面才是信任边界：不验证就等于任何调用者
       // 都能让别人的席位离桌、以别人的名义公开发言。
       this.orchestrator.rooms.requireSeatCredential(
@@ -275,13 +280,14 @@ class CommandSurface {
       // 也可以挂到一个根本没发生过的事件上。现在上下文只从权威队列里取。
       // claim_token 透传：世代围栏由权威判定，命令面只负责把它带到。
       // 不在这里补默认值——补了就等于替一个没出示令牌的调用方冒充当前世代。
-      "ai.start": (p) => ({
-        started: o.startEvaluation({
+      "ai.start": (p) => {
+        const started = o.startEvaluation({
           seatId: p.seat_id,
           intentId: p.intent_id,
           claimToken: p.claim_token,
-        }).payload,
-      }),
+        }).payload;
+        return { started, model_context: o.modelContext({ seatId: p.seat_id, turnId: started.turn_id }) };
+      },
 
       "ai.resolve": (p) => ({
         resolved: o.resolveEvaluation({

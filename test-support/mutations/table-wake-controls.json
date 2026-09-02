@@ -1,0 +1,120 @@
+{
+  "name": "B16 本人有界通知控件的关键围栏",
+  "note": "纯浏览器控制状态机，不执行原生任务或模型。先在隔离副本跑真绿基线，再用 mutate-suite 逐项执行；记录恢复SHA。KILLED只证明对应Node行为，不能替代真实浏览器或宿主能力证据。",
+  "test": "test/table-wake-controls.test.cjs",
+  "mutations": [
+    {
+      "id": "playability-ui-accepts-malformed-fixed-target",
+      "file": "web/table/wake-controls.mjs",
+      "find": "  return typeof value.target_configured === \"boolean\" ? value.target_configured : null;",
+      "replace": "  return Boolean(value.target_configured);",
+      "guards": "target_configured畸形时失败关闭，不能强转成已固定。"
+    },
+    {
+      "id": "playability-ui-fixed-target-still-sends-uuid",
+      "file": "web/table/wake-controls.mjs",
+      "find": "    if (this.#capability?.targetConfigured === true) return parameters;",
+      "replace": "    if (false) return parameters;",
+      "guards": "固定sender模式的start请求不包含页面任务UUID。"
+    },
+    {
+      "id": "playability-ui-accepts-target-mode-mismatch",
+      "file": "web/table/wake-controls.mjs",
+      "find": "        || targetConfigured === null || targetConfigured !== this.#capability?.targetConfigured) {",
+      "replace": "        || false) {",
+      "guards": "控制响应必须继续证明与投影相同的固定/手填目标模式。"
+    },
+    {
+      "id": "playability-ui-renders-fixed-target-input",
+      "file": "web/table/table.js",
+      "test": "test/table-wake-bootstrap.test.cjs",
+      "find": "  el(\"modelWakeTaskField\").hidden = fixedTarget;",
+      "replace": "  el(\"modelWakeTaskField\").hidden = false;",
+      "guards": "固定目标时UUID字段在DOM中隐藏且输入禁用。"
+    },
+    {
+      "id": "wake-ui-duplicate-click",
+      "file": "web/table/wake-controls.mjs",
+      "find": "if (!this.snapshot().can_start) return false;",
+      "replace": "if (false) return false;",
+      "guards": "同意/可用性和在途按钮门禁不能被绕过；重复点击不创建第二个请求。"
+    },
+    {
+      "id": "wake-ui-immutable-fields",
+      "file": "web/table/wake-controls.mjs",
+      "find": "if (!this.snapshot().editable || !Object.hasOwn(this.#fields, name)\n      || (name === \"threadId\" && this.#capability?.targetConfigured === true)) return;",
+      "replace": "if (!Object.hasOwn(this.#fields, name)\n      || (name === \"threadId\" && this.#capability?.targetConfigured === true)) return;",
+      "guards": "在途及未知请求的参数不可修改，明确重试只能沿用原授权。"
+    },
+    {
+      "id": "wake-ui-same-request-retry",
+      "file": "web/table/wake-controls.mjs",
+      "find": "response = await send(\"start\", this.#startRequest);",
+      "replace": "response = await send(\"start\", { ...this.#startRequest, request_id: this.#makeRequestId() });",
+      "guards": "status确认未知后，显式重试仍使用原UUID，不能暗建新窗口。"
+    },
+    {
+      "id": "wake-ui-stop-never-start",
+      "file": "web/table/wake-controls.mjs",
+      "find": "if (stopping || error?.code !== \"wake_request_unknown\") throw error;",
+      "replace": "if (error?.code !== \"wake_request_unknown\") throw error;",
+      "guards": "停止意图优先；此后核对失败也不能重新发start。"
+    },
+    {
+      "id": "wake-ui-old-callback",
+      "file": "web/table/wake-controls.mjs",
+      "find": "const current = () => this.#operation === operation && this.#epoch === operation.epoch && this.#session === operation.session;",
+      "replace": "const current = () => true;",
+      "guards": "解绑、OFF、离桌、换绑和新会话之后的旧成功/错误/finally不能回流。"
+    },
+    {
+      "id": "wake-ui-old-poll",
+      "file": "web/table/wake-controls.mjs",
+      "find": "|| ticket.epoch !== this.#epoch || ticket.revision !== this.#revision) return false;",
+      "replace": "|| ticket.epoch !== this.#epoch) return false;",
+      "guards": "开始或停止命令前及执行期间启动的旧poll不能覆盖更新的控制回执。"
+    },
+    {
+      "id": "wake-ui-missing-reason",
+      "file": "web/table/wake-controls.mjs",
+      "find": "(typeof value.reason === \"string\" && REASON.test(value.reason))",
+      "replace": "REASON.test(value.reason)",
+      "guards": "缺失reason不能因正则把undefined强转为文字而通过投影校验。"
+    },
+    {
+      "id": "wake-ui-failure-free-text-accepted",
+      "file": "web/table/wake-controls.mjs",
+      "find": "    || !(value.failure_code === undefined || value.failure_code === null\n      || (typeof value.failure_code === \"string\" && REASON.test(value.failure_code)))",
+      "replace": "    || false",
+      "guards": "失败诊断只接受稳定小写错误码，不能把服务端自由文本变成本席页面出口。"
+    },
+    {
+      "id": "wake-ui-failure-code-hidden",
+      "file": "web/table/wake-controls.mjs",
+      "find": "      status_text: `${status}${reason ? ` 原因：${reason}。` : \"\"}${failure ? ` 诊断：${failure}。` : \"\"}`",
+      "replace": "      status_text: `${status}${reason ? ` 原因：${reason}。` : \"\"}`",
+      "guards": "真实失败的受限业务码应在本人控件可见，不能仍退化成无法定位的wake_start_failed。"
+    },
+    {
+      "id": "wake-ui-lower-duration",
+      "file": "web/table/wake-controls.mjs",
+      "find": "if (!positive(duration) || duration > limits.max_duration_ms)",
+      "replace": "if (!positive(duration))",
+      "guards": "表单服从实际降低的持续时长上限，而非固定默认上限。"
+    },
+    {
+      "id": "wake-ui-target-hidden",
+      "file": "web/table/wake-controls.mjs",
+      "find": "return { ...common, request_id: value.request_id.toLowerCase(),",
+      "replace": "return { ...common, thread_id: value.thread_id, request_id: value.request_id.toLowerCase(),",
+      "guards": "窗口显示与机器采样不会透传目标任务UUID、额外响应字段或会话令牌。"
+    },
+    {
+      "id": "wake-ui-window-receipt-identity",
+      "file": "web/table/wake-controls.mjs",
+      "find": "const displayedWindow = pendingRequestId != null && window?.request_id !== pendingRequestId ? null : window;",
+      "replace": "const displayedWindow = window;",
+      "guards": "新开启结果未知时，不把上一窗口的停止原因、接收/结清计数或清理状态显示成本次回执；机器采样同义。"
+    }
+  ]
+}

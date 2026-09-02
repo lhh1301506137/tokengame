@@ -1,5 +1,191 @@
 # TokenGame 项目决策记录
 
+## DEC-20260901-002：授权恢复项目级 TokenGame 绝对 `cwd` 并再次重启 Codex
+
+metadata:
+  date: 2026-09-01
+  source: risk_gate
+  scope: risk
+  status: user_confirmed
+  supersedes: DEC-20260901-001
+  affected_docs: [STATUS.md, PROJECT-PLAN-TREE.md, RETURN-HANDOFF.md, progress.md, REVIEW-LOG.md]
+  resulting_changes:
+    - doc: H:/tokengold/.codex/config.toml
+      change: 仅允许把 TokenGame 唯一托管项目 MCP 块的 `cwd` 从相对 `tokengame` 恢复为 canonical 绝对仓库路径 `H:/tokengold/tokengame`；托管块外内容必须逐字节保持不变。
+
+question: 是否允许按B25直接宿主证据修复真实父项目配置，并在迁移停止后再次手动重启Codex？
+why_it_matters: B25已确认相对`cwd`虽能被CLI列出，却没有把`tokengame_table`加载进当前任务；同一任务此前的绝对`cwd`配置曾实际加载该工具。本地生成器和回归已经恢复绝对路径，但真实宿主只有在配置迁移及第二次重启后才能复验。
+recommended_answer: 只迁移`H:/tokengold/.codex/config.toml`的TokenGame托管块，保持块外字节不变；迁移命令不得启动牌桌、通知或模型。随后由用户手动重启Codex，再回到原任务继续原定最多1次的固定目标验收。
+user_answer: 允许将 `H:\tokengold\.codex\config.toml` 的 TokenGame 托管 `cwd` 恢复为 `H:/tokengold/tokengame`，并再次手动重启 Codex；其他配置不变。
+decision: 授权上述真实父项目TokenGame托管块的单次修复及随后一次真人手动Codex重启。授权不包含托管块外配置、用户级配置、PATH、模型或推理强度、远端监听、第二AI、新任务、通知投递、部署、发布或自动重启；Codex重启由用户手动执行。
+follow_up: 写入前后核对唯一标记块、块外SHA-256、目标`cwd`、无任务UUID/绝对Codex可执行路径及7802无监听。命令应exit 0并在beta前停止；完成后回交用户手动重启。重启返回原任务后，先直接核对`tokengame_table`已加载，再决定是否继续未消耗的最多1次固定目标通知。
+execution_receipt: 已在当前Codex任务从仓库根执行一次`npm run codex:play -- "H:\\tokengold"`，exit 0且只输出去敏重启提示；命令在beta、监听、浏览器、通知、模型与queue之前停止。迁移前目标是普通非链接文件、唯一托管标记1/1，`cwd = "tokengame"`，完整SHA-256为`4C48CABF471B24D7ADEFEAD8B66B78553EF2A0CD3BB526AB1E0897EFFBA5655F`；迁移后唯一托管块精确为`cwd = "H:/tokengold/tokengame"`，旧相对值消失，完整SHA-256为`63EB0B67B285B59E30692B50795546ABD87B6D59403AD9E9183E16117D9C769E`。托管块外SHA-256前后均为`01BA4719C80B6FE911B091A7C05124B64EEECE964E09C058EF8F9805DACA546B`；把迁移后唯一绝对`cwd`替换回旧相对值可精确重构迁移前完整SHA-256，证明整份配置只存在本次授权的一个字符串差异。配置无任务UUID或绝对Codex可执行路径，7802无监听。配置迁移已完成，第二次真人手动Codex重启尚未执行；返回同一任务后必须先直接核对`tokengame_table`是否加载，不能提前声称宿主恢复。详细裁决见`REVIEW-LOG.md#b26-absolute-cwd-real-config-migration`。
+post_restart_execution_receipt: 用户随后完成本决策内的第二次手动Codex重启。B27中当前任务实际只加载一个`mcp__tokengame_project__tokengame_table`，无活动槽时直接`view.projection`返回`model_connection_unavailable`，激活后同一工具只读成功；因此绝对`cwd`的宿主重载与工具就绪已直接通过。该决策现已完整执行，不授权或要求再次迁移、再次重启。随后一次固定当前活动任务的1次/60秒通知为尝试1、接收1、权威结清0，属于独立B27验收结果，不反向改写本决策为主动唤醒通过。见`REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target`。
+
+## DEC-20260901-001：授权迁移项目级 TokenGame 配置并重启 Codex
+
+metadata:
+  date: 2026-09-01
+  source: risk_gate
+  scope: risk
+  status: user_confirmed
+  supersedes: none
+  affected_docs: [STATUS.md, PROJECT-PLAN-TREE.md, RETURN-HANDOFF.md, progress.md]
+  resulting_changes:
+    - doc: H:/tokengold/.codex/config.toml
+      change: 仅允许把 TokenGame 托管项目 MCP 块的仓库内 cwd 从绝对路径迁移为项目根相对路径；托管块外内容必须保持不变。
+
+question: 是否允许执行 B23 的项目配置迁移并重启 Codex，以便随后从同一任务验证 `codex:play` 的真实宿主入口？
+why_it_matters: 当前托管块仍保存 `H:/tokengold/tokengame` 绝对 cwd；新入口第一次运行必须先迁移为 `tokengame` 并停止，Codex 重启后第二次运行才可验证宿主实际加载的新项目 MCP。
+recommended_answer: 只迁移 H:/tokengold/.codex/config.toml 的 TokenGame 托管块；迁移命令不得启动牌桌，随后由用户手动重启 Codex，再在原任务继续一次有界本地验收。
+user_answer: 允许迁移项目配置并重启
+decision: 授权上述项目级托管块迁移及随后一次 Codex 宿主重启。授权不包含全局配置、PATH、模型或推理强度变更，不包含远端监听、第二 AI、新任务、部署、发布或自动打开通知窗口；重启由用户手动执行。
+follow_up: 迁移前后核对托管块外内容一致、托管 cwd 为 `tokengame`、未写入任务 UUID 或 Codex 可执行路径且 7802 未监听；迁移后先停止并请用户重启。重启返回原任务后，才运行同一入口的一次回环、固定目标、最多一次通知的真实宿主验收。
+execution_receipt: 已在当前Codex任务从仓库根运行一次`npm run codex:play -- "H:\tokengold"`，exit 0且只输出去敏重启提示；命令在启动beta前停止。H:/tokengold/.codex/config.toml的唯一托管块已把`cwd`从绝对仓库路径迁为`tokengame`，托管块外SHA-256前后一致；配置中无任务UUID、绝对仓库路径或绝对可执行路径，7802无监听。随后用户完成本决策授权的一次手动宿主重启；配置写入为22:17:10，新的Codex/ChatGPT进程分别创建于22:23:40/22:23:49。重启后CLI能列出该服务器，但当前任务没有`tokengame_table`；同一任务在旧绝对`cwd`配置下曾实际持有并调用该工具。因此本次授权已执行完毕，且相对`cwd`运行时假设被B25反证；本轮未开通知、未调用模型或queue。恢复绝对`cwd`并再次重启需要新的明确授权，不由本决策自动延伸。
+
+## DEC-20260831-003：确认原游戏任务的具体测试席AI权限
+
+metadata:
+  date: 2026-08-31
+  source: risk_gate
+  scope: risk
+  status: user_confirmed
+  supersedes: none
+  affected_docs: [STATUS.md, PROJECT-PLAN-TREE.md, RETURN-HANDOFF.md]
+  resulting_changes:
+    - doc: STATUS.md
+      change: 具体逐席AI授权由待确认改为已确认，继续原任务接入验证。
+
+question: 是否允许「TokenGame 临时单席接入验证」的AI读取本席合成底牌和公共聊天、以本席AI身份公开发言，并生成仅存本机的连接凭据？不授予下注权限，每批结束撤销。
+why_it_matters: B14工具明确要求具体权限，持续测试授权本身不能替代；本项只解除已向用户说明的逐席连接操作门。
+recommended_answer: 确认此具体本地测试范围后继续实际接入验证，不触碰真人资料或其他席位私有信息。
+user_answer: 允许
+decision: 已明确授权原任务01a052c9-5259-7a61-b26f-35731734994e的测试席AI读取自身合成底牌与公共聊天、以该席AI身份公开发言并生成仅存本机的连接凭据。不授予下注、准备或主动亮牌权限；每批结束撤销。DEC-20260831-002持续测试范围仍有效，B14第一批停止事实不改写。
+follow_up: 新建独立有界资源批次，先确认实际MCP工具就绪再发queue；仍按最多12次原任务输入（含至多4次queue）、不明发送计入且同源不重发执行。只用现有模型和强度，不全局刷新、重启、另配API、新建任务、提交或部署。
+execution_receipt: B14授权后批次已停止：1次原任务只读准备成功，3次queue各对应1次真实start/resolve及成功公开，共4次原任务输入、7次原任务游戏MCP调用；模型与强度未覆盖。AI权限已撤销，独立stdio验证旧权限被拒；临时配置与beta/页面已关闭，非空事件捕获有同运行footer及关闭回执。失效私有文件删除及宿主管理MCP关闭被工具策略拒绝，未换方式执行，清理仍partial。跨街延迟显示缺陷由本地映射修复，独立回归另记；具体裁决、数字及范围见REVIEW-LOG.md#b14-native-public-replies。本项不接受MVP完成、不豁免Gate9，也不开启无限后台调用。
+
+## DEC-20260831-002：授权持续推进本地与真实宿主测试
+
+metadata:
+  date: 2026-08-31
+  source: user_direct
+  scope: risk
+  status: user_confirmed
+  supersedes: none
+  affected_docs:
+    - STATUS.md
+    - PROJECT-PLAN-TREE.md
+    - RETURN-HANDOFF.md
+  resulting_changes:
+    - doc: STATUS.md
+      change: 记录持续测试范围、当前有界批次与停止条件，不再逐次请求真实输入许可。
+    - doc: PROJECT-PLAN-TREE.md
+      change: 同一主动AI路线的接入验证由等待授权改为Primary执行；产品门禁仍由实测决定。
+
+question: B13后是否允许临时本地连接、原游戏任务只读准备输入，后续如何安排真实接入验证？
+why_it_matters: 逐次小窗口确认已成为测试推进成本；持续授权需要和模型成本、失败停止、其他任务影响以及产品完成结论分开。
+recommended_answer: 上一条建议为一次有界接入窗口，不发queue、不启动AI评估、不重启或全局刷新，结束撤销清理。
+user_answer: 允许长期测试
+decision: 将其作为对TokenGame当前已确认路线的持续测试授权：允许本地回归、临时回环牌桌、H:/tokengold/.codex/config.toml的单一临时TokenGame连接、复用原任务01a052c9-5259-7a61-b26f-35731734994e进行准备和真实模型/queue验证。后续同范围测试不逐次询问。只用合成牌局，模型与强度跟随原任务，不增加第二API或新付费服务。逐席AI读取底牌、以席位身份公开发言及生成私有连接凭据仍受下述具体权限门约束。
+follow_up: Primary自行把测试分成可回收批次，先核对工具就绪再发queue；本批最多12次原任务输入（含至多4次queue），发送结果不明也计入，单个来源不重发。每批先冻结判据，达到判据或同因失败无新证据时停止并汇总，不能无界消耗额度。长期授权不追认B12余量，不自动创建定时任务或goal；不含全局MCP刷新、宿主重启、改模型、改扑克规则、远端监听、真人资料、部署发布或提交。仍为medium风险、manual_closeout；用户随时可停止。
+execution_note: B14第一批在勾选逐席AI权限及下载连接文件前被工具要求具体确认，当时尚未获答，因此以0原任务输入/queue/评估停止并关闭服务，详见REVIEW-LOG.md#b14-native-readiness-permission-boundary。后续用户“允许”由DEC-20260831-003独立记录，解除这项权限门；不修改第一批历史，也不绕过第二批收尾中的工具策略限制。最新执行结果见REVIEW-LOG.md#b14-native-public-replies。
+
+## DEC-20260831-001：授权使用新终态回执的一次有限实机验证
+
+metadata:
+  date: 2026-08-31
+  source: risk_gate
+  scope: risk
+  status: user_confirmed
+  supersedes: none
+  affected_docs:
+    - REVIEW-LOG.md
+    - STATUS.md
+    - PROJECT-PLAN-TREE.md
+    - RETURN-HANDOFF.md
+  resulting_changes:
+    - doc: REVIEW-LOG.md
+      change: 单独记录B12原生窗口，使用B11本地事件回执与宿主、双席页面互证，不修改历史冻结证据。
+
+question: 是否重新授权最多三次任务输入、其中一次queue通知，用新回执验证同一来源到一次真实评估及唯一终态？
+why_it_matters: B11只验证了本地取证能力；B10窗口已经关闭，继续实机验证需要新的有限模型调用及临时连接授权。
+recommended_answer: 复用原空闲游戏任务，保持当前模型和强度、正常扑克时钟；完成或遇阻后撤销本席权限并清理本轮资源。
+user_answer: 同意验证
+decision: 本窗口最多三次任务输入、其中实际queue最多一次，复用任务01a052c9-5259-7a61-b26f-35731734994e；允许短暂恢复H:/tokengold/.codex/config.toml中的单一TokenGame本地MCP连接。只用回环、合成牌局和本席连接文件；不新建任务、不覆盖模型或推理强度、不另配模型API、不提交、部署、推送或改写扑克规则。
+follow_up: 不明发送同样计入预算，不重试queue；分别保存任务整轮时间、权威事件时差、写入与关闭回执。旧回合现在能够读到的工具记录只另存为迟到的历史证据，不回填旧产物。测试通过不等于完整插件、跨宿主、实时可玩性或用户接受通过。
+execution_receipt: 窗口已停止并关闭追加输入，实际2次只读准备回合（14.829秒、8.535秒）；两次均未发现新MCP，游戏工具调用和queue为0。未用的第3次不结转。独立stdio只读成功，真人撤销后旧令牌HTTP返回403；配置已移除、浏览器和本轮beta已停。私有文件删除被工具策略拒绝，仍有宿主管理的匹配MCP进程，捕获缺尾行且无关闭回执，不声称完全清理。详见REVIEW-LOG.md#b12-native-receipts-window。
+
+## DEC-20260830-003：授权同任务 queue 的一次有限实机验证
+
+metadata:
+  date: 2026-08-30
+  source: risk_gate
+  scope: risk
+  status: user_confirmed
+  supersedes: none
+  affected_docs:
+    - STATUS.md
+    - REVIEW-LOG.md
+    - RETURN-HANDOFF.md
+  resulting_changes:
+    - doc: STATUS.md
+      change: 仅在本次有限窗口内解除临时连接及真实调用的授权等待，不改变产品能力声明。
+
+question: 是否同意临时恢复连接，复用原测试任务，最多三次任务输入、其中自动通知最多一次，验证真实唤醒？
+why_it_matters: 本地脚本与queue命令存在不能证明当前Desktop会自动消费同一任务的事件；该检查需要实际模型额度和短暂本地连接。
+recommended_answer: 只执行这个有界实机窗口，并在结束时撤销授权、清理本轮连接与进程；不扩展成常驻后台模型调用。
+user_answer: 同意验证
+decision: 本次窗口可复用任务01a052c9-5259-7a61-b26f-35731734994e，临时恢复H:/tokengold/.codex/config.toml中的单一TokenGame本地MCP连接，最多三次任务输入，其中实际queue自动通知最多一次。只用本机回环、合成牌局和本席权限文件；不改模型/强度、不动旧演示、不提交部署、不创建第二套模型或新付费服务。
+follow_up: 发送不明也计入预算，不自动重试queue；终态、超时或预算用尽均结束窗口并清理。记录每事件是否需要用户点击/新提示、实际评估次数及来源到公开时延；不能从queue退出码推断Gate5通过。原B9窗口不延长，本授权不更改持久风险等级或手工收口策略。
+execution_receipt: 本窗口已执行并关闭，3次任务输入、1次queue通知，原任务自动唤醒但合法终态收据unknown。旧令牌另经只读HTTP得到403/model_command_token_rejected；临时配置、私有连接、本轮服务、MCP与浏览器均清理。2026-08-31T00:01:32+08:00进程复核只保留原有beta。详见REVIEW-LOG.md#b10-native-queue-wake-probe；该授权不再允许新增模型请求。
+
+## DEC-20260830-002：优先验证同任务 queue 候选，本轮先做默认关闭的本地探针
+
+metadata:
+  date: 2026-08-30
+  source: other
+  scope: leaf
+  status: primary_ai_auto_within_scope
+  supersedes: none
+  affected_docs:
+    - PROJECT-PLAN-TREE.md
+    - RETURN-HANDOFF.md
+    - .trellis/tasks/08-26-public-ai-table-talk/research/b10-codex-queue-wake-spike-20260830.md
+  resulting_changes:
+    - doc: PROJECT-PLAN-TREE.md
+      change: 主动唤醒叶节点改为先验当前 CLI queue 的同任务候选；真实宿主门禁仍未执行，不推进产品完成状态。
+    - doc: RETURN-HANDOFF.md
+      change: 将候选发现、本地验证与下一次有限真实调用窗口分开交接。
+
+question: B9 已证明显式任务消息可以驱动真实座位 AI 后，下一步用什么最小通道验证不需玩家再次输入的同任务唤醒？
+why_it_matters: 旧候选集遗漏了当前附带 CLI 的 queue 命令；继续只研究内嵌 UI/Stop 会把可独立验证的唤醒问题绑在另一项未验证能力上。CLI 命令存在和官方说明均不能证明当前 Windows Desktop 已消费队列。
+recommended_answer: 在 test-support 中实现默认关闭、逐席授权、单次发送、有限轮询与可靠清理的候选探针，先用本地权威和脚本接收端验证，再申请有限实机窗口。
+user_answer: 本轮用户仅要求“继续”；这里是已确认路线内的专业技术选择，不把它记录成新的实机调用或产品语义授权。
+decision: 采用 queue 作为当前优先候选，保持同一可见游戏任务，不改变模型/强度、扑克时钟、默认产品入口或任何 L0–L2 合同；队列结果与 Gate 5 结论独立记录。
+follow_up: UI/Stop 候选仍保留，独立后台影子 AI 不作为等价替代。B9 临时窗口已结束；本轮向用户另行提出最多三次任务输入、其中自动通知最多一次的临时窗口，未获回答前不恢复宿主配置、不实际发 queue。若真实 Gate 5 失败且影响已确认主动交流结果，按 U7 回语义对齐。B9 成功轮已合并 take/start，本地预领取仅作资格检查，不声称节省模型往返。
+
+## DEC-20260830-001：授权当前 Codex 的临时真实接入验证
+
+metadata:
+  date: 2026-08-30
+  source: risk_gate
+  scope: risk
+  status: user_confirmed
+  supersedes: none
+  affected_docs:
+    - PROJECT-PLAN-TREE.md
+    - REVIEW-LOG.md
+  resulting_changes:
+    - doc: PROJECT-PLAN-TREE.md
+      change: 解除真实单席探针的授权等待；真实宿主和主动唤醒的完成状态仍由实际证据决定。
+
+question: 是否同意创建临时游戏任务、配置探针本地连接，并进行少量真实模型测试；不部署公网、不重启旧演示、不提交代码？
+why_it_matters: B8 已证明本地传输、逐席权限及界面，但固定脚本文字不能证明当前 Codex Desktop 模型实际参与牌局。
+recommended_answer: 授权一次独立本地探针，使用合成牌局与专用任务，区分显式调用和无点击唤醒。
+user_answer: 用户在上述明确问题后回复“同意”；此前单独“继续”不作为本次授权来源。
+decision: 仅授权本窗口的临时游戏任务、探针专用本地连接配置与少量真实模型验证，不改变产品语义、模型设置、持久风险等级或手工收口策略。
+follow_up: Primary 将实际执行进一步限制为最多两个临时任务、六次模型任务输入；只用本机回环和合成局面。优先在 H:/tokengold/.codex/config.toml 添加单一临时 MCP 项，验证后移除并撤销测试席位授权。保留旧演示进程，不部署、公开、提交、推送或启用新付费服务；不把 CLI、脚本 MCP 或显式提示成功写成 Desktop 无点击唤醒已通过。
+
 ## DEC-20260825-001：确认产品根目标
 
 metadata:

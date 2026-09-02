@@ -10,6 +10,10 @@
     "core": "node src/run-table-core.cjs",
     "web": "node src/run-table-web.cjs",
     "bridge": "node src/bridge/server.cjs",
+    "codex:configure": "node plugins/tokengame/codex/configure-project.cjs",
+    "codex:play": "node plugins/tokengame/codex/play.cjs",
+    "connection:activate": "node src/run-model-connection.cjs activate",
+    "connection:clear": "node src/run-model-connection.cjs clear",
     "test": "node --test --test-concurrency=1 test/*.test.cjs",
     "gate": "node test-support/gate.cjs",
     "beta": "node src/run-beta.cjs"

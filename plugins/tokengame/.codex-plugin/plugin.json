@@ -1,7 +1,7 @@
 {
   "name": "tokengame",
   "version": "0.1.0+codex.20260825194607",
-  "description": "TokenGame 本地四人德州牌桌与 Codex 公开 AI 桥。",
+  "description": "TokenGame 本地私有德州牌桌与逐席授权的 AI 公开发言通道。",
   "author": {
     "name": "本地开发者"
   },
@@ -9,12 +9,12 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "TokenGame 本地牌桌",
-    "shortDescription": "在本地权威牌桌中使用 Codex 公开 AI 通道。",
-    "longDescription": "TokenGame 提供仓库本地 Skill、同步 Hooks 与 MCP 工具，把显式赛时提示和当前 Codex 会话的最终回答发布到本地权威事件流；牌局行动由宿主中立的权威内核裁决，Web 牌桌只是真人操作它的界面之一。下注、按 Ready、确认公开范围、亮牌都是真人的决定，模型面发不出这些命令。",
+    "shortDescription": "为本席 AI 授权本地牌桌上下文与公开发言。",
+    "longDescription": "TokenGame 提供仓库本地 Skill 与 MCP 工具，真人下载本席私有连接文件后，模型可读取本席权威上下文并公开发言；牌局行动由宿主中立的权威内核裁决，Web 牌桌只是真人操作它的界面之一。下注、按 Ready、确认公开范围、亮牌都是真人的决定，模型面发不出这些命令。保留的同步 Hooks 仅用于旧式显式公开桥探针。本地脚本验证不代表 Desktop 宿主实机验证或异地多人联机已完成。",
     "developerName": "本地开发者",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "使用 $tokengame 查看本地 TokenGame 牌桌与公开 AI 桥的操作边界。"
+    "defaultPrompt": "使用 $tokengame 查看本地 TokenGame 牌桌、本席 AI 连接文件与真人操作边界。"
   },
   "mcpServers": "./.mcp.json"
 }

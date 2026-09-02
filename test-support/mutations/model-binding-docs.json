@@ -1,0 +1,28 @@
+{
+  "name": "插件逐席授权说明与历史证据边界",
+  "test": "test/plugin-doc-schema-parity.test.cjs",
+  "mutations": [
+    {
+      "id": "plugin-entry-missing-file-config",
+      "file": "plugins/tokengame/README.md",
+      "find": "`TOKENGAME_MODEL_CONNECTION_FILE`",
+      "replace": "`TOKENGAME_UNKNOWN_FILE`",
+      "note": "插件入口必须给出实际生效的文件配置变量。"
+    },
+    {
+      "id": "plugin-entry-shared-token-advice",
+      "file": "plugins/tokengame/README.md",
+      "find": "文件只授权本席的模型命令",
+      "replace": "令牌是**进程级**的，可替所有席位发言",
+      "note": "逐席实现不能继续配进程共享令牌说明。"
+    },
+    {
+      "id": "old-cli-evidence-promoted-to-b8",
+      "file": "plugins/tokengame/README.md",
+      "find": "**不覆盖 B8**",
+      "replace": "**覆盖 B8**",
+      "note": "不能把固定身份旧探针晋级成新路径真宿主验收。"
+    }
+  ],
+  "excluded": []
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "tokengame.probe-evidence-manifest.v1",
+  "observed_at": "2026-08-31T10:56:25.538Z",
+  "role": "去敏实測事实，不是产品验收",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2158,
+      "sha256": "cbc17b9f5fcdec3052b9b46b0f3f01c2912115deabd51fa011301eac23d0b7c2"
+    },
+    {
+      "path": "authority-lifecycle.jsonl",
+      "bytes": 10242,
+      "sha256": "44f7f3a9065895f8d3bda06a11dce0c3b7757f755c1b6a46ab935a393e048b90"
+    },
+    {
+      "path": "browser-observations.json",
+      "bytes": 4279,
+      "sha256": "b4ec2b9acb2045b399cea0b2b3cdd6152bae1da7276351dfb162e44b79d02b70"
+    },
+    {
+      "path": "native-tools.json",
+      "bytes": 27052,
+      "sha256": "b3f73ff78e9696fd94e2a822d1efd9f72400d4c3a2f532e67c5801ca27e4a28e"
+    },
+    {
+      "path": "observations.json",
+      "bytes": 4162,
+      "sha256": "d864394ee8cefa1403ffb17bebb6bf89746d0950e5014a5032ae150a1b5b4caa"
+    },
+    {
+      "path": "resource-results.json",
+      "bytes": 2100,
+      "sha256": "423f84fde12909a5cc2bfa320f522d003220847789a3f03afde998109911b704"
+    },
+    {
+      "path": "runtime-source-identity.json",
+      "bytes": 6182,
+      "sha256": "6254e4be816d6c3adc75b2e3e9656b5136cfeea485f632d5e4bc2c20965ab1eb"
+    }
+  ]
+}

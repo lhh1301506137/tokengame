@@ -1,0 +1,49 @@
+{
+  "name": "B13 受控 beta 关停关键不变量",
+  "note": "只在隔离副本执行。文件写入/关闭失败的旧变异由 ai-lifecycle-receipts.json 承担，这里不重复。",
+  "test": "test/beta-shutdown.test.cjs",
+  "mutations": [
+    {
+      "id": "ipc-accepts-extra-fields",
+      "file": "src/run-beta.cjs",
+      "find": "          && Object.keys(message).length === 2\n",
+      "replace": "",
+      "note": "携带额外字段的消息不得成为关闭命令；真实 IPC 后 HTTP 仍可用。"
+    },
+    {
+      "id": "parent-loss-ignored-during-shutdown",
+      "file": "src/run-beta.cjs",
+      "find": "    if (parentDisconnectExpected || parentDisconnected) return;",
+      "replace": "    if (closing || parentDisconnectExpected || parentDisconnected) return;",
+      "note": "关停中途父通道丢失也须非零退出；捕获结束前与 footer 落盘后分别核验，不能回写旧文件。"
+    },
+    {
+      "id": "flush-skips-callback",
+      "file": "src/run-beta.cjs",
+      "find": "      if (returned && callbackDone && (accepted || drained)) { cleanup(); resolve(); }",
+      "replace": "      if (returned && (accepted || drained)) { cleanup(); resolve(); }",
+      "note": "即使 write 返回 true 或先 drain，也必须等待 callback；逐流隔离，另一条流不能遮住缺口。"
+    },
+    {
+      "id": "flush-skips-required-drain",
+      "file": "src/run-beta.cjs",
+      "find": "      if (returned && callbackDone && (accepted || drained)) { cleanup(); resolve(); }",
+      "replace": "      if (returned && callbackDone) { cleanup(); resolve(); }",
+      "note": "write 返回 false 时 callback 不替代 drain；两条真实输出流分别到达反例。"
+    },
+    {
+      "id": "earlier-failure-hides-output-truncation",
+      "file": "test-support/beta-process.cjs",
+      "find": "      && !outputFailed,",
+      "replace": "      && failure !== \"beta_output_limit\" && failure !== \"beta_output_failed\",",
+      "note": "保留首个失败原因，但不得因此把后续截断输出标记为完整。"
+    },
+    {
+      "id": "late-output-error-keeps-zero-exit",
+      "file": "src/run-beta.cjs",
+      "find": "      // 错误可能晚于最后一次排空检查、早于 IPC 断开完成，不能只改局部标记。\n      process.exitCode = 1;",
+      "replace": "      // 变异：只改 outputFailed，错过最后一次退出码检查。",
+      "note": "真实 fork 在 IPC 断开阶段 destroy 输出流并产生错误，必须失败而非 graceful。"
+    }
+  ]
+}

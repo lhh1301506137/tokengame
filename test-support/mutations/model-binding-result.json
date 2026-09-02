@@ -1,0 +1,56 @@
+{
+  "name": "B8 浏览器验收收尾不能假绿",
+  "test": "test/model-binding-result.test.cjs",
+  "mutations": [
+    {
+      "id": "ignore-incomplete-run",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "completed === true && ",
+      "replace": "",
+      "note": "异常提前结束不能算完成。"
+    },
+    {
+      "id": "ignore-main-failure",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "failure === null && ",
+      "replace": "",
+      "note": "已捕获主流程异常必须反映为失败。"
+    },
+    {
+      "id": "ignore-cleanup-errors",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "errors.length === 0",
+      "replace": "true",
+      "note": "主断言通过后清理异常不能留下绿色结果。"
+    },
+    {
+      "id": "empty-checks-pass",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "checks.length > 0 && ",
+      "replace": "",
+      "note": "零检查不是完成验收。"
+    },
+    {
+      "id": "failed-check-ignored",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "checks.every((check) => check.passed === true)",
+      "replace": "true",
+      "note": "断言结果要参与最终判定。"
+    },
+    {
+      "id": "failure-exit-zero",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "exitCode: passed ? 0 : 1",
+      "replace": "exitCode: 0",
+      "note": "证据失败时进程退出也必须失败。"
+    },
+    {
+      "id": "cleanup-error-silent",
+      "file": "test-support/model-binding-result.cjs",
+      "find": "      errors.push(`cleanup-${name}:${sanitize(error?.message ?? String(error))}`);",
+      "replace": "",
+      "note": "清理失败必须留下脱敏记录并继续收尾。"
+    }
+  ],
+  "excluded": []
+}

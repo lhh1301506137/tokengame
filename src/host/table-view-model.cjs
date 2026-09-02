@@ -296,9 +296,9 @@ function buildMessages(timeline, seatIndexById) {
       speaker_type: speakerType,
       text: typeof p.text === "string" ? p.text : "",
       channel: p.channel ?? "TABLE_PUBLIC",
-      // 迟到标注。权威在结算跨街迟到的 AI 回合时给出这两个字段；UI 据此显示
-      // 「延迟 · 基于 flop」，而不是自己拿当前街去比较。
-      late: p.late === true,
+      // 权威用 late_annotation 表达迟到，视图只翻译成 UI 已有的 late 布尔。
+      // based_on_street 原样保留；不读取非权威 p.late，也不拿当前街重新比较。
+      late: typeof p.late_annotation === "string" && p.late_annotation.trim().length > 0,
       based_on_street: p.based_on_street ?? null,
       hidden: event.locally_hidden_for_viewer === true,
     };

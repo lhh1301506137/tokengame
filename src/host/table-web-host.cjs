@@ -28,10 +28,11 @@ const { closeServer, listen, readJson, sendJson } = require("../shared/http.cjs"
 const { CoreError } = require("./core-client.cjs");
 const { SeatCustody } = require("./seat-custody.cjs");
 const { ModelCommandSurface, ModelSurfaceError } = require("./model-command-surface.cjs");
+const { ModelWakeSessionManager } = require("./model-wake-session.cjs");
 const { sameToken, usableToken } = require("../shared/tokens.cjs");
 // 只取版本常量。模型命令路由是跨进程边界，那条闸门要与核心 /command 用同一个来源——
 // 抄一个字面量的话，改版本时两条边界会分道扬镳。
-const { CONTRACT_VERSION } = require("../contract/adapter-contract.cjs");
+const { CONTRACT_VERSION, classifyError } = require("../contract/adapter-contract.cjs");
 const viewModel = require("./table-view-model.cjs");
 const { LIVELY_V1 } = require("../authority/seat-ai-store.cjs");
 
@@ -41,7 +42,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 // 约定端口取自共享常量。协调器不定义它自己的默认端口——MCP 插件在没配
 // TOKENGAME_TABLE_ORIGIN 时打的是同一个地址，两处各写一遍的话改动一侧会表现为
 // 「模型说连不上牌桌，而牌桌明明开着」。
-const { DEFAULT_TABLE_ORIGIN, DEFAULT_TABLE_PORT } = require("../shared/endpoints.cjs");
+const { DEFAULT_TABLE_ORIGIN, DEFAULT_TABLE_PORT, MODEL_CONNECTION_SCHEMA } = require("../shared/endpoints.cjs");
 
 // 模型命令路由的令牌头。沿用权威那条 x-tokengame-* 的命名约定，但**不是**同一个令牌：
 // 权威令牌能发任何命令，这一个只能发模型面那五条。共用一个会让「给宿主配置模型接入」
@@ -69,6 +70,8 @@ const CONNECTION_LEASE_MS = 8_000;
 //
 // 它跟会话令牌同一性质，因此同样不进 URL、不进日志、不进任何视图模型。
 const MIN_ENTRY_KEY_LENGTH = 16;
+const MAX_MODEL_BINDING_REQUESTS = 128;
+const MAX_MODEL_BINDING_KEY_LENGTH = 256;
 
 // 「这是一个能用的入口键吗」只有这一个定义。拒绝路径和记账路径都问它。
 function usableEntryKey(value) {
@@ -127,6 +130,10 @@ class TableWebHost {
     // 改的是协调器对重复请求的应答，不是内核的绑定语义——所以这里存的是「上次那份响应」，
     // 而不是放宽下面任何一条检查。
     this.entryKeys = new Map();
+    // 逐席模型绑定是协调器传输能力，不是权威牌局状态；只由真人会话创建/撤销。
+    this.modelBindingEnabled = options.modelBindingEnabled === true;
+    this.modelBindings = new Map();
+    this.tableOrigin = null;
     // 模型命令面。与真人命令共用**同一份** this.custody，这是「唯一协调器」的全部内容。
     //
     // 为什么必须共用：席位凭据只在 room.create / room.join 的返回里出现一次，而那两条是
@@ -140,17 +147,17 @@ class TableWebHost {
     // 收敛做的是把重复的那份删掉。
     this.modelSurface = new ModelCommandSurface({
       custody: this.custody,
-      request: (command, params) => this.coreRequest(command, params),
+      request: (command, params, operation) => this.coreRequest(command, params, operation),
+      scopeIsCurrent: (scope) => this.modelScopeIsCurrent(scope),
     });
-    // 模型命令路由的令牌。没配就整条路由关闭——失败关闭，不给开发默认值。
-    //
-    // 为什么不生成一个默认值：那种默认值会跟着文档一起被复制到能被别人打到的地方，
-    // 而它在回环上从来不报错，所以没人会发现。而生成一个随机的又必须打印出来给运维
-    // 抄进宿主配置，那等于把秘密写进 stdout 与 shell 历史。所以由启动脚本从环境变量
-    // 传进来，没传就是没开。
-    //
-    // 关闭必须看得见：/api/health 会如实报 disabled。看不见的失败关闭等于静默卡住——
-    // 宿主那边只看到「模型什么都不做」，而原因是一个没设的环境变量。
+    // 无发送器时默认关闭；本层只认识宿主中立的通知函数，不解析任何原生任务配置。
+    this.wakeSessions = new ModelWakeSessionManager({
+      ...options.wakeOptions,
+      modelSurface: this.modelSurface,
+      wakeQueue: options.wakeQueue,
+      readState: (scope, operation) => this.readWakeState(scope, operation),
+    });
+    // 旧进程级令牌只用于返回明确的迁移拒绝，永远不能再兑换全席权限。
     this.modelCommandToken = usableToken(options.modelCommandToken)
       ? options.modelCommandToken
       : null;
@@ -247,6 +254,191 @@ class TableWebHost {
     return session;
   }
 
+  modelScopeIsCurrent({ seat_handle: handle, binding_id: bindingId }) {
+    const session = [...this.sessions.values()].find((entry) => entry.seat_handle === handle);
+    if (session === undefined || session.model_left) return false;
+    const binding = this.modelBindings.get(handle);
+    if (bindingId === null) return binding === undefined && !session.model_pending;
+    return binding !== undefined && binding.binding_id === bindingId
+      && binding.generation === session.model_generation;
+  }
+
+  modelConnection(session) {
+    const binding = this.modelBindings.get(session.seat_handle);
+    return {
+      state: !this.modelBindingEnabled ? "disabled" : binding === undefined ? "unbound"
+        : binding.last_seen_at === null ? "awaiting_host" : "host_seen",
+      binding_id: binding?.binding_id ?? null,
+      seat_id: session.seat_id,
+      last_seen_at: binding?.last_seen_at ?? null,
+      proactive_wake_verified: false,
+    };
+  }
+
+  modelWake(session) {
+    const binding = this.modelBindings.get(session.seat_handle);
+    const scope = { seat_handle: session.seat_handle, binding_id: binding?.binding_id ?? null };
+    let window = null;
+    if (this.modelBindingEnabled && binding !== undefined && this.modelScopeIsCurrent(scope)) {
+      // status 只按本机可信绑定查找，不接受页面指定席位或其他窗口；任务 UUID 不进轮询投影。
+      window = this.visibleWake(this.wakeSessions.status(scope));
+    }
+    return { enabled: this.wakeSessions.enabled, target_configured: this.wakeSessions.targetConfigured,
+      limits: this.wakeSessions.limits, window };
+  }
+
+  visibleWake(wake) {
+    const { thread_id: _threadId, ...visible } = wake;
+    return visible;
+  }
+
+  revokeModelBinding(session) {
+    // abort 同步发生，不能等撤销后的下一轮轮询才挡住在途领取/发送。
+    void this.wakeSessions.stopHandle(session.seat_handle);
+    session.model_generation += 1;
+    session.model_pending = false;
+    this.modelBindings.delete(session.seat_handle);
+    this.modelSurface.invalidateHandle(session.seat_handle);
+    return session.model_generation;
+  }
+
+  assertModelSessionCurrent(session, generation, reauthorize = false) {
+    if (this.sessions.get(session.token) !== session
+      || (session.model_left && (!reauthorize || session.model_leave_pending !== 0))
+      || session.model_generation !== generation) {
+      throw new CoreError("model_binding_changed", 403);
+    }
+  }
+
+  // 资格检查用核心现有授权与席位投影；返回值不出本方法。每个 await 后都要围住世代。
+  async verifyModelSession(session, generation, reauthorize = false) {
+    this.assertModelSessionCurrent(session, generation, reauthorize);
+    try {
+      await this.core.dispatch("view.hand", this.injected("view.hand", session, {}));
+      this.assertModelSessionCurrent(session, generation, reauthorize);
+      const { seat } = await this.core.dispatch("view.seat", { seat_id: session.seat_id });
+      this.assertModelSessionCurrent(session, generation, reauthorize);
+      if (seat.privacy_fence || seat.leave_requested || seat.state === "RELEASED") {
+        session.model_left = true;
+        this.revokeModelBinding(session);
+        throw new CoreError("seat_leaving", 403);
+      }
+      // 只有真人新授权能解除「本地已退出、权威尚未确认」状态。失败的离桌不自行回滚，
+      // 旧key/令牌不能走这里；新leave会换代，不能被这次资格检查的旧响应撤回。
+      if (reauthorize) session.model_left = false;
+    } catch (error) {
+      if (SEAT_GONE_CODES.includes(error?.code)) {
+        session.model_left = true;
+        this.revokeModelBinding(session);
+      }
+      throw error;
+    }
+  }
+
+  bindingResponse(session, binding) {
+    this.assertModelSessionCurrent(session, binding.generation);
+    if (this.modelBindings.get(session.seat_handle) !== binding) throw new CoreError("model_binding_changed", 403);
+    const { proactive_wake_verified: _wake, ...visible } = this.modelConnection(session);
+    // 这是唯一允许 model_token 出门的受限下载。三个字段均由服务器铸造；不合并请求体。
+    return {
+      ok: true,
+      connection: { schema: MODEL_CONNECTION_SCHEMA, table_origin: this.tableOrigin, model_token: binding.token },
+      binding: visible,
+    };
+  }
+
+  async postModelBind(response, body) {
+    if (!this.modelBindingEnabled) throw new CoreError("model_command_route_disabled", 503);
+    const session = this.requireSession(body.session_token);
+    if (body.acknowledged !== true) throw new CoreError("invalid_field", 400, { field: "acknowledged" });
+    const key = body.binding_request_id;
+    if (!usableEntryKey(key) || key.length > MAX_MODEL_BINDING_KEY_LENGTH) {
+      throw new CoreError("invalid_field", 400, { field: "binding_request_id" });
+    }
+    let request = session.model_requests.get(key);
+    if (request !== undefined && request.generation !== session.model_generation) {
+      throw new CoreError("model_binding_request_conflict", 409);
+    }
+    const reauthorize = request?.reauthorize ?? session.model_left;
+    this.assertModelSessionCurrent(session, session.model_generation, reauthorize);
+    if (request === undefined) {
+      // 不逐出旧键：逐出后把它当新键会复活已撤销的下载。满额要求新会话，不能偷偷降级。
+      if (session.model_requests.size >= MAX_MODEL_BINDING_REQUESTS) throw new CoreError("model_binding_history_full", 409);
+      const generation = this.revokeModelBinding(session);
+      session.model_pending = true;
+      request = { generation, promise: null, retryable: false, reauthorize };
+      session.model_requests.set(key, request);
+      this.beginModelBindingRequest(session, request);
+    } else if (request.retryable && !this.modelBindings.has(session.seat_handle)) {
+      // 只重试本世代尚未生效的传输失败；上面的世代检查仍会拒绝撤销/换发后的旧键。
+      session.model_pending = true;
+      this.modelSurface.invalidateHandle(session.seat_handle);
+      this.beginModelBindingRequest(session, request);
+    }
+    const binding = await request.promise;
+    await this.verifyModelSession(session, request.generation);
+    sendJson(response, 200, this.bindingResponse(session, binding));
+  }
+
+  beginModelBindingRequest(session, request) {
+    request.retryable = false;
+    request.promise = this.createModelBinding(session, request.generation, request.reauthorize).catch((error) => {
+      request.retryable = classifyError(error?.code) === "transport"
+        && session.model_generation === request.generation && (!session.model_left || request.reauthorize)
+        && session.model_leave_pending === 0
+        && !this.modelBindings.has(session.seat_handle);
+      throw error;
+    });
+  }
+
+  async createModelBinding(session, generation, reauthorize = false) {
+    try {
+      await this.verifyModelSession(session, generation, reauthorize);
+    } catch (error) {
+      if (session.model_generation === generation) session.model_pending = false;
+      throw error;
+    }
+    this.assertModelSessionCurrent(session, generation);
+    const crypto = require("node:crypto");
+    const binding = {
+      binding_id: `model-binding-${crypto.randomUUID()}`,
+      token: this.custody.remember(`model-token-${crypto.randomBytes(32).toString("base64url")}`),
+      generation,
+      session_token: session.token,
+      seat_handle: session.seat_handle,
+      last_seen_at: null,
+    };
+    this.modelBindings.set(session.seat_handle, binding);
+    session.model_pending = false;
+    return binding;
+  }
+
+  postModelUnbind(response, body) {
+    if (!this.modelBindingEnabled) throw new CoreError("model_command_route_disabled", 503);
+    const session = this.requireSession(body.session_token);
+    this.revokeModelBinding(session);
+    sendJson(response, 200, { ok: true });
+  }
+
+  // 核心凭据净化继续复用 custody；模型 token 是此协调器新增的受限能力，也必须摘字段、扫值。
+  sanitizeModelTokens(value) {
+    if (Array.isArray(value)) return value.map((entry) => this.sanitizeModelTokens(entry));
+    if (value === null || typeof value !== "object") return value;
+    const clean = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === "model_token") { this.custody.remember(entry); continue; }
+      clean[key] = this.sanitizeModelTokens(entry);
+    }
+    return clean;
+  }
+
+  assertNoModelLeak(value, where) {
+    const text = this.custody.assertNoLeak(JSON.stringify(value), where);
+    if (/"model_token"\s*:/.test(text)) {
+      throw Object.assign(new Error("credential_leak"), { name: "CredentialLeak", code: "credential_leak" });
+    }
+  }
+
   // 席位授权命令统一由托管层注入 seat_id + recovery_credential。浏览器给的任何
   // seat_id / recovery_credential 都会让 inject 抛错，这正是要的行为。
   injected(command, session, params) {
@@ -263,9 +455,9 @@ class TableWebHost {
   //
   // body 是命令服务响应体的形状（{ ok, result } / { ok, code }），与 MCP 进程那条 HTTP
   // 路径同形。不同形的话，同一个模型命令在两种传输下会读到不同的字段。
-  async coreRequest(command, params) {
+  async coreRequest(command, params, operation = {}) {
     try {
-      const result = await this.core.dispatch(command, params);
+      const result = await this.core.dispatch(command, params, operation);
       return { ok: true, status: 200, body: { ok: true, result } };
     } catch (error) {
       return {
@@ -287,14 +479,14 @@ class TableWebHost {
   //
   // 拒绝理由不吞。ModelSurfaceError 是本地拒绝（真人命令、模型自带席位身份、伪造的权威
   // id），它必须原样回给调用方——吞掉会让模型以为自己发对了而结果为空。
-  async modelCommand(command, params = {}) {
+  async modelCommand(command, params = {}, trustedScope = undefined, operation = {}) {
     try {
-      return await this.modelSurface.call(command, params ?? {});
+      return await this.modelSurface.call(command, params ?? {}, trustedScope, operation);
     } catch (error) {
       if (!(error instanceof ModelSurfaceError)) throw error;
       return {
         ok: false,
-        status: 400,
+        status: error.status,
         body: {
           ok: false,
           code: error.code,
@@ -388,7 +580,9 @@ class TableWebHost {
     // 双保险：视图模型已做结构自检（禁止的键名），这里再按秘密原文扫一遍。两者方向不同，
     // 缺任何一个都留着一条路：结构检查抓不住「凭据被塞进 text 字段」，原文扫描抓不住
     // 「键在但值恰好为空」。
-    this.custody.assertNoLeak(JSON.stringify(view), "web_view");
+    view.model_connection = this.modelConnection(session);
+    view.model_wake = this.modelWake(session);
+    this.assertNoModelLeak(view, "web_view");
     return view;
   }
 
@@ -428,8 +622,7 @@ class TableWebHost {
     let started = 0;
     let resolved = 0;
     try {
-      // 一次取全部席位的待办。扇出在模型面里按 custody.handles() 做——那正是「本进程
-      // 真正托管着的席位」，与旧代码遍历 sessions 是同一集合（会话与绑定同生同灭）。
+      // 同一模型面只给内部驱动分派未外绑席位，外部绑定不能被模拟适配器抢领。
       const claim = await this.modelCommand("ai.take_intents", {});
       // 逐席失败已经被模型面收进 failures，不会中断别席。席位没了是正常结果，其余记账。
       for (const failure of claim.body?.result?.failures ?? []) {
@@ -437,16 +630,7 @@ class TableWebHost {
         this.driveErrors.push({ at: this.now(), code: failure?.code ?? "take_intents_failed" });
         if (this.driveErrors.length > this.maxDriveErrors) this.driveErrors.shift();
       }
-      // 刻意不检查 `claim.ok`。
-      //
-      // 写过那么一段：!claim.ok 就记一笔然后 return。它恒假——takeIntents 无条件回
-      // ok:true，逐席失败全部收进上面那个 failures 数组，而 modelCommand 只在
-      // ModelSurfaceError 时回 ok:false，那需要「命令不在模型面上」或「自带席位身份」，
-      // 两者在这个调用点都不可能（命令是字面量，参数是空对象）。
-      //
-      // 恒假的分支与恒真的断言是同一类问题：都不读现实，都不会变红。变异测试正是这么
-      // 暴露出来的——把整个分支换成 if (false)，没有一条测试变红。真的实现缺陷让它抛，
-      // 由 startDriver 的 catch 记账。
+      // 取件期间也可能发生换绑：它已经使这轮已领取 id 全部失效，不再派发旧快照。
       for (const intent of claim.body?.result?.intents ?? []) {
         // claim_token 由模型面按 intent_id 补回（F5 世代围栏）。这里刻意不碰它：它是
         // 本宿主的领取凭证，经过这一层只会多一条搬运路径，而搬运途中可能改、可能忘。
@@ -475,11 +659,12 @@ class TableWebHost {
         // 里后面所有席位，那些席位的回合压根没起来，权威侧的租约救不了它们。
         let decision;
         try {
+          this.assertNoModelLeak(startResult.body.result.model_context, "model_adapter_context");
           decision = await withTimeout(
             this.modelAdapter.evaluate({
               seat_id: seatId,
               turn_id: turn.turn_id,
-              context: intent.context,
+              context: startResult.body.result.model_context,
             }),
             this.adapterTimeoutMs,
           );
@@ -573,7 +758,7 @@ class TableWebHost {
         model_adapter_attached: this.modelAdapter !== null,
         // 报状态，不报令牌。远端宿主要能分辨「我令牌配错了」与「这台机器压根没开模型
         // 路由」——两者的处置完全不同，混同会让人去改令牌而不是去配上它。
-        model_command_route: this.modelCommandToken === null ? "disabled" : "enabled",
+        model_command_route: this.modelBindingEnabled ? "enabled" : "disabled",
         sessions: this.sessions.size,
       });
       return;
@@ -608,6 +793,11 @@ class TableWebHost {
       case "/api/view": return this.postView(response, body);
       case "/api/action": return this.postAction(response, body);
       case "/api/model/command": return this.postModelCommand(request, response, body);
+      case "/api/model/bind": return this.postModelBind(response, body);
+      case "/api/model/unbind": return this.postModelUnbind(response, body);
+      case "/api/model/wake/start": return this.postModelWake(response, body, "start");
+      case "/api/model/wake/status": return this.postModelWake(response, body, "status");
+      case "/api/model/wake/stop": return this.postModelWake(response, body, "stop");
       default:
         sendJson(response, 404, { ok: false, code: "unknown_route" });
     }
@@ -689,6 +879,11 @@ class TableWebHost {
       last_seen: new Map(),
       hidden: { players: [], ais: [], seats: [] },
       opened_at: this.now(),
+      model_generation: 0,
+      model_left: false,
+      model_leave_pending: 0,
+      model_pending: false,
+      model_requests: new Map(),
     };
     this.sessions.set(token, session);
     // 建会话就是建连接。不连的话 seat.ready 会被权威以 seat_not_connected 拒绝——
@@ -809,6 +1004,10 @@ class TableWebHost {
         if (!gone) throw error;
       }
       if (!gone) continue;
+      session.model_left = true;
+      this.revokeModelBinding(session);
+      this.modelSurface.forgetHandle(session.seat_handle);
+      void this.wakeSessions.forgetHandle(session.seat_handle);
       // 释放后删 web session、custody binding 与相关凭据。留着任何一样都等于
       // 一个指向不存在席位的令牌仍然可用，而凭据还躺在内存里。
       this.sessions.delete(session.token);
@@ -823,25 +1022,81 @@ class TableWebHost {
     return { disconnected, cleaned };
   }
 
+  // 真人的本席有限通知授权。没有模型命令入口，不接受 model_token 代替本人会话。
+  async postModelWake(response, body, action) {
+    const session = this.requireSession(body.session_token);
+    const binding = this.modelBindings.get(session.seat_handle);
+    if (!this.modelBindingEnabled || binding === undefined) throw new CoreError("model_binding_required", 403);
+    this.assertModelSessionCurrent(session, binding.generation);
+    const trustedScope = { seat_handle: session.seat_handle, binding_id: binding.binding_id };
+    const { session_token: _sessionToken, ...input } = body;
+    let wake;
+    if (action === "start") {
+      wake = this.wakeSessions.start(trustedScope, input);
+    } else {
+      if (Object.keys(input).some((key) => key !== "request_id")) {
+        throw new CoreError("invalid_field", 400, { field: "wake_control" });
+      }
+      wake = action === "status" ? this.wakeSessions.status(trustedScope, input.request_id)
+        : await this.wakeSessions.stop(trustedScope, input.request_id);
+      this.assertModelSessionCurrent(session, binding.generation);
+    }
+    sendJson(response, 200, { ok: true, wake: { ...this.visibleWake(wake),
+      target_configured: this.wakeSessions.targetConfigured } });
+  }
+
+  async readWakeState(trustedScope, operation) {
+    const scope = this.modelSurface.captureScope(trustedScope);
+    const session = [...this.sessions.values()].find((entry) => entry.seat_handle === scope.handle);
+    try {
+      const { seat, ai } = await this.core.dispatch("view.seat", { seat_id: session.seat_id }, operation);
+      this.modelSurface.assertScopeCurrent(scope);
+      if (seat.privacy_fence || seat.leave_requested || seat.state === "RELEASED") {
+        session.model_left = true;
+        this.revokeModelBinding(session);
+        throw new CoreError("seat_leaving", 403);
+      }
+      // 不把整张 view.seat 或任何上下文放进通知账，只有资格与精确 active-turn 核对。
+      return { mode: ai.mode, active_turn_id: ai.active_turn_id };
+    } catch (error) {
+      if (SEAT_GONE_CODES.includes(error?.code)) {
+        session.model_left = true;
+        this.revokeModelBinding(session);
+      }
+      throw error;
+    }
+  }
+
   // 远端模型客户端的入口。MCP 进程打这条。
   //
-  // 它与进程内驱动走的是**同一个** this.modelSurface，所以两边看到的席位、记的
-  // intent_id、注入的凭据全是同一份。这就是「唯一协调器」在网络这一侧的形态：
-  // MCP 进程不持有任何秘密，它只是一条 stdio 到 HTTP 的转运。
-  //
-  // 已知限制，写在代码里而不是只写在文档里：这个令牌是**进程级**的，持有它就能替这个
-  // 协调器上的所有席位发言。一个协调器 = 一台机器 = 一个人的席位，朋友内测的形态是
-  // 每人各跑一个协调器，所以本轮够用。两个朋友共用一台机器时，甲的宿主能替乙席说话——
-  // 要消除得给每席发一张只覆盖该席的令牌，并且有一条把它交到「那一席的宿主」手上的路。
+  // 与内部驱动共用同一模型面/托管；远端只拿真人授权下载的单席能力，不能访问全席。
   async postModelCommand(request, response, body) {
+    const token = request.headers[MODEL_COMMAND_TOKEN_HEADER];
+    if (this.modelCommandToken !== null && sameToken(token, this.modelCommandToken)) {
+      sendJson(response, 403, { ok: false, code: "model_binding_required" });
+      return;
+    }
     // 门在读命令之前。关着的路由不该有机会解析请求内容，也不该回显它。
-    if (this.modelCommandToken === null) {
+    if (!this.modelBindingEnabled) {
       sendJson(response, 503, { ok: false, code: "model_command_route_disabled" });
       return;
     }
-    if (!sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)) {
+    const binding = [...this.modelBindings.values()].find((entry) => sameToken(token, entry.token));
+    if (binding === undefined) {
       // 只回码。回显命令名或席位数会让这条路变成枚举口：不带令牌就能问出
       // 「这个协调器上有几席」「这条命令存不存在」。
+      sendJson(response, 403, { ok: false, code: "model_command_token_rejected" });
+      return;
+    }
+    const session = this.sessions.get(binding.session_token);
+    if (session === undefined) {
+      sendJson(response, 403, { ok: false, code: "model_command_token_rejected" });
+      return;
+    }
+    try {
+      await this.verifyModelSession(session, binding.generation);
+    } catch (error) {
+      if (!SEAT_GONE_CODES.includes(error?.code) && !["seat_leaving", "model_binding_changed"].includes(error?.code)) throw error;
       sendJson(response, 403, { ok: false, code: "model_command_token_rejected" });
       return;
     }
@@ -862,15 +1117,19 @@ class TableWebHost {
       sendJson(response, 400, {
         ok: false,
         code: "contract_version_mismatch",
-        details: { expected: CONTRACT_VERSION, received: body.contract_version },
+        details: { expected: CONTRACT_VERSION, received: typeof body.contract_version === "number" ? body.contract_version : null },
       });
       return;
     }
-    const result = await this.modelCommand(body.command, body.params ?? {});
+    binding.last_seen_at = this.now();
+    const trustedScope = { seat_handle: session.seat_handle, binding_id: binding.binding_id };
+    const result = await this.modelCommand(body.command, body.params ?? {}, trustedScope);
+    // 核心可能已经完成，但响应仍在路上。此时撤销/离桌/到期必须扣下私有上下文，不能回填 id。
+    await this.verifyModelSession(session, binding.generation);
     // 出门前净化并扫描。模型面不该收到秘密，但「不该」要有一道实测的门兜住——与 MCP
     // 进程那一侧同一条理由，而现在这道门在协调器里，所以两种传输共用它。
-    const sanitized = this.custody.sanitizeResult(result.body);
-    this.custody.assertNoLeak(JSON.stringify(sanitized), "model_command_response");
+    const sanitized = this.sanitizeModelTokens(this.custody.sanitizeResult(result.body));
+    this.assertNoModelLeak(sanitized, "model_command_response");
     // ok 由路由补。模型面内部的 body 形状是 { result } / { code }，不带 ok——而 HTTP
     // 调用方必须能不看状态码就分辨成败：状态码会被代理改写，body 不会。
     sendJson(response, result.status ?? (result.ok ? 200 : 400), { ok: result.ok, ...sanitized });
@@ -942,7 +1201,25 @@ class TableWebHost {
       return;
     }
 
-    const result = await this.core.dispatch(command, this.injected(command, session, params));
+    const leaving = command === "seat.leave";
+    if (command === "ai.set_mode" && params.mode === "OFF") {
+      // 停自动通知先于远端 OFF；真正禁止公开仍由原有权威 OFF 完成。
+      void this.wakeSessions.stopHandle(session.seat_handle, "seat_ai_off");
+    }
+    if (leaving) {
+      // 真人离桌的隐私意图先围住模型权限，不等远端核心往返成功才撤销。
+      session.model_left = true;
+      this.revokeModelBinding(session);
+      session.model_leave_pending += 1;
+    }
+    let result;
+    try {
+      result = await this.core.dispatch(command, this.injected(command, session, params));
+    } finally {
+      // 只结清本次在途计数，不按迟到成功/失败恢复任何权限。所有leave结束后，
+      // 本人仍须用新key显式授权并重问权威，不能从刷新或旧请求重放恢复。
+      if (leaving) session.model_leave_pending -= 1;
+    }
 
     // 本地隐藏成功后才记账。先记后发会在命令失败时留下一条只有本进程知道的隐藏，
     // 于是 UI 显示「已隐藏」而权威侧的时间线仍然标记为可见。
@@ -951,8 +1228,8 @@ class TableWebHost {
     }
 
     // 动作返回里可能带凭据形状的东西（不该有，但这一层不假设上游永远正确）。
-    const sanitized = this.custody.sanitizeResult(result);
-    this.custody.assertNoLeak(JSON.stringify(sanitized), "web_action_result");
+    const sanitized = this.sanitizeModelTokens(this.custody.sanitizeResult(result));
+    this.assertNoModelLeak(sanitized, "web_action_result");
     sendJson(response, 200, { ok: true, result: sanitized });
   }
 
@@ -973,6 +1250,7 @@ class TableWebHost {
       "/": ["index.html", "text/html; charset=utf-8"],
       "/index.html": ["index.html", "text/html; charset=utf-8"],
       "/table.js": ["table.js", "text/javascript; charset=utf-8"],
+      "/wake-controls.mjs": ["wake-controls.mjs", "text/javascript; charset=utf-8"],
       "/table.css": ["table.css", "text/css; charset=utf-8"],
     };
     const entry = files[url.pathname];
@@ -993,11 +1271,17 @@ class TableWebHost {
       return;
     }
     if (error instanceof CoreError || typeof error?.code === "string") {
-      sendJson(response, typeof error.status === "number" ? error.status : 400, {
+      const body = {
         ok: false,
         code: error.code,
         ...(error.details === undefined ? {} : { details: error.details }),
-      });
+      };
+      try {
+        this.assertNoModelLeak(body, "web_error_response");
+        sendJson(response, typeof error.status === "number" ? error.status : 400, body);
+      } catch {
+        sendJson(response, 500, { ok: false, code: "credential_leak" });
+      }
       return;
     }
     if (typeof error?.status === "number") {
@@ -1018,13 +1302,15 @@ class TableWebHost {
       });
     }
     const address = await listen(this.server, { host, port });
-    return `http://${host === "::1" ? "[::1]" : host}:${address.port}`;
+    this.tableOrigin = `http://${address.address.includes(":") ? `[${address.address}]` : address.address}:${address.port}`;
+    return this.tableOrigin;
   }
 
   async stop() {
     this.stopDriver();
     this.stopSweeper();
-    await closeServer(this.server);
+    const [wake] = await Promise.all([this.wakeSessions.close(), closeServer(this.server)]);
+    if (!wake.cleanup_ok) throw new CoreError("wake_cleanup_failed", 500);
   }
 }
 

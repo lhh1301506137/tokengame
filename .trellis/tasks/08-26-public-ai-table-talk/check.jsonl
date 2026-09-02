@@ -5,9 +5,16 @@
 {"file":".trellis/spec/frontend/component-guidelines.md","reason":"检查 DOM 注入安全、可访问性与 Canvas 投影"}
 {"file":".trellis/spec/frontend/directory-structure.md","reason":"检查新核心与旧探针栈的边界没有被互相污染或重复实现"}
 {"file":".trellis/spec/frontend/hook-guidelines.md","reason":"检查宿主适配器的失败关闭、零桥流量与凭据不入模型上下文"}
-{"file":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","reason":"复核任何主动唤醒声明是否超出该文件记录的已证明能力"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md","reason":"按2026-08-27历史边界复核旧证据；当前queue候选见B10补充，任何文档或CLI证据均不能冒充Desktop实测"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b10-codex-queue-wake-spike-20260830.md","reason":"验证B10仅单次受控探针，队列接受不等于Desktop唤醒，默认必须零副作用"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b11-ai-lifecycle-receipts-20260831.md","reason":"独立验证B11真实入口、默认零副作用、秘密白名单、丢失/截断不冒充成功及阶段时延的证据边界"}
+{"file":"docs/AI-LIFECYCLE-RECEIPTS.md","reason":"检查B13父IPC、异常断开、写入和输出失败的实际退出与回执；不能用旧进程内信号测试替代新IPC实测"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b15-managed-wake-session-20260831.md","reason":"B15有界会话合同：显式启停、固定游戏任务、跨窗口单槽与真实resolve关联；脚本证据不等于原生连续运行"}
+{"file":"docs/MANAGED-WAKE-SESSION.md","reason":"核对实际beta配置和真人控制入口、永久任务/席位配对、默认关闭及停止与原生取消的区别"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md","reason":"复核门禁证据分层，禁止用自动化层顶替真人层签字"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/disconnect-recovery-policy.md","reason":"复核掉线、超时动作、恢复窗口与释放事件的唯一性"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/task-exit-rebind-policy.md","reason":"复核暂离/离桌、隐私栅栏与旧 generation 迟到结果被丢弃"}
 {"file":"docs/CODEX-IMPLEMENTATION-REVIEW-20260828.md","reason":"Codex 复核提出的 F1-F6 与其硬性要求，是本轮检查的上游依据"}
 {"file":"docs/CLAUDE-REVIEW-RESPONSE-20260828.md","reason":"逐条回应与承接的证据边界；检查时据此确认哪些是已闭合、哪些仍未验证"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b16-managed-wake-controls-20260831.md","reason":"B16仅本人启停、服务实际上限、重复/未知请求、旧响应与换绑隔离；脚本验证不能等于原生连续能力"}
+{"file":".trellis/tasks/08-26-public-ai-table-talk/research/b18-stable-project-mcp-activation-20260901.md","reason":"B18固定项目MCP、逐席连接热切换、显式项目根和首次重启边界；本地实现不能替代原生重启后复验"}

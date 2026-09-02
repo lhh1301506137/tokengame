@@ -1,0 +1,14 @@
+{
+  "name": "late-speech-projection",
+  "test": "test/late-speech-projection.test.cjs",
+  "note": "B14 确定性脚本回归；真实命令面与 SeatAiStore 发布，不是宿主模型或浏览器验收。",
+  "mutations": [
+    {
+      "id": "restore-noncanonical-late-mapper",
+      "file": "src/host/table-view-model.cjs",
+      "find": "      late: typeof p.late_annotation === \"string\" && p.late_annotation.trim().length > 0,",
+      "replace": "      late: p.late === true,",
+      "guards": "真实 ai.resolve 的 late_annotation 必须进入 view.messages 与 seat.recent_speech；恢复旧 mapper 后，真实 producer 的跨街用例必须失败，不能靠手造 late:true 杀变异。"
+    }
+  ]
+}

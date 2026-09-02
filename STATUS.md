@@ -1,6 +1,6 @@
 # TokenGame 项目状态
 
-更新日期：2026-08-29
+更新日期：2026-09-02
 
 ## 初始化状态
 
@@ -9,7 +9,34 @@
 - 当前阶段：`prototype`
 - 当前目标：把项目推进到「朋友私人房内测候选」——2–4 名朋友能建房、用邀请码加入、按正常无限注德州规则操作，并在各玩家座位旁看到该玩家与其真实宿主 AI 的公开对话。宿主对话是 AI 与入口控制面，Web 牌桌是真人筹码操作面，两者属于同一局、同一席位、同一份权威状态。
 - 已完成的地基：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；宿主中立权威内核已按这些合同实现并闭合 Codex 复核 F1–F6；新牌桌 UI 已与该内核形成单栈产品闭环，四个隔离浏览器上下文的多人回路已闭合。共享 HostAdapter 合同的底座、模型面适配器（`SeatModelAdapter`）与真人面适配器（`HostCommandAdapter`，2026-08-29 `0542c1c`）都已实现并过一致性套件，自动化验收已打到第 13 手。
-- 仍未验证，不得写成已通过：任何真实宿主界面里的实机回路（Codex 界面支持是未关闭的 `U-TG-CODEX-UI-SUPPORT`；Claude Desktop / Cowork 本机没有安装，探针从未开始执行）；无点击主动唤醒（`proactive_wake`，任何剖面都未验证，合同层现在直接拒收这项声明）；四真人 45 分钟 UAT 签字。浏览器验收用的是 `simulated: true` 的脚本适配器——它证明 UI 到权威这条链路，不证明任何真实 AI 已接通。
+- B8已完成：逐席AI授权/换发/撤销、权威本席上下文、私有连接文件与MCP接入、浏览器连接界面；925项测试、557条变异、35项连接UI及209项四人13手验收均通过。该批唯一裁决为 `REVIEW-LOG.md#b8-seat-model-binding`，仅限本地自动化链路。
+- B9已完成：当前Codex Desktop单席显式消息触发的真实生成→同桌两页AI气泡→撤销后旧权限被拒。一个游戏任务、五轮输入、九次游戏MCP调用；两次生成，一次发布、一次跨手丢弃。附带邀请码窄屏修补，51项连接UI及20项定向Node检查通过。该探针唯一裁决为 `REVIEW-LOG.md#b9-real-host-seat-probe`。
+- B10本地准备：默认关闭、最多一次通知的同任务queue候选探针已实现并独立复核；117项定向测试、89项相邻回归及8条变异通过，见 `REVIEW-LOG.md#b10-queue-wake-probe-preparation`。这些不是本次实机窗口重跑的成绩。
+- B10实机：用户“同意验证”后复用原任务，实际3次任务输入，其中queue通知1次。消息自动唤醒同一原生任务，无需A再次点击或发提示；桌面观察到一次THINKING，随后跨手回到IDLE，没有AI公开发言。因宿主读取接口未返回回合工具明细，合法终态和精确调用次数unknown，Codex Gate5为blocked，Claude为not_run。证据见 `REVIEW-LOG.md#b10-native-queue-wake-probe`；窗口已结束并清理，不能再沿用该授权发模型请求。
+- B11本地取证已完成：默认关闭的去敏有界事件记录、分项收尾回执及离线时序汇总，见 `REVIEW-LOG.md#b11-ai-lifecycle-receipts`。最终1110项全量回归通过（过滤默认端口1项，另跑7项补验）、37条定向/相邻变异全部杀掉、51项连接UI通过。无新真实模型或queue样本；不追认B10未知终态、不改善或承诺模型时延。下一窗口需重新授权。
+- B12本次授权验证受阻：原任务两次只读准备均未发现新MCP，共23.364秒；未发queue、未开手、未启动真实AI评估。独立stdio读取同一连接文件成功；因此不能把这次失败归为扑克或推理错误。已关闭追加输入，下一步先排查原任务工具加载，详见 `REVIEW-LOG.md#b12-native-receipts-window`。
+- B12另获历史直接证据：原任务可见工具输出确认B10的一次ai.start和一次ai.resolve，后者返回hand_advanced、1→2手，回答被丢弃而非silent。B10原始记录不变；这纠正当前“终态原因unknown”，但仍无成功公开或silent，Codex Gate5保持blocked，Claude保持not_run。
+- B12清理并未全部完成：撤销后旧权限HTTP403，临时配置、浏览器、本轮beta及64300端口已关闭，旧beta16608未动。工具策略拒绝删除已撤销的私有文件，宿主管理的匹配MCP进程仍可见；捕获只有首行，无footer和关闭回执，write/close为unknown。
+- B13本地关停切片已完成：真实父子IPC、分项输出完整性和实际退出判定已实现；独立检查发现的三类交叠失败已修复。最终46项定向/相邻测试、9条实际变异、主线程非空捕获整合26项均通过，见 `REVIEW-LOG.md#b13-host-readiness-shutdown`。591条变异只静态核对，未跑全量或浏览器；没有新增原游戏任务输入、queue或真实模型调用。原任务MCP实际就绪仍未验证，不追认B12的PTY收尾成功。
+- B14第一批曾停在具体AI权限门：0原生输入/queue/评估，服务已关闭；历史事实保留在 `REVIEW-LOG.md#b14-native-readiness-permission-boundary`。后续用户“允许”已由DEC-20260831-003解除这项授权阻塞，不再等待同一确认。
+- B14授权后实测：原任务一次只读MCP准备成功，随后3个不同公开来源各经一次queue触发一次真实start/resolve和一次成功公开，A无需再次点击或补提示；共4次原任务输入、7次原任务游戏MCP调用。两例在等待区、一例在进行中的第1手，不是三手真人测试。源事件到公开分别43.857/46.785/43.660秒，不是纯推理时间或实时性通过。Codex Gate5仅此固定版本单席探针为pass，Claude仍not_run，完整主动产品仍未交付。唯一裁决见 `REVIEW-LOG.md#b14-native-public-replies`。
+- B14修复：实机跨街回复的权威延迟字段未显示，现只修视图映射；真实producer回归先5项失败、修复后20/20，相邻45/45、恢复旧映射的1条变异被杀，隔离上下文复核无新增finding。主线程修复后脚本双页UI14/14，窄屏not_run；不倒算为原生样本当时显示正确，不合计重复覆盖或声称全量重跑。
+- B14收尾仅部分完成：权限已撤销且旧连接明确被拒，临时配置已移除，beta/控制器正常退出，捕获18条事件与footer/关闭回执对应，52231无监听；但本批失效私有文件和宿主管理MCP进程的清理命令被工具策略拒绝，未绕过，Gate9为blocked。本地修复回归的独立服务另已关闭。最小可Git复核事实包在 `evidence/probes/b14-codex-queue-native-20260831/`，未提交，也不是accepted产品证据。
+- B15本地接线已验证：已有协调器新增默认关闭、有界启停的通知窗口；固定一个游戏任务，只有实际匹配的resolve才允许下一次通知。独立检查修复跨绑定旧未决/清理围栏和发送前到期的计数问题，主线程补齐queue回执已返回后的取消竞态测试。最终全量Node1239/1239（69362.1688ms），31条定向变异全部杀掉、0存活/未评估；发送器首轮1存活记录保留。两真人HTTP→两逐席MCP→两脚本queue进程的公开/沉默链已实跑，唯一当批记录见 `REVIEW-LOG.md#b15-managed-wake-session`。真实模型/原生queue均0，启停UI和连续原生验证仍缺；B14清理阻塞原样保留。
+- B16本人启停控件已完成本地验证：原牌桌加入每窗确认、实际上限、启停/同键核对与分项状态；截图发现的新旧窗口回执混用已修，独立复核发现的可选模块阻塞刷新、迟到模块丢失未决授权屏障两项P2已修并有红绿回归。最终全量Node1314/1314（69844.1736ms），补充浏览器35/35（9360.2016ms），原纯状态模块10条定向变异全部杀掉。实际Browser与脚本证据见 `REVIEW-LOG.md#b16-managed-wake-controls`，原生模型/queue均0；不能将B15结束时“缺UI”继续当作当前事实。真实连续运行、第二真实席和B14清理阻塞仍缺，不关闭父节点。
+- B17真实连续批次未闭合：独立检查先修复“权威resolve早于queue ACK、随后撤权会丢失已结清回执”的真实竞态；42/42定向、19/19控制测试、1条实际变异及最终全量Node1315/1315（69343.9369ms）通过。随后三批共消耗4次原任务输入、其中1次queue：第一批readiness实际调用一次游戏MCP，但B17专用外壳在90秒空闲上限退出，queue回合未调用MCP，页面以1次尝试/1次接收/0次resolve自动停止；修正外壳后，第二、三批readiness回合完成但MCP进程均未再启动。全程0次`ai.start`、0次`ai.resolve`、0条AI公开，不能证明连续产品路径。三批权限、临时配置/私有文件、页面、beta、端口及本批进程均已清理；B12/B14历史资源未动。唯一裁决见 `REVIEW-LOG.md#b17-native-managed-wake-carrier-boundary`。
+- B18稳定项目接入已完成本地实现与重启后原生复验：项目MCP只加载一次，固定读取Git忽略的`.tokengame-private/active-model-connection.json`；真人用`connection:activate`原子发布或换发逐席文件、用`connection:clear`只清本地槽位，服务端撤权仍是独立动作。Codex专有配置器位于插件适配层，只管理真人明确指定项目的受管块，不改用户级配置；通用`src/`继续通过宿主中立扫描。B18基线为Node1328/1328（66843.1965ms）、总门禁638/638、连接浏览器51/51和Skill有效；原生复验发现并修复缺省favicon 404后，当前最终全量为1329/1329（68569.4652ms），干净浏览器0 error/0 warning。父项目`H:/tokengold`受管块写入并由真人重启后，当前任务只发现`tokengame_table`；缺槽失败关闭，激活后原生只读成功，撤权后旧令牌被拒，同路径换发激活后不重启即恢复。第二个独立浏览器发一条公开消息后，当前Codex会话完成1次`take_intents/start/resolve`，A/B两页均显示同文座位AI气泡。最终服务端撤权、本地槽清除、两页关闭、beta端口释放；工具策略拒绝删除本轮166字节失效下载文件，未绕过，需真人手工删除。该批0 queue，未验证持续主动唤醒、第二真实AI席或牌局内时延。唯一裁决见 `REVIEW-LOG.md#b18-stable-project-mcp-activation`。
+- B19稳定入口连续通知在限定等待区通过：复用闲置专用游戏任务`TokenGame 临时单席接入验证`，先以一次手工只读就绪回合确认该旧任务在重启后确实命中新`tokengame_project`；宿主任务接口未返回items，但牌桌权威显示“已收到本席宿主请求”。随后本人显式开启最多2次/180秒窗口，B两条不同公开消息严格串行：第一条权威结清后才发送第二条。两个queue回合分别28.977秒、24.405秒完成，最终页面为尝试2/接收2/权威结清2、因次数上限停止；A/B两页均显示两条真实AI气泡，玩家没有再次点击或给专用任务补提示。窗口116.911秒含浏览器观察与等待，不是模型耗时和SLA。该批没有Ready或开手，`proactive_wake_verified`暂不翻转；第二真实AI席、牌局内连续通知和时延分段仍未验证。服务端撤权、活动槽、浏览器、beta和7802已清；B18/B19两份166字节失效下载仍因删除策略边界等待真人手工处理。唯一裁决见 `REVIEW-LOG.md#b19-stable-managed-wake-native`。
+- B20牌局内有界样本未通过：两席Ready并进入第1手行动期后，本人开启最多1次/120秒窗口；A无点击或新提示，专用任务自动开始并在17.426秒完成，但页面20.342秒时以`wake_start_failed`、尝试1/接收1/结清0停止，两页无AI气泡。生命周期回执记录第1～4手和第3手一条B公开消息，却没有评估开始、turn或终态；任务启动早于该B消息，因此具体更早扑克来源为unknown。按停止条件没有重试。已补仅保留稳定业务码的受限诊断，不保留details/自由文本；最终Node1332/1332（68593.6824ms）、相关变异34/34、脚本浏览器35/35。它们不改写原生失败，也不翻`proactive_wake_verified`。权限、活动槽、浏览器、beta及51999/7802已清；B18/B19两份166字节和B20一份167字节失效下载等待真人手工删除。唯一裁决见 `REVIEW-LOG.md#b20-hand-active-managed-wake-diagnostic`。
+- B21新手早期牌局样本已取得权威开始与终态：窗口在Ready前开启，进入第1手后仅发送一次原生queue，最终尝试/接收/权威结清为1/1/1；第1手开始到评估开始23.701秒，评估直到30秒行动截止前约6.302秒才启动，10.781秒后因已进入第2手以`silent/hand_advanced`合法丢弃，A/B两页均为0条AI气泡。该样本没有`failure_code`，不能反推B20历史码，后者仍为unknown；`proactive_wake_verified`保持false。没有源码变更或测试重跑。服务端撤权、活动槽、两页、beta及55148/7802/51999/16608均已清；直接PTY停止返回1，不能冒充beta exit0；新增一份167字节失效下载与前三份一并等待真人手工删除。唯一裁决见 `REVIEW-LOG.md#b21-hand-active-managed-wake`。
+- B22已保留最小managed fast-path并完成一次原生对照：managed通知在两个已校验编号后立即要求首项工具调用为`tokengame_table.ai.start`，禁止前置分析/计划/复述/读文件、任务、投影或其他工具；未设置`noticeKind`的旧B10文本逐字不变。新测试先红37/38再绿38/38，旧probe 117/117，发送器与共享probe变异5/5+8/8，合并与独立复核均155/155；没有浏览器或原生归因。唯一原生queue为1/1/1、`failure_code=null`，HAND1→start 13.709秒、start→`silent` 9.817秒，终态在行动截止前6.476秒且距HAND2 9.678秒；相对B21的HAND→start名义缩短9.992秒，但source精确时刻unknown、任务时刻仅秒级且turn `items=[]`，首项工具顺序unknown，不能把改善全归因prompt或外推SLA。两页0气泡，无公开回复；`proactive_wake_verified`仍false。唯一裁决见 `REVIEW-LOG.md#b22-fast-path-native`。
+- B23完成固定任务去敏与Codex当前任务一键入口：固定sender允许服务端选择唯一预配置任务，页面固定模式不再填写、看见或提交任务UUID；旧自定义queue手填兼容不变。实现聚焦184/184、初始变异14/14，独立复核184/184并修错误响应防回显与失效锚点，限定变异11/11；脚本浏览器旧夹具在累计7 checks时按预期失败，修正后44/44、约11.40秒、0 console/page error，固定4次start均无`thread_id`、旧手填1次含测试UUID、45个可见响应零已知ID。新增`npm run codex:play -- "<当前 Codex 项目根绝对路径>"`，只用`CODEX_THREAD_ID`，先只读验证项目/thread/executable再原子配置；受管MCP使用相对项目根`cwd`，配置变化先要求重启，未变化才同进程启动本地beta。首轮红0/1后9/9、既有5/5、变异9/9；独立审查修复启动失败exit 0、绝对cwd和畸形Windows路径，最终新叶9/9、beta/config/lifecycle 88/88、变异15/15。一键入口子叶0监听/模型/浏览器/原生任务；固定目标脚本浏览器单列且0原生模型/queue，真实`H:/tokengold/.codex`未改。唯一裁决见 `REVIEW-LOG.md#b23-fixed-target-codex-play`。
+- B24已在当前任务执行一键入口首次运行：父项目托管块从绝对仓库`cwd`迁为`cwd = "tokengame"`，命令exit 0并在启动beta前只提示重启；托管块外哈希一致，配置无任务UUID、绝对仓库路径或绝对可执行路径，7802无监听。该事实只证明配置迁移，不证明当前宿主已重载。
+- B25已完成B24授权的一次真人重启并直接否定相对`cwd`运行时假设：配置写入后出现新的Codex/ChatGPT进程，`codex mcp list --json`能列出相对`cwd = "tokengame"`的服务器，但当前任务没有`tokengame_table`；同一任务在旧canonical绝对仓库`cwd`下曾实际调用该工具。两隔离浏览器仍验证固定目标不显示UUID、上限1次/60秒，但工具未就绪，所以0通知、0模型、0queue且未Ready/开手；服务端撤权、本地槽、浏览器、beta和7802已清。本地生成器已恢复canonical绝对仓库`cwd`并补相对块迁移/去敏回归；截至B25，真实父项目配置与第二次重启尚未获授权。唯一裁决见`REVIEW-LOG.md#b25-relative-cwd-host-failure`。
+- B26已按新授权把真实父项目TokenGame唯一托管块恢复为`cwd = "H:/tokengold/tokengame"`：入口exit 0并在beta前停止；托管块外SHA-256前后均为`01BA4719C80B6FE911B091A7C05124B64EEECE964E09C058EF8F9805DACA546B`，唯一标记1/1，旧相对值消失，配置无任务UUID或绝对Codex可执行路径，7802无监听。本批0通知、0模型、0queue、0浏览器；第二次真人手动重启尚未执行。唯一裁决见`REVIEW-LOG.md#b26-absolute-cwd-real-config-migration`。
+- B27已直接确认第二次手动重启与绝对`cwd`宿主加载成功：当前任务只出现项目`tokengame_table`，缺活动槽时原生只读按`model_connection_unavailable`失败关闭，激活后同一工具成功。两隔离headed页面完成等待区组合；固定当前正在运行的开发任务只投递一条通知，最终尝试1/接收1/权威结清0并在60.003秒到限，0个完成的新模型回合、0次`ai.start/resolve`、0条AI气泡。目标任务同期为`inProgress`，精确排队规则unknown；没有补发或手工抢待办。两页0 error/0 warning，撤权、活动槽、浏览器、beta及7802均已清。本批新增一份已撤权下载，仓库精确模式累计7份、1165字节，均未读未删。唯一裁决见`REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target`。
+- B28已把B27暴露的空闲任务前提写成可执行入口合同：managed启动横幅、固定目标页面说明与每窗本人确认、项目Skill、根/插件README和操作文档都要求目标游戏任务先结束当前回复并保持空闲，并明确queue已接收不等于模型开始或权威结清。聚焦Node首轮18/19因同义措辞不满足精确合同，修正后19/19（1833.6463ms）；脚本浏览器46/46（20729.272ms）、0 browser error、6项清理通过，桌面和320px已目检；完整Node1356/1356（79933.5359ms）。Skill普通校验因GBK载体失败，同一校验器加`python -X utf8`后有效。本批0通知/queue/原生模型/权威评估，活动槽不存在且7802无监听。唯一裁决见`REVIEW-LOG.md#b28-idle-game-task-handoff`。
+- 仍未验证，不得写成已通过：空闲游戏任务上的固定目标端到端组合、主动AI完整闭环与实时性、第二真实AI席位、牌局内真实公开往返、完整游戏自由输入自动公开、内嵌UI、Claude Desktop / Cowork接入、异地联机与四真人45分钟UAT。Claude当前安装状态unknown。B28只关闭本地入口/说明缺口，页面本人确认不是宿主空闲遥测；`proactive_wake_verified=false`且`TG-EU-PLAYABILITY-GATE`继续blocked。
 - 本轮不做：公开大厅、自动匹配、公平场、信用体系、市场、AI 进化模块、顾问模式、AI 托管。
 - 当前路径：`SC-TG-L0-ROOT-20260827-B`、`SC-TG-L1-HOST-ENTRY-20260827-A`、`SC-TG-L2-SESSION-LAUNCH-20260827-B`、`SC-TG-L2-PLAYABLE-TABLE-20260827-D` 与 `SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D` 是现行已验证语义主链；语义完成不等于相关产品能力已经实现。
 - 裸指令 `继续`：在本次显式语义流程回交后，只授权恢复同一已确认路线的专业刷新与开发；不会扩大产品范围，也不会授权发布、部署或付费服务。
@@ -59,8 +86,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: define_shared_host_adapter_contract_then_claude_side_adapter
-  reason: single_stack_product_loop_closed_in_browser_but_no_shared_host_adapter_contract_exists_yet
+  recommendation: run_real_local_friend_combination_only_with_finished_and_idle_game_task_startup_turns
+  reason: B28_idle_task_handoff_is_locally_executable_but_real_idle_task_combination_and_authority_terminal_remain_unverified
 
 continuous_risk_authorization:
   status: active
@@ -73,7 +100,7 @@ continuous_risk_authorization:
   scope: framework_initialization_and_future_in_scope_local_development
   project_stage: prototype
   local_only_confirmed: yes
-  data_scope: synthetic_public_probe_text_only
+  data_scope: synthetic_own_seat_cards_and_public_chat_under_DEC_20260831_003
   public_release_or_remote_upload: no
   expires: current_project
   excluded_critical_risk:
@@ -96,6 +123,60 @@ local_closeout_authorization:
     - secrets_or_private_data
     - destructive_or_irreversible_real_data
     - scope_expansion_or_user_acceptance
+
+delegated_mission:
+  user_goal: 持续推进朋友私人房原型的本地与真实宿主测试，减少逐次许可等待。
+  agreed_product_shape: 正常德扑加本席真实AI公开交流；不扩大当前MVP。
+  authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
+  current_batch_goal: B28已把空闲游戏任务前提写进入口、本人确认、Skill与文档并完成本地回归；下一批只在启动回复已结束且任务空闲的真实游戏任务上执行朋友组合，不重试同一活动开发任务，也不扩到远端部署。
+  current_batch_state: idle_game_task_handoff_guidance_locally_verified_real_combination_open
+  in_scope: [local_regression, loopback_synthetic_tables, temporary_seat_connections, original_native_game_task_inputs, bounded_queue_tests, evidence_and_owned_resource_cleanup]
+  out_of_scope: [global_MCP_reload, automated_or_additional_host_restart, model_override, second_model_API, new_task_creation, public_or_remote_listen, real_private_data, paid_service_activation, commits_or_deploy]
+  allowed_autonomous_decisions: [test_order, finite_batch_size, evidence_capture, in_scope_reversible_repair]
+  must_ask_user: [canonical_critical_boundary, affected_L0_L2_change, global_refresh_or_uncovered_restart, unexplained_integrity_failure]
+  max_risk: medium
+  continuous_risk_authorization_ref: STATUS.md#continuous_risk_authorization
+  latest_review_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  mission_specific_stop_conditions: [explicit_tool_permission_boundary, user_stop, readiness_failure_without_new_evidence, ambiguous_queue_delivery_no_repeat, bounded_batch_limit, unrecoverable_cleanup_or_integrity_failure]
+  verification_floor: 固定目标不向页面暴露UUID、本人每窗确认、跨窗口单槽、权威resolve、取消与清理分项；脚本、本地入口和真实宿主证据分开。
+  preflight_baseline:
+    status: B28_idle_game_task_handoff_guidance_local_verification_complete_real_combination_open
+    commands_or_checks: [B23_fixed_target_focused_184_of_184, B23_fixed_target_initial_mutations_14_of_14, B23_independent_fixed_target_184_of_184_and_limited_mutations_11_of_11, B23_browser_old_fixture_failed_at_cumulative_7_checks_then_44_of_44, B23_codex_play_red_0_of_1_then_9_of_9, B23_existing_config_5_of_5, B23_initial_play_mutations_9_of_9, B23_independent_entry_9_of_9_beta_config_lifecycle_88_of_88_mutations_15_of_15, B24_real_project_config_migration_exit_0_outside_hash_unchanged_no_listener, B25_restart_process_times_after_config_write, B25_server_listed_but_table_tool_absent, B25_fixed_target_real_page_observed_zero_notification, B25_cleanup_complete, B25_absolute_cwd_red_20_of_23_then_green_34_of_34_mutation_1_of_1, B26_real_absolute_cwd_migration_exit_0_outside_hash_unchanged_no_listener, B27_exactly_one_project_tool_unbound_fail_closed_then_bound_read_pass, B27_two_headed_pages_console_clean, B27_notification_1_1_0_max_duration_60.003s, B27_cleanup_slot_absent_port_7802_free, B28_syntax_pass, B28_skill_default_GBK_carrier_fail_then_python_X_utf8_valid, B28_focused_initial_18_of_19_then_19_of_19_1833.6463ms, B28_browser_46_of_46_20729.272ms_zero_error_cleanup_6_of_6, B28_full_node_1356_of_1356_79933.5359ms, B28_slot_absent_port_7802_free]
+    known_failures: [B25_relative_cwd_runtime_tool_load_failed_historical, B27_same_inProgress_target_notification_unresolved_exact_queue_scheduling_unknown, B28_UI_acknowledgement_is_not_host_idle_telemetry, B14_Gate9_cleanup_policy_blocked, B20_exact_historical_failure_code_unknown, B22_source_exact_time_unknown, B22_first_tool_order_unknown_items_empty, B22_zero_public_bubbles, seven_revoked_downloads_manual_delete_pending, real_idle_game_task_combination_not_run, second_real_AI_not_run, Claude_not_run, four_human_UAT_not_run]
+  effort_budget:
+    per_attempt_max_native_inputs: 3
+    per_attempt_max_queue_inputs: 2
+    B17_total_actual_native_inputs: 4
+    B17_total_actual_queue_inputs: 1
+    B20_total_actual_native_task_turns: 1
+    B20_total_actual_queue_inputs: 1
+    B21_total_actual_native_task_turns: 1
+    B21_total_actual_queue_inputs: 1
+    B22_total_actual_native_task_turns: 1
+    B22_total_actual_queue_inputs: 1
+    B23_total_actual_native_task_turns: 0
+    B23_total_actual_queue_inputs: 0
+    B24_total_actual_native_task_turns: 0
+    B24_total_actual_queue_inputs: 0
+    B25_total_actual_native_task_turns: 0
+    B25_total_actual_queue_inputs: 0
+    B25_total_actual_notifications: 0
+    B26_total_actual_native_task_turns: 0
+    B26_total_actual_queue_inputs: 0
+    B26_total_actual_notifications: 0
+    B27_total_completed_native_task_turns: 0
+    B27_total_actual_queue_inputs: 1
+    B27_total_actual_notifications: 1
+    B27_total_authority_resolves: 0
+    B28_total_completed_native_task_turns: 0
+    B28_total_actual_queue_inputs: 0
+    B28_total_actual_notifications: 0
+    B28_total_authority_resolves: 0
+    uncertain_sends_count_toward_limit: true
+    checkpoint_reporting: 每批汇总实际次数和结果，不把预算当必须消耗的目标。
+  scheduling: no_automation_or_goal_created
+  specific_permission_gate: DEC-20260831-003已由用户“允许”确认；仅原任务测试席自身合成底牌和公共聊天、以本席AI身份公开发言及本机连接凭据，不含下注权限，每批结束撤销。
+  done_gate_trigger: 只按实际验证判定，不把长期授权或脚本通过当用户验收。
 
 semantic_alignment:
   mode: semantic_change
@@ -122,6 +203,89 @@ semantic_alignment:
   next_action: implement_confirmed_semantics_no_further_semantic_change_pending
 
 project_intelligence:
+  contract: dual-ai.project-intelligence.v1
+  purpose: reconstruct_for_responsibility
+  scope: full_current_project
+  trigger_reasons: [user_confirmed_primary_takeover, current_route_reconciliation, B14_native_public_replies_and_late_marker_repair]
+  refreshed_at: 2026-08-31
+  vcs_anchor: bbdcf2b1c4968fcace96fcc1cc69f97e57c4e18b
+  understanding_audit_ref: UNDERSTANDING-AUDIT.md
+  model_role_decision:
+    status: new_primary_confirmed
+    change_type: primary_replacement
+    confirmation: 现在分析项目现状，由你接手开发
+    primary: {carrier: codex_desktop, provider: unknown, model_id: unknown, configuration: unknown, role: primary_developer}
+    identity_limit: carrier_and_user_assignment_known_exact_model_not_independently_verified
+  understanding_depth: takeover_ready
+  basis:
+    value_semantic_refs:
+      - PROJECT-DECISION-LOG.md#DEC-20260827-017
+      - PROJECT-DECISION-LOG.md#DEC-20260827-018
+      - PROJECT-DECISION-LOG.md#DEC-20260827-019
+      - PROJECT-DECISION-LOG.md#DEC-20260827-022
+      - PROJECT-DECISION-LOG.md#DEC-20260827-023
+    route_design_refs: [PROJECT-PLAN-TREE.md, TAKEOVER-PLAN.md]
+    necessary_reality_refs:
+      - src/run-beta.cjs
+      - test-support/beta-process.cjs
+      - src/host/ai-lifecycle-receipts.cjs
+      - test-support/summarize-ai-receipts.cjs
+      - src/host/table-web-host.cjs
+      - src/host/model-command-surface.cjs
+      - src/authority/command-surface.cjs
+      - plugins/tokengame/mcp/server.cjs
+    fresh_verification: B14_3_native_queue_public_samples_45_adjacent_tests_1_mutation_14_script_UI_checks
+    verification_ref: REVIEW-LOG.md#b14-native-public-replies
+    context_provider: rg_fallback_no_index_created
+  project_thesis:
+    summary: 标准德扑加玩家与本席真实会话 AI 的公开语言博弈；近期交付朋友私人房原型，长期再进入大厅与匹配。
+    hard_constraints: [one_neutral_authority, one_AI_per_seat, own_private_hand_only, human_structured_poker_actions, no_second_model_API]
+    current_stage: local_prototype
+  planes:
+    value_and_product:
+      scope: 2到4人邀请私人房、连续德扑、公开玩家和AI座位气泡。
+      deferred: [lobby, matchmaking, credit, fairness, marketplace, memory, advisor, autopilot]
+    design_and_architecture:
+      selected_views: [seat_ownership, public_private_data_flow, model_human_command_split, authority_timing_and_recovery]
+      preserved_invariants: 权威状态和时序唯一；模型只能发言；核心凭据留在唯一托管中；不读取普通宿主历史。
+      challenge: 每机一人不是入口强制条件；共享协调器令牌不能被当作逐席授权。
+      plan_ref: TAKEOVER-PLAN.md
+    current_reality:
+      implemented_basis: B6/B7已提交；B8逐席授权、B11回执、B13关停和后续宿主切片保留在未提交修改中。B14有三条单次queue真实公开，B19有等待区两次串行公开，B22有一次同手silent；B23本地完成固定目标去敏和Codex当前任务一键入口，B24完成真实项目配置相对化迁移，B25完成重启后失败定位及canonical绝对cwd本地修复，B26已把该修复迁入真实父项目托管块，B27已直接证明重启后项目工具恢复，B28已把空闲任务交接前提落实到入口、本人确认、Skill与文档并通过本地回归。
+      first_gap: 当前入口已从手填UUID/四变量降为一条当前任务命令，绝对cwd重启、工具就绪与空闲任务操作说明已闭合。现在首先缺启动回复确实结束并保持空闲的真实游戏任务朋友组合验收，而不是再次迁移配置、重试同一活动任务或继续拆分本地说明。之后仍缺牌局内公开往返、实时体验、第二真实席及Claude。Gate9因失效文件和历史MCP进程清理被工具策略拒绝而blocked，不开启默认主动能力声明。
+      evidence_limit: B28聚焦19/19、浏览器46/46与全量Node1356/1356只证明本地入口合同和回归；页面本人确认不是宿主空闲遥测。B24/B25/B26/B27共同证明相对cwd运行时失败、绝对cwd修复迁入、真人重启和工具直接恢复；B27的queue接收1不等于模型回合或权威终态，同一活动任务精确调度unknown。B22仍是最近一次已结清的牌局内原生模型样本且为silent/0气泡；四真人验收未跑。
+    candidates_unknowns_history:
+      selected: 复用单协调器与托管，真人逐席绑定，权威启动评估时返回同席快照。
+      rejected: 为每席复制权威/托管，或只写说明却保留共用通行令牌。
+      historical_probe: 旧CLI前缀/Hook/补交证据冻结，不提升为新私人房或Desktop能力。
+  important_unknowns:
+    - {unknown_id: U-TG-REAL-HOST-B8, owner: evidence_unknown, status: open, blocking_boundary: capability_claim, blocked_scope_refs: [full_real_host_delivery], proven_slice_ref: REVIEW-LOG.md#b9-real-host-seat-probe}
+    - {unknown_id: U-TG-CODEX-UI-SUPPORT, owner: evidence_unknown, status: open, blocking_boundary: capability_claim, blocked_scope_refs: [embedded_UI_claim]}
+    - {unknown_id: U-TG-PROACTIVE-WAKE, owner: evidence_unknown, status: open, blocking_boundary: semantic_completion, blocked_scope_refs: [MVP_delivery]}
+    - {unknown_id: U-TG-LOCAL-BRIDGE-AUTH, owner: professional_design_unknown, status: open, blocking_boundary: release, blocked_scope_refs: [remote_release]}
+    - {unknown_id: U-TG-FOUR-HUMAN-UAT, owner: evidence_unknown, status: open, blocking_boundary: user_acceptance, blocked_scope_refs: [human_playability_signoff]}
+  readiness: B28_idle_task_handoff_locally_ready_real_friend_combination_blocked
+  freshness: current
+  execution_closure_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  latest_probe_evidence_ref: REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target
+  latest_local_evidence_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  protected_semantic_delta: none
+  material_projection_generation: not_triggered_no_new_L0_L2_projection
+  route_permission:
+    decision: granted
+    requested_route_ref: TG-EU-PLAYABILITY-GATE
+    granted_scope: confirmed_route_local_work_and_bounded_native_tests_under_DEC_20260831_002_plus_completed_relative_migration_and_first_restart_under_DEC_20260901_001_plus_completed_absolute_cwd_write_manual_restart_and_direct_tool_readiness_under_DEC_20260901_002
+    authority_source: confirmed_takeover_route_and_continuous_risk_authorization
+    active_testing_authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
+    specific_permission_ref: PROJECT-DECISION-LOG.md#DEC-20260831-003
+    migration_and_restart_permission_ref: PROJECT-DECISION-LOG.md#DEC-20260901-002
+    completed_native_window_ref: PROJECT-DECISION-LOG.md#DEC-20260831-003
+    completed_native_window_status: stopped_4_of_12_inputs_3_of_4_queues_3_public_permission_revoked_cleanup_policy_blocked
+    excluded_from_grant: [global_install, global_MCP_reload, automated_or_additional_host_restart, model_or_reasoning_override, second_model_API, remote_listen, push, deploy, uncapped_model_calls, human_acceptance]
+  next_owner: user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available
+
+# 历史理解记录，不再控制当前恢复路线；旧CLI收据只证明其原有范围。
+historical_project_intelligence_20260828:
   contract: dual-ai.project-intelligence.v1
   purpose: refresh_affected_model
   scope: affected_l1_domain
@@ -377,6 +541,16 @@ capability_inventory:
   carrier: STATUS.md
   last_reconcile:
     mode: material_scope_incremental
+    completed_at: 2026-08-30
+    vcs_anchor: bbdcf2b1c4968fcace96fcc1cc69f97e57c4e18b
+    anchor_relation: baseline_plus_uncommitted_B8_and_B9_CSS
+    relevant_surface_digest: sha256:bb7c107606884f88b64e101d1caef6618cf934b7e274eac9017599fb26687e6b
+    working_evidence_digest: sha256:fdf3cc423576ab81ec8f2f1d5efa3f76675b87d7eddc1619124a2d04691c60ac
+    digest_basis_ref: REVIEW-LOG.md#b9-real-host-seat-probe
+    reliability: baseline_plus_explicit_runtime_and_evidence_file_sets
+    checkpoint_receipt: REVIEW-LOG.md#b9-real-host-seat-probe
+  historical_reconcile_20260828:
+    mode: material_scope_incremental
     completed_at: 2026-08-28
     vcs_anchor: ab29e34
     anchor_relation: head_at_reconcile
@@ -408,8 +582,12 @@ capability_inventory:
     - TG-EU-REVIEW-CLOSURE-F1-F6
   implemented_product_units:
     - TG-EU-SINGLE-STACK-WEB-TABLE
-  unverified_units:
+    - TG-EU-SEAT-MODEL-BINDING
+  verified_bounded_probe_units:
+    - TG-EU-REAL-HOST-SEAT-PROBE
+  partially_implemented_units:
     - TG-EU-HOST-ADAPTER-CONTRACT
+  unverified_units:
     - TG-EU-CLAUDE-HOST-ADAPTER
     - TG-EU-PROACTIVE-WAKE-SPIKE
     - TG-EU-PLAYABILITY-GATE
@@ -420,10 +598,23 @@ capability_inventory:
 
 宿主中立 L0、共享宿主入口 L1、三个当前 MVP L2、可玩牌桌的 Ready/掉线/退出/亮牌规则，以及公开座位 AI 的默认公开、主动评估、反刷屏、并发归并、迟到、关闭降级与本地隐藏规则，均已分别由用户确认并通过内容寻址校验；旧 Codex 专属 L0/L1/会话、公开测试桌、被动问答章程及其规则转为已替代历史。当前 L0-L2 语义基线为 `confirmed`，不再存在待确认的当前 MVP 产品规则门禁。
 
-Project Intelligence 刷新门禁已于 2026-08-28 通过：宿主中立权威内核按 D 版合同实现，Codex 实现复核 F1–F6 逐条闭合，新牌桌 UI 与同一内核形成单栈闭环。`npm test` 本轮实测 351/351（工作树与全新克隆各一次），八个变异规格全部重跑合计 122 个变异 122 杀掉 0 存活，浏览器验收 80 条断言全过、控制台错误 0、exit 0（工作树五次、全新克隆三次）。此前 F3/F4 的 14/14 属假绿并已更正，理由见 `docs/CLAUDE-REVIEW-RESPONSE-20260828.md`。旧探针栈（`EventStore` / `TableStore` / `server.cjs` / `web/app.js`）按原记录保留为已替代历史，其 Codex 桥接回归仍在测试集中，本轮未重跑该栈的 Playwright 烟测，也不把历史 23/23 冒充本轮实测。
+2026-08-28的历史检查点为351项测试、122条变异、80项浏览器断言；后续历史验收已到第13手/209项。
+这些不是本轮B9数字。接手基线是 `bbdcf2b` 的875项实测；B8实际过程与裁决见
+`REVIEW-LOG.md#b8-seat-model-binding`，当前B9真实单席与增量UI验证见 `REVIEW-LOG.md#b9-real-host-seat-probe`。
+不把历史23/23、四人脚本验收或旧CLI实机结果搬作新宿主证明。
+旧探针栈（`EventStore` / `TableStore` / `server.cjs` / `web/app.js`）保留为已替代历史；
+其自动化桥接回归仍在全量测试中，B9没有重跑旧栈的Playwright或真实CLI安装探针。
 
-本轮浏览器验收自身查出并修掉的缺陷记在 `PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE` 与 `docs/ACCEPTANCE-EVIDENCE.md`，其中两条值得单独记住：全新克隆第一次跑就暴露了工作树连续三次全绿都没暴露的读页竞态；同一份失败产物又暴露出五条在空数据上无条件通过的断言——断言在无数据时通过比没有这条断言更糟，它把缺口报成绿色。
+历史浏览器验收曾查出全新克隆下的读页竞态和五条空数据假绿，见
+`PROJECT-PLAN-TREE.md#TG-EU-SINGLE-STACK-WEB-TABLE` 与 `docs/ACCEPTANCE-EVIDENCE.md`。
+B8又查出伪造Host未真正送达、故障屏障不释放、清理失败伪成功及旧隐私文案断言；失败与修复分开记录，
+不把“没有执行到检查”或“测试被人工结束”算作通过。
 
 公开范围同意的实质性判据自 2026-08-29 起由 `policy epoch` 表达并**由权威侧强制**（提交 `4456a4c`）：此前发言限制那一维只在 `src/host/table-view-model.cjs` 里生效，绕过界面的调用方在额度实质放宽后仍握旧同意继续发言。「实质」是显式清单而非任意配置变化——`version` 与 `bubbleDisplayMs` 明确排除并各写了理由。这一改动**反转**了 `test/scope-reconfirmation.test.cjs` 中「版本串变化即要求重新确认」的断言方向，属该文件开头记录的待裁决项的裁决结果，不是回归。三字段旧路径保留为权威不报 epoch 时的退路。已确认 L0–L2 语义、七条公开交流规则与德扑规则未变。
 
-仍未覆盖：`SAME_VISIBLE_TASK_SPIKE_V1` 未执行；Codex 与 Claude 的真实宿主 Gate 5 均未通过，无点击主动唤醒在两个宿主上都未验证；共享 HostAdapter 合同与 Claude 侧适配器未开始；`PLAYABILITY_GATE_V1` 的自动化层与四真人试玩层均未执行。座位 AI 在验收里由确定性 fake 适配器驱动，真实宿主模型能力未接入。生产认证/持久化/远程并发、隐私完备性、用户接受与发布状态同样不在现有证据内。`U-TG-LOCAL-BRIDGE-AUTH` 仍是开放的专业设计未知，阻塞发布。
+共享HostAdapter合同和两份参考实现已存在并通过一致性检查，但不等于产品已迁移到参考适配器，
+也不等于任何桌面宿主通过完整验收。`SAME_VISIBLE_TASK_SPIKE_V1` / Gate 5在Codex侧已有B10一次候选实测，
+同任务无点击唤醒已观察；B12补读原始工具输出确认旧B10回答跨手丢弃。B14随后在原任务完成三个不同来源各一次评估与成功公开，Codex Gate5仅此固定版本单席探针为pass；Gate9清理blocked，不能据此确认架构/产品完成或翻转默认能力标志。Claude仍not_run；B12原窗口未发queue的历史不改写。
+`PLAYABILITY_GATE_V1` 不能笼统写“两层未跑”：脚本模型自动化已到第13手，
+四真人45分钟层未执行。远端认证/持久化/并发、隐私完备性、用户接受与发布同样不在现有证据内；
+`U-TG-LOCAL-BRIDGE-AUTH` 仍阻塞发布。

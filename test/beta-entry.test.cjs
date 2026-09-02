@@ -1,20 +1,7 @@
 "use strict";
 
-// B7 / B10：一条命令起内测，且它交给人的东西是对的。
-//
-// 这个入口要解决的是一件很具体的事：B6 之后模型命令口需要一个进程级令牌，而
-// `npm run web` 从来不生成它——协调器起来了，模型路由却是关着的。于是「朋友各自的宿主
-// AI 在座位旁说话」这条链路在任何一次手动启动之后都不成立，而它不成立的方式是安静的
-// （/api/health 说 disabled，但没人会去看）。
-//
-// 三条不能违的约束，每条都有对应断言：
-//
-//   1. 令牌必须是密码学随机的，且没有开发默认值。写死一个「本地够用了」的值等于
-//      本机任何进程都能替所有席位发言。
-//   2. 令牌不进 stdout/stderr。人要拿到它去填宿主配置，所以它必须落在某处——落在
-//      文件里，终端只说路径。`npm run beta > log.txt` 与一次截屏因此都不含秘密。
-//   3. 默认回环，且不提供绕过。对外监听由协调器拒绝（U-TG-LOCAL-BRIDGE-AUTH 还开着），
-//      这个入口不许提供一个「我知道我在干什么」的开关把它绕开。
+// B7 -> B8：一条命令启用逐席绑定；令牌只由本人认证后下载，不生成整桌通行证。
+// 真进程 + 真 HTTP 验证启动、授权交付、输出脱敏和回环边界，不靠文案自证。
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
@@ -36,9 +23,17 @@ function startBeta({ env = {}, artifactDir } = {}) {
         ...process.env,
         TOKENGAME_WEB_PORT: "0",
         TOKENGAME_BETA_STATE_DIR: artifactDir,
-        // 继承下来的这两个会让被测进程改用远端内核 / 复用外面的令牌，那就测不到生成这一步。
+        // 不使用调用者的核心、模型适配器或宿主连接配置。
         TOKENGAME_COMMAND_ORIGIN: "",
         TOKENGAME_MODEL_TOKEN: "",
+        TOKENGAME_MODEL_CONNECTION_FILE: "",
+        TOKENGAME_MODEL_ADAPTER: "",
+        TOKENGAME_AI_RECEIPT_FILE: "",
+        TOKENGAME_CODEX_WAKE: "",
+        TOKENGAME_CODEX_EXECUTABLE: "",
+        TOKENGAME_CODEX_CWD: "",
+        TOKENGAME_CODEX_THREAD: "",
+        TOKENGAME_WEB_HOST: "127.0.0.1",
         ...env,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -74,6 +69,7 @@ function startBeta({ env = {}, artifactDir } = {}) {
 }
 
 function tempDir(t) {
+  fs.mkdirSync(path.join(ROOT, "artifacts"), { recursive: true });
   const dir = fs.mkdtempSync(path.join(ROOT, "artifacts", "beta-entry-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
@@ -84,6 +80,25 @@ async function betaOnce(t, env = {}) {
   const started = await startBeta({ env, artifactDir: dir });
   t.after(() => started.child.kill("SIGKILL"));
   return { ...started, dir };
+}
+
+async function bindSeat(run) {
+  const post = async (route, body) => {
+    const response = await fetch(`${run.banner.origin}${route}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 200, route);
+    const value = await response.json();
+    assert.equal(value.ok, true, route);
+    return value;
+  };
+  const seat = await post("/api/room/create", { player_id: "beta-player", table_rules_version: "table-rules-v1" });
+  await post("/api/action", {
+    session_token: seat.session_token, command: "room.confirm_public_scope", params: { acknowledged: true },
+  });
+  return post("/api/model/bind", {
+    session_token: seat.session_token, acknowledged: true, binding_request_id: "beta-test-binding-request-0001",
+  });
 }
 
 // 等人话那一段落地。
@@ -109,12 +124,16 @@ test("内测入口把模型路由打开，而不是留给人自己去发现它�
     "内测入口起的协调器上模型路由仍然关着——那条「AI 在座位旁说话」的链路整条不成立");
 });
 
-test("令牌是密码学随机的，两次启动不同，且没有开发默认值", async (t) => {
+test("逐席下载交付不同的高熵令牌，不再生成进程级令牌文件", async (t) => {
   const first = await betaOnce(t);
   const second = await betaOnce(t);
-  const read = (run) => fs.readFileSync(path.join(run.dir, run.banner.model_token_file), "utf8").trim();
-  const a = read(first);
-  const b = read(second);
+  const firstBinding = await bindSeat(first);
+  const secondBinding = await bindSeat(second);
+  const a = firstBinding.connection.model_token;
+  const b = secondBinding.connection.model_token;
+  assert.equal(firstBinding.connection.schema, "tokengame.model-connection.v1");
+  assert.equal(firstBinding.connection.table_origin, first.banner.origin);
+  assert.deepEqual(Object.keys(firstBinding.connection).sort(), ["model_token", "schema", "table_origin"]);
   assert.ok(a.length >= 32, `令牌太短: ${a.length} 个字符`);
   assert.notEqual(a, b, "两次启动生成了同一个令牌——那说明它不是随机的");
   // 熵的下界。十六进制串的每个字符最多 4 bit，所以字符集大小要真的够。
@@ -123,20 +142,29 @@ test("令牌是密码学随机的，两次启动不同，且没有开发默认�
   const source = fs.readFileSync(ENTRY, "utf8");
   assert.doesNotMatch(source, /TOKENGAME_MODEL_TOKEN\s*\|\|\s*["'][^"']+["']/,
     "源码里给模型令牌留了默认值——那等于本机任何进程都能替所有席位发言");
+  for (const run of [first, second]) {
+    assert.equal(run.banner.model_auth, "per_seat_binding");
+    assert.equal(run.banner.model_token_file, undefined);
+    assert.deepEqual(fs.readdirSync(run.dir), [], "beta 不得把整桌令牌写进旧状态目录");
+  }
 });
 
 test("令牌不进 stdout，也不进 stderr", async (t) => {
   const run = await betaOnce(t);
-  const token = fs.readFileSync(path.join(run.dir, run.banner.model_token_file), "utf8").trim();
+  const token = (await bindSeat(run)).connection.model_token;
   // 等整段输出落地再扫。只看第一行会让「后面几行才泄漏」漏过去。
   await waitForText(run, /Ctrl\+C/);
   assert.equal(run.stdout().includes(token), false,
     "模型令牌被打到了 stdout。`npm run beta > log.txt` 之后它就在文件里了");
   assert.equal(run.stderr().includes(token), false, "模型令牌被打到了 stderr");
-  // 反面：路径必须在，否则人拿不到它，上面两条就只是「什么都没给」而不是「给得安全」。
-  assert.equal(typeof run.banner.model_token_file, "string");
-  assert.ok(run.stdout().includes(run.banner.model_token_file),
-    "终端里没告诉人令牌在哪个文件——不打印值又不给路径等于没给");
+  // 反面：真实下载已返回令牌，说明也必须指向本人授权入口，不能只是不提供任何权限。
+  assert.match(run.stdout(), /下载本席 AI 连接文件/);
+  assert.match(run.stdout(), /插件 README/);
+  assert.match(run.stdout(), /connection:activate/);
+  assert.match(run.stdout(), /connection:clear/);
+  assert.doesNotMatch(run.stdout(), /TOKENGAME_MODEL_CONNECTION_FILE/,
+    "内测主入口不能再要求真人逐局修改 MCP 环境变量；该变量只属于 launcher 内部或兼容排障");
+  assert.equal(run.banner.model_token_file, undefined);
 });
 
 test("启动行如实说明本机能力，不宣称主动唤醒", async (t) => {
@@ -145,13 +173,13 @@ test("启动行如实说明本机能力，不宣称主动唤醒", async (t) => {
   // 没挂适配器就是没挂。启动行不许含糊。
   assert.equal(banner.model_adapter, null,
     "没有 --model-adapter 却报了一个适配器");
-  // 主动唤醒在任一宿主上都未验证。这个入口不许声称它。
+  // B14只证明固定版本单席有限样本，持续主动产品仍未验证。这个入口不许把前者扩成后者。
   //
   // 按解析后的字段断言，不靠正则去扫 JSON 文本。扫文本那种写法我写窄过一次：
   // `proactive_wake["\s]*[:=]` 匹配不到真实的 `"proactive_wake_verified":true`，
   // 于是把它翻成 true 的变异活了下来——一条读起来很像在防这件事、实际上什么都不防的断言。
   assert.equal(banner.proactive_wake_verified, false,
-    "启动行声称主动唤醒已验证，而它在任何宿主上都没有实机验证过");
+    "启动行把固定版本单席有限样本扩大成了持续主动产品已验证");
   assert.equal(banner.wake_fallback, "polling",
     "启动行没说兜底是轮询——缺能力时那句话就是「可见兜底」的全部内容");
   const text = `${JSON.stringify(banner)}\n${await waitForText(run, /Ctrl\+C/)}`;
@@ -165,7 +193,7 @@ test("启动行如实说明本机能力，不宣称主动唤醒", async (t) => {
 
 test("加入说明里有邀请码这一步，且不含任何令牌", async (t) => {
   const run = await betaOnce(t);
-  const { banner, dir } = run;
+  const { banner } = run;
   const text = await waitForText(run, /Ctrl\+C/);
   // 朋友要做的三件事：打开地址、建房或输邀请码、按 Ready。说明里至少要有邀请码这一步，
   // 否则第二个人不知道自己该拿什么加入。
@@ -174,8 +202,23 @@ test("加入说明里有邀请码这一步，且不含任何令牌", async (t) =
   // 会话令牌绝不出现在任何一行里。它是真人的下注权限。
   assert.doesNotMatch(text, /web-session-[0-9a-f-]{8}/,
     "启动输出里出现了会话令牌——那是真人的下注权限");
-  const token = fs.readFileSync(path.join(dir, banner.model_token_file), "utf8").trim();
+  const token = (await bindSeat(run)).connection.model_token;
   assert.equal(text.includes(token), false, "加入说明里带上了模型令牌");
+  assert.match(text, /远程联机尚未开放/);
+  assert.match(text, /不能直接发给异地朋友/);
+});
+
+test("固定通知入口要求目标游戏任务先结束当前回复并保持空闲", async (t) => {
+  const run = await betaOnce(t, {
+    TOKENGAME_CODEX_WAKE: "1",
+    TOKENGAME_CODEX_EXECUTABLE: process.execPath,
+    TOKENGAME_CODEX_CWD: ROOT,
+    TOKENGAME_CODEX_THREAD: "018f76d0-7fd2-7b85-a4b5-91a7fcf019f1",
+  });
+  assert.equal(run.banner.managed_wake, "available");
+  const text = await waitForText(run, /保持空闲/);
+  assert.match(text, /结束当前回复并保持空闲/);
+  assert.match(text, /任务正在运行时[^。]*通知可能已接收[^。]*不能并发结清/);
 });
 
 test("默认端口两侧同一个来源，插件不配也能对上", async (t) => {

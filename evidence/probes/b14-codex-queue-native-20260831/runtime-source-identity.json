@@ -1,0 +1,189 @@
+{
+  "kind": "frozen_pre_native_batch_file_set",
+  "baseline_observed_at": "2026-08-31T10:01:53.667Z",
+  "head": "bbdcf2b1c4968fcace96fcc1cc69f97e57c4e18b",
+  "files": [
+    {
+      "path": "plugins/tokengame/mcp/server.cjs",
+      "bytes": 22796,
+      "sha256": "6a6a80dbdb361605b663f5e68f9fec90905ea425fe461340db1bfdac845ec855"
+    },
+    {
+      "path": "src/authority/action-ledger.cjs",
+      "bytes": 6720,
+      "sha256": "4f72e985bffe1eed1fff2dcbb31ce8a7853108c5e3cfa7813421fd2ed09a7e70"
+    },
+    {
+      "path": "src/authority/command-server.cjs",
+      "bytes": 9090,
+      "sha256": "5ec870b4412e1bb627cb8755684a26ef745aeb91417ec91d3e293eb0f689eb4c"
+    },
+    {
+      "path": "src/authority/command-surface.cjs",
+      "bytes": 14896,
+      "sha256": "96b78562a27bdbd75d7ddd2438d6c497e0e3f3d6f1a521efca44ef5df6933b22"
+    },
+    {
+      "path": "src/authority/due-work.cjs",
+      "bytes": 5986,
+      "sha256": "1ef71f6d5a493a678e8eb9bc0e0069ee73bfc09e6190d1dcd90c54a2bcc5c7f9"
+    },
+    {
+      "path": "src/authority/event-store.cjs",
+      "bytes": 11095,
+      "sha256": "f105ee48b83be7ca4b30c16d5dd247effb8f539a292f5ad85d3c024bd92cf21f"
+    },
+    {
+      "path": "src/authority/host-surface.cjs",
+      "bytes": 9117,
+      "sha256": "0cdf56054da0d5efa60bdab710e7e7a1931e35d02a81469f38363f2ef9e8ed83"
+    },
+    {
+      "path": "src/authority/policy-epoch.cjs",
+      "bytes": 5329,
+      "sha256": "4173b5eb308c64ebc3b69a4256f0b55bdfecf35f67a840c11a1251a0bbe6196d"
+    },
+    {
+      "path": "src/authority/room-store.cjs",
+      "bytes": 35529,
+      "sha256": "3bfad6a046127b6a6b6ba297aac6ad72a6f5ff82822879029588d0717ba465d3"
+    },
+    {
+      "path": "src/authority/seat-ai-store.cjs",
+      "bytes": 53047,
+      "sha256": "3bb01eaeef54761a04db2ec369163f730f676e14c753f7fe86eb3daf25382e3e"
+    },
+    {
+      "path": "src/authority/server.cjs",
+      "bytes": 10506,
+      "sha256": "1994b0e22b03094232eb2a04fcec0b7c6e05cb8b2825b3bd1592a645b5ba5aac"
+    },
+    {
+      "path": "src/authority/table-orchestrator.cjs",
+      "bytes": 31101,
+      "sha256": "cb6472c058bef041b8ccaf9b3ee42b58441275f25ee27279c8dd172b403f49b7"
+    },
+    {
+      "path": "src/authority/table-store.cjs",
+      "bytes": 9919,
+      "sha256": "bb5ba2cdff9d32862a22ed34ea910ada78fbd7c10a32f718fc907eb923581068"
+    },
+    {
+      "path": "src/bridge/server.cjs",
+      "bytes": 3848,
+      "sha256": "8d28eae7b1a7d7e1b9af53ada1ca5b5d1c0429c1a9cfa7a014b67863e6a5fe44"
+    },
+    {
+      "path": "src/contract/adapter-contract.cjs",
+      "bytes": 37263,
+      "sha256": "ab990dd093b272465cdd6a840ce60e8500c069dac62eccf8c6e100bc77ecb1e3"
+    },
+    {
+      "path": "src/game/holdem.cjs",
+      "bytes": 28197,
+      "sha256": "2436fa56ce8ebb1931597cd0afef29e55fb426b8b29ee07f98eb0c46910a78e6"
+    },
+    {
+      "path": "src/game/seeded-random.cjs",
+      "bytes": 4019,
+      "sha256": "383e25dcd47fe402c056a658ef160fed3a940cfad3bfde94cf45b01e0ce00413"
+    },
+    {
+      "path": "src/host/ai-lifecycle-receipts.cjs",
+      "bytes": 15152,
+      "sha256": "9be2701ea1b09f1893fe518f7e30718f36c2c62ac4bcd58a6548d97b97ac3a04"
+    },
+    {
+      "path": "src/host/core-client.cjs",
+      "bytes": 4952,
+      "sha256": "4f1c2f9425ebdd3560aa7b6c4e109c490fc8a5ec74bae8232983e65ee2d53b10"
+    },
+    {
+      "path": "src/host/host-command-adapter.cjs",
+      "bytes": 13787,
+      "sha256": "2b77e559991d7722fa841e837bb730a7f0cb1761136a6d9076b713184acc538c"
+    },
+    {
+      "path": "src/host/model-command-surface.cjs",
+      "bytes": 17347,
+      "sha256": "8e39885e54c7b2e23ccc950710b054d9be94e77a11146ff8878593bb7825382d"
+    },
+    {
+      "path": "src/host/seat-custody.cjs",
+      "bytes": 10636,
+      "sha256": "f2e3003b35fa8aa3a5b8998f44583d94bb11ae0b4cdac77093fb939c03e4c37f"
+    },
+    {
+      "path": "src/host/seat-model-adapter.cjs",
+      "bytes": 13306,
+      "sha256": "ab4226fbd0602b1f9bf56350a4a6bf13ac81ab7b42b7314266ce637152d7af51"
+    },
+    {
+      "path": "src/host/table-view-model.cjs",
+      "bytes": 29825,
+      "sha256": "dbd1c4e0f02eb4edda903dbf73671e2c8439f4ebd80c0d03b93c21bf299782ff"
+    },
+    {
+      "path": "src/host/table-web-host.cjs",
+      "bytes": 66194,
+      "sha256": "d49ae9d630a0233192a6ba8802519e6d287833afa03da0320bf5996316d2bd0c"
+    },
+    {
+      "path": "src/run-beta.cjs",
+      "bytes": 14596,
+      "sha256": "08c69e561a766f50eca3637bbbdddb8987be842a9caeebe49d15f09d3b8f99b9"
+    },
+    {
+      "path": "src/run-probe.cjs",
+      "bytes": 1430,
+      "sha256": "9020263616003cb4857d95d29165f6464af1615dc175f15967f136674889ad28"
+    },
+    {
+      "path": "src/run-table-core.cjs",
+      "bytes": 4810,
+      "sha256": "4f8050a7576c4a75c7caa7cfca9576f3d2f8fa84ee3ca5896cb45f4d023f40f2"
+    },
+    {
+      "path": "src/run-table-web.cjs",
+      "bytes": 8824,
+      "sha256": "aa7b1fa80b2a422c1063763b475d41b17fe3d9f2e2f561aa4d9446018ff2a2b4"
+    },
+    {
+      "path": "src/shared/contract-version.cjs",
+      "bytes": 1047,
+      "sha256": "eaf3b712268b9663f84834b07c01b27f98343068f0ce41f823eba3ac01e26f72"
+    },
+    {
+      "path": "src/shared/endpoints.cjs",
+      "bytes": 1978,
+      "sha256": "4626255b4313c0ee950f040c783e31efdb549b99a711eb90a8193e6ad048bd04"
+    },
+    {
+      "path": "src/shared/http.cjs",
+      "bytes": 1851,
+      "sha256": "0de5b9fd8340822ca628a00ed92330c5f59894939be45a96049de9d0146f4405"
+    },
+    {
+      "path": "src/shared/tokens.cjs",
+      "bytes": 1935,
+      "sha256": "583a1f9ada072c61438b0a25f236cea926d855ff962aa056085c4b1a1a5aed63"
+    },
+    {
+      "path": "test-support/beta-process.cjs",
+      "bytes": 7043,
+      "sha256": "7308d1baf5d6d6191480cc8fa9b66069be08b9dde9152c61d1afb406c073df2c"
+    },
+    {
+      "path": "test-support/codex-queue-wake-probe.cjs",
+      "bytes": 28557,
+      "sha256": "4d5fc0b353b1906ebf0ecd5e777c0bd0d89bd3f89aad8d685d8693f1c7d84e6f"
+    },
+    {
+      "path": "test-support/mcp-stdio-client.cjs",
+      "bytes": 3027,
+      "sha256": "d1895fb9ac4541bde12f265b31abaeeefeceaf45d632427feb85da1553d1a6ac"
+    }
+  ],
+  "sha256": "a9d1b8ab5af1cc39d1faa1f26be8885fab45e611fad6bdf0866009c9eaf71cd2",
+  "later_mapper_fix_not_in_this_native_run": true
+}

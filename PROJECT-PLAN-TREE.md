@@ -11,7 +11,7 @@ plan_tree:
     - TG-L1-PUBLIC-AI-PLAY
     - TG-L2-PUBLIC-AI-EXCHANGE
     - TG-L3-MULTIPLAYER-VERTICAL-SLICE
-    - TG-EU-SINGLE-STACK-WEB-TABLE
+    - TG-EU-PROACTIVE-WAKE-SPIKE
   nodes:
     - id: TG-L0-PRODUCT
       parent: none
@@ -646,8 +646,9 @@ plan_tree:
           一个码：合成之后日志里读不出是哪一面越界，而模型面越界意味着模型可能拿到下注权限。
           这一条是 test/adapter-contract.test.cjs 的「每个错误码都被归类」当场抓出来的。
         own_test_holes_found_by_mutation:
-          - 没有断言本地拒绝**不**推进 degraded（把它算成降级会让宿主一次伪造参数就退回轮询）
-          - 没有测 rememberHandle 拒空串（收下空句柄后 seat_handle_count 报了个数而句柄用不了）
+          findings:
+            - 没有断言本地拒绝**不**推进 degraded（把它算成降级会让宿主一次伪造参数就退回轮询）
+            - 没有测 rememberHandle 拒空串（收下空句柄后 seat_handle_count 报了个数而句柄用不了）
           first_run: 19_total_17_killed_2_survived
         zero_construction_points_is_now_a_test: >-
           「运行路径上零个构造点」此前只写在提交信息里。一正一反两条对账钉住它：反面是七个
@@ -674,18 +675,52 @@ plan_tree:
             产品结构。措辞项（「两份合同」拆两份还是合成一份带角色字段）已于同日关闭：
             统一为「一套 HostAdapter 协议、host_command 与 seat_model 两个权限剖面」。
       claim_limit: >-
-        底座与模型面适配器可声称已实现并过自动化一致性套件。不得声称 HostCommandAdapter 已存在，
-        也不得声称主动唤醒（Gate 5）已验证——一致性套件只验内部一致性，谎称有这个能力它仍然全绿，
-        所以报告里另有 unverifiable 数组承载它，CAPABILITIES.proactive_wake 带
-        verified_on_any_host: false。
+        底座、SeatModelAdapter 与 HostCommandAdapter 两份参考实现已存在并过自动化一致性套件；
+        不得声称产品已改经 HostCommandAdapter，TableWebHost 仍是真人面的产品实现。
+        无点击主动唤醒（Gate 5）未验证，verified_on_any_host 仍为 false；当前合同会拒收该声明，
+        套件还用 unverifiable 保留绕过协商或未来合法声明仍不能由内部测试证明的证据边界。
+    - id: TG-EU-SEAT-MODEL-BINDING
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies: [TG-EU-SINGLE-STACK-WEB-TABLE, TG-EU-HOST-ADAPTER-CONTRACT]
+      status: completed
+      unit_kind: coherent_leaf_bundle
+      summary: B8，承接B6/B7，补齐同一协调器上的真人逐席AI绑定、撤销及权威评估的本席上下文；不关闭真实宿主门禁。
+      owner_links: [TAKEOVER-PLAN.md, UNDERSTANDING-AUDIT.md, STATUS.md#project_intelligence]
+      result_ref: REVIEW-LOG.md#b8-seat-model-binding
+      understanding_view:
+        current_ref: TAKEOVER-PLAN.md
+        current_revision_ref: B8-frozen-local-contract-20260830
+        candidate_successor_ref: none
+        plan_ref: TAKEOVER-PLAN.md
+        result_ref: REVIEW-LOG.md#b8-seat-model-binding
+        presentation: aligned
+      claim_limit: 已实现并通过本地925测试、557变异、35连接UI与209四人13手自动化；真实宿主、主动唤醒和真人试玩不在该完成声明中。
+    - id: TG-EU-REAL-HOST-SEAT-PROBE
+      parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+      dependencies: [TG-EU-SEAT-MODEL-BINDING]
+      status: completed
+      unit_kind: capability_spike
+      summary: 本叶仅验证当前Codex Desktop一席真实模型从本人授权文件到显式生成、同桌气泡及撤销的闭环；第二真实席和Claude留待后续，主动唤醒另有专门叶。
+      owner_links: [RETURN-HANDOFF.md, plugins/tokengame/README.md, docs/CLAUDE-HOST-PROBE-CHECKLIST.md]
+      authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260830-001
+      result_ref: REVIEW-LOG.md#b9-real-host-seat-probe
+      understanding_view:
+        current_ref: RETURN-HANDOFF.md
+        current_revision_ref: B9-single-native-seat-20260830
+        candidate_successor_ref: none
+        plan_ref: PROJECT-PLAN-TREE.md#当前恢复点
+        result_ref: REVIEW-LOG.md#b9-real-host-seat-probe
+        presentation: aligned
+      blocking_reason: none；本窗口有限实机探针已完成并清理。
+      claim_limit: 一原生任务五轮输入九次MCP；两次生成一次公开一次跨手丢弃，撤销后旧权限被拒。不是完整插件入口、第二真实席、主动唤醒或真人内测通过。
     - id: TG-EU-CLAUDE-HOST-ADAPTER
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:
         - TG-EU-HOST-ADAPTER-CONTRACT
       status: blocked
       unit_kind: host_adapter
-      summary: Claude 侧宿主适配器。适配器本体仍暂缓：当前会话在终端 Claude Code 内，没有 Claude Desktop / Cowork 界面，跑不了实机门禁，先写会积累一堆无法验证的代码。
-      blocking_reason: 本环境无法执行真实桌面探针；实机 Gate 5 保留为明确未验证，只提供可执行清单。
+      summary: Claude 侧宿主适配器本体暂缓；现有能力声明防线不等于 Claude Desktop / Cowork 已接入。
+      blocking_reason: 本轮未执行 Claude Desktop / Cowork 实机探针，当前安装状态 unknown；须在明确宿主配置/真实调用范围后实测，不能沿用旧终端会话的环境判断。
       browser_free_part_done_2026_08_29:
         commit: 509417d
         what: >-
@@ -729,12 +764,54 @@ plan_tree:
       dependencies: []
       status: blocked
       unit_kind: capability_spike
-      summary: SAME_VISIBLE_TASK_SPIKE_V1。在固定记录的宿主版本上验证内嵌组件收到权威事件后无需玩家点击即可恰好启动一次当前任务 follow-up，以及缺少该能力时可被稳定检测。
+      summary: SAME_VISIBLE_TASK_SPIKE_V1。在固定记录的宿主版本上验证权威新事件无需玩家再次点击或输入即可恰好启动一次当前可见游戏任务；B10优先验证本地queue通道，不要求先具备内嵌组件。
       owner_links:
         - .trellis/tasks/08-26-public-ai-table-talk/research/codex-visible-task-proactive-turn-boundary.md
         - .trellis/tasks/08-26-public-ai-table-talk/research/host-active-turn-capability-refresh-20260827.md
-      blocking_reason: 需要真实宿主实机环境；本环境不具备。
-      claim_limit: 未执行。Codex 与 Claude 两侧的无点击主动唤醒均未验证，不得由自动化测试或源码推断代替。
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b10-codex-queue-wake-spike-20260830.md
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b10-b9-latency-breakdown-20260830.md
+        - PROJECT-DECISION-LOG.md#DEC-20260830-002
+        - REVIEW-LOG.md#b10-queue-wake-probe-preparation
+        - PROJECT-DECISION-LOG.md#DEC-20260830-003
+        - REVIEW-LOG.md#b10-native-queue-wake-probe
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b11-ai-lifecycle-receipts-20260831.md
+        - REVIEW-LOG.md#b11-ai-lifecycle-receipts
+        - docs/AI-LIFECYCLE-RECEIPTS.md
+        - PROJECT-DECISION-LOG.md#DEC-20260831-001
+        - REVIEW-LOG.md#b12-native-receipts-window
+        - REVIEW-LOG.md#b13-host-readiness-shutdown
+        - PROJECT-DECISION-LOG.md#DEC-20260831-002
+        - REVIEW-LOG.md#b14-native-readiness-permission-boundary
+        - PROJECT-DECISION-LOG.md#DEC-20260831-003
+        - REVIEW-LOG.md#b14-native-public-replies
+        - evidence/probes/b14-codex-queue-native-20260831/manifest.json
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b15-managed-wake-session-20260831.md
+        - docs/MANAGED-WAKE-SESSION.md
+        - REVIEW-LOG.md#b15-managed-wake-session
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b16-managed-wake-controls-20260831.md
+        - REVIEW-LOG.md#b16-managed-wake-controls
+        - REVIEW-LOG.md#b17-native-managed-wake-carrier-boundary
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b18-stable-project-mcp-activation-20260901.md
+        - REVIEW-LOG.md#b18-stable-project-mcp-activation
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b19-stable-managed-wake-native-20260901.md
+        - REVIEW-LOG.md#b19-stable-managed-wake-native
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b20-hand-active-managed-wake-diagnostic-20260901.md
+        - REVIEW-LOG.md#b20-hand-active-managed-wake-diagnostic
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b21-hand-active-managed-wake-20260901.md
+        - REVIEW-LOG.md#b21-hand-active-managed-wake
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b22-fast-path-native-20260901.md
+        - REVIEW-LOG.md#b22-fast-path-native
+        - REVIEW-LOG.md#b23-fixed-target-codex-play
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b25-relative-cwd-host-failure-20260901.md
+        - REVIEW-LOG.md#b25-relative-cwd-host-failure
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b26-absolute-cwd-real-config-migration-20260901.md
+        - REVIEW-LOG.md#b26-absolute-cwd-real-config-migration
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b27-absolute-cwd-post-restart-fixed-target-20260901.md
+        - REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target
+        - .trellis/tasks/08-26-public-ai-table-talk/research/b28-idle-game-task-handoff-20260902.md
+        - REVIEW-LOG.md#b28-idle-game-task-handoff
+      blocking_reason: B14具体权限确认后，原任务实际MCP准备成功，3个不同来源分别经一次queue触发真实start/resolve及成功公开，Codex Gate5只在固定版本单席探针中pass。B15/B16完成有界API与本人控件，B18稳定项目入口消除B17工具重激活阻塞，B19等待区两次串行通知达到2/2/2。B20行动期样本以wake_start_failed、1/1/0停止且历史精确码仍unknown；B21改用Ready前开启的新窗口，唯一queue达到1/1/1和跨手合法终态。B22保留managed fast-path后，唯一queue同为1/1/1，并在第1手开始13.709秒后启动、9.817秒后以silent在行动截止前6.476秒同手结清；相对B21的HAND→start名义缩短9.992秒，但精确source时刻、首项工具顺序及归因仍unknown，0条AI气泡。B23完成本地固定目标去敏和Codex当前任务入口；B24迁移相对`cwd`后，B25确认相对`cwd`不能加载工具，B26恢复真实绝对`cwd`，B27则直接证明第二次重启后项目工具已加载。B27唯一通知固定到正在运行的同一开发任务，60.003秒后为1/1/0；没有可重入新模型回合、权威终态或AI气泡，精确排队规则unknown且没有重试。B28已把空闲任务前提落实到入口、本人确认、Skill和文档并通过1356项全量回归，但没有原生模型样本，页面确认也不是宿主空闲遥测。Claude未跑，真实空闲游戏任务的朋友组合、牌局内公开与完整实时性未通过，Gate9及七份失效下载清理仍未闭合。
+      claim_limit: Codex可声称B14的3个来源各一次无点击真实公开、B19等待区两次串行真实公开、B21跨手合法终态，以及B22一次截止前同手silent合法终态；B23可声称固定目标和当前任务入口的本地合同通过，B24可声称相对配置迁移及首次停止，B25可声称重启后相对`cwd`运行时加载失败且本地修复已完成，B26/B27可合并声称真实绝对`cwd`迁移、第二次真人重启和工具直接恢复，B28可声称空闲任务交接合同本地通过。不能把B27的1/1/0写成模型回合、主动唤醒或公开回复通过，也不能把B28的页面确认写成宿主空闲证明；不能把B22的1/1/1或silent写成牌局内公开、完整主动闭环或SLA。完整主动AI、第二真实席或Claude仍未证明；Gate9未闭合，默认proactive_wake声明仍不改。
     - id: TG-EU-PLAYABILITY-GATE
       parent: TG-L3-MULTIPLAYER-VERTICAL-SLICE
       dependencies:
@@ -746,9 +823,19 @@ plan_tree:
       owner_links:
         - .trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-权威验收
         - .trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md
+        - REVIEW-LOG.md#b23-fixed-target-codex-play
+        - REVIEW-LOG.md#b26-absolute-cwd-real-config-migration
+        - REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target
+        - REVIEW-LOG.md#b28-idle-game-task-handoff
       blocking_reason: >-
-        单栈产品闭环已完成（TG-EU-SINGLE-STACK-WEB-TABLE），但 TG-EU-PROACTIVE-WAKE-SPIKE 未执行，
-        真人层也还没跑：要四个真人 45 分钟试玩签字。
+        单栈产品闭环已完成（TG-EU-SINGLE-STACK-WEB-TABLE）；B14固定版本单席queue探针已得到真实公开，
+        B21牌局内第1手早期窗口的唯一queue已取得权威开始与合法跨手终态；B22又取得一次在30秒行动截止前
+        6.476秒同手结清的silent终态，但仍没有公开气泡，也没有第二真实AI席或朋友组合验收。B23只完成
+        固定目标去敏和Codex当前任务入口的本地合同；B25已证明相对cwd在当前Desktop重启后未加载工具，
+        B26/B27已完成绝对cwd迁移、第二次真人重启和直接工具就绪。B27唯一通知固定到正在运行的开发任务，
+        最终只到1/1/0；B28已补齐空闲任务入口说明与本人确认，但没有真实空闲任务样本，仍不能替代端到端组合。主动产品公开往返、
+        宿主资源可回收和可玩MVP验收仍未交付，Gate9清理blocked，Claude未跑。
+        真人层也还没跑：要四个真人45分钟试玩签字；回环地址不是异地服务。
       automation_layer_progress_2026_08_28: >-
         自动化层的手数要求已达成：浏览器验收现在打到第 12 手（此前第 3 至 4 手），201 条断言全过、
         控制台错误 0、四个隔离上下文、27 张截图、连续三轮干净运行。故障矩阵已覆盖：五种畸形投影的
@@ -758,25 +845,34 @@ plan_tree:
       automation_layer_still_missing: >-
         边池分层在浏览器层不可观测（投影只含 pot_total），如实记为缺口，由单元层覆盖。
         自动化层全部结果来自 simulated 模型适配器，不含任何真实宿主能力。
+      automation_layer_revalidated_20260830:
+        result_ref: REVIEW-LOG.md#b8-seat-model-binding
+        evidence: 本批产品版本四上下文209项到第13手通过；另外两MCP进程连接UI35项通过。模型为脚本文字，真人层仍未跑。
       claim_limit: >-
-        自动化层的手数与故障矩阵要求已达成，真人层未执行。自动化层不能顶替真人层签字，
-        模拟席或一人多窗口不能计入真人签字。
+        自动化层的手数与故障矩阵要求已达成，B23本地入口合同、B25本地载体修复、B26真实配置迁移、B27工具恢复/活动任务1/1/0和B28空闲任务说明回归都不等于朋友组合验收，真人层未执行。
+        自动化层不能顶替真人层签字，模拟席或一人多窗口不能计入真人签字。
   active_node: TG-L3-MULTIPLAYER-VERTICAL-SLICE
-  current_next_leaf: TG-EU-HOST-ADAPTER-CONTRACT
-  current_execution_unit_ref: PROJECT-PLAN-TREE.md#TG-EU-HOST-ADAPTER-CONTRACT
+  current_next_leaf: TG-EU-PLAYABILITY-GATE
+  current_execution_unit_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
   reliable_boundary:
-    earliest_trustworthy_node_or_checkpoint: TG-EU-SINGLE-STACK-WEB-TABLE@eef01e9
-    first_invalid_or_unverified_node: TG-EU-CLAUDE-HOST-ADAPTER
+    earliest_trustworthy_node_or_checkpoint: EC-TG-REAL-HOST-SEAT-PROBE-20260830-A
+    first_invalid_or_unverified_node: TG-EU-PROACTIVE-WAKE-SPIKE
     boundary_meaning: >-
-      八个执行单元有实现、自动化测试与变异测试证据，产品闭环另有四上下文浏览器验收（现已到第 12 手）。
-      TG-EU-HOST-ADAPTER-CONTRACT 部分实现：共享底座与模型面适配器有实现、一致性套件与变异证据；
-      HostCommandAdapter 未实现，止于此。Claude 适配器、无点击主动唤醒与可玩性门禁的真人层均无证据，
-      不得按已通过对待。特别地：浏览器验收与一致性套件用的都是 simulated 适配器，它们证明 UI 到权威
-      这条链路与合同的内部一致性，不证明任何真实宿主能力——谎称有主动唤醒，一致性套件仍然全绿，
-      所以那一项由 unverifiable 数组单独承载。
+      共享底座、B6单协调器、B7入口与B8逐席授权/上下文均有实际本地证据；925测试和557变异属于B8实跑结果。
+      B8的35项连接UI及209项四人13手使用脚本文字；B9另由当前Codex原生任务完成单席显式生成与撤销。
+      B9新增51项连接UI与20项Node回归通过；B9当批修补仅差一份CSS，其原生运行的核心与MCP字节未改。
+      B10一次同任务自动唤醒已观察，B12补读工具回执确认跨手丢弃，不能关闭主动AI节点；B11的1110回归、另7项补验、37变异及51连接UI是本地证据。B12两个新输入停在工具发现，没有新游戏AI评估；当时清理与日志收尾缺口保留。
+      B13补齐本地IPC关停，46项定向/相邻测试、9条实际变异、26项主线程整合通过；591条仅静态可达，未重跑全量、浏览器或真实模型。原任务runtimeStatus读取仍未实证，宿主reload未执行，不能以本地修复关闭Gate5。
+      B14另有原任务实际工具成功调用、3次queue/3次真实公开的直接证据，Codex Gate5仅该固定版本单席探针pass；Gate9清理blocked。跨街延迟映射修复后相邻45项、1条变异和脚本UI14项通过，不重算旧实机显示结果。
+      B15有界通知API经独立检查和主线程整合，最终1239项全量Node、31条定向变异通过；脚本接收端不等于真实Codex连续运行，启停UI未接入。首轮变异存活及补测记录保留，不覆盖B14清理阻塞。
+      随后B16已接入本人显式启停UI，最终1314项全量Node、35项补充浏览器通过，原纯模块10条变异全被杀；新旧回执误配、模块挂起阻断恢复及迟到初始化遗漏授权屏障均已修。真实原生调用0，当前仍缺连续宿主和历史资源清理，不再把B15阶段缺UI写作现状。
+      B17独立检查修复resolve先于queue ACK再撤权时丢失结清回执的竞态；最终1315项全量Node通过。三批实机共4次原任务输入/1次queue，只有一次readiness游戏MCP调用，0次start/resolve/AI公开。第一批测试外壳过早退出，修正后既有任务未重激活项目MCP；全部B17资源已清理，不将载体阻塞写作连续产品通过。
+      B18稳定项目MCP完成项目级加载和逐席活动槽热换；B19等待区两次串行queue均权威结清并双页公开。B20进入真实行动期后任务无点击启动一次，但窗口以wake_start_failed、尝试1/接收1/结清0停止，回执0评估开始/终态；相关诊断补强后全量1332/1332、两组变异34/34和脚本浏览器35/35通过。这些本地结果不把B20变成原生通过。B21用Ready前开启的新窗口只投递一次，达到1/1/1与跨手合法终态。B22仅优化managed固定prompt，红37/38后绿38/38、旧probe117/117、变异5/5+8/8、合并及独立复核155/155；唯一原生queue在HAND1后13.709秒start并在9.817秒后同手silent，截止前余6.476秒。精确source和首项工具顺序unknown，0气泡，不翻proactive_wake_verified。
+      B23完成服务端固定目标去敏和Codex当前任务一键入口的本地合同：固定目标复核184/184、限定变异11/11、脚本浏览器44/44；一键入口独立复核9/9、beta/config/lifecycle 88/88、变异15/15。B24按DEC-20260901-001执行真实项目配置相对化迁移并停止。B25以进程时刻确认用户完成该决策授权的一次重启；CLI列出服务器但当前任务没有`tokengame_table`，与同任务旧绝对cwd成功加载形成直接对照。两页固定目标UI已目检，但工具未就绪，0通知/模型/queue并完整清理。本地生成器恢复canonical绝对cwd，聚焦红绿与定向变异通过。B26按DEC-20260901-002把真实父项目唯一托管块恢复为该绝对cwd，块外SHA-256未变，入口在beta前停止。B27确认第二次手动重启后项目工具直接恢复，唯一固定当前活动任务通知为1/1/0、60.003秒到限；页面与连接资源完整清理，未补发或伪造权威终态。B28把启动回复结束/任务空闲要求接入横幅、页面本人确认、Skill与文档，聚焦19/19、浏览器46/46及全量1356/1356通过，0原生模型或queue。
+      当前实现顺序转为真实空闲游戏任务的本地朋友组合，不再次迁移配置、重启、继续拆入口说明或对正在运行的开发任务重投。内嵌UI、第二真实席、牌局内公开往返、真人UAT和远端安全仍未证明。
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: primary_ai_execute_TG-EU-HOST-ADAPTER-CONTRACT
+  next_owner: user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available
 
 semantic_baseline:
   required: yes
@@ -851,7 +947,7 @@ semantic_baseline:
       verified_at: 2026-08-27
   blocking_paths: []
   unaffected_confirmed_paths: []
-  last_checked: 2026-08-28
+  last_checked: 2026-08-31
   next_action: implement_confirmed_semantics_no_semantic_change_pending
 ```
 
@@ -859,17 +955,79 @@ semantic_baseline:
 
 宿主中立 L0、共享 `TG-L1-HOST-ENTRY`、三个当前 MVP L2，以及可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已分别由用户确认并通过内容寻址校验；旧 Codex 专属入口、会话、公开测试桌、被动问答章程及其旧规则保留为已替代历史。语义门禁已经闭合，且本轮不存在待确认的语义变更。
 
-Project Intelligence 刷新门禁已通过（`STATUS.md#project_intelligence`，`freshness: current`）。`TG-L3-MULTIPLAYER-VERTICAL-SLICE` 现在展开为 12 个执行单元：七个内核单元加一个产品闭环单元已完成并有实现、自动化测试与变异测试证据（`npm test` 2026-08-28 实测 351/351，八个变异规格全部重跑合计 122 变异 122 杀掉 0 存活），四个单元没有证据。
+当前理解以 `STATUS.md#project_intelligence` 与本轮 `UNDERSTANDING-AUDIT.md` 为准。
+351项测试/122条变异是2026-08-28旧检查点，不是当前验证数，也不能用旧执行单元数量推算完成度。
+B8从 `bbdcf2b` 的875项实测基线接手；B8最终证据和完成裁决统一指向 `REVIEW-LOG.md#b8-seat-model-binding`。
 
-`TG-EU-SINGLE-STACK-WEB-TABLE` 已完成：新 UI 在 `web/table/`，经协调器连同一份宿主中立内核，入口 `npm run web`；四个隔离 Chromium 上下文的 80 条断言全过、控制台错误 0、连续打到第 3 手。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为已替代历史证据，不再是产品路径。
+新 UI 在 `web/table/`，经协调器连同一份宿主中立内核。第 3 手/80 断言属于 `3127a99` 的旧检查点；后续已到第 13 手/209 断言（`c284568` 等记录），模型为脚本替身。旧探针栈 `web/app.js` 与 `npm run authority` / `table` 原样保留为历史，不再是产品路径。
 
-`TG-EU-HOST-ADAPTER-CONTRACT` 已完成（2026-08-29 校准）：合同成文在 `docs/HOST-ADAPTER-CONTRACT.md`，实现在 `src/contract/adapter-contract.cjs`，两侧参考适配器都在——`SeatModelAdapter`（`src/host/seat-model-adapter.cjs`）与 `HostCommandAdapter`（`src/host/host-command-adapter.cjs`，`0542c1c`）。能力按「角色 + 具体宿主剖面」协商，宿主名字只进登记表不进判断。
+`TG-EU-HOST-ADAPTER-CONTRACT` 的合同底座与两份参考实现已完成；节点仍是 `partially_implemented`，
+产品是否改用参考适配器尚非已交付事实。合同在 `docs/HOST-ADAPTER-CONTRACT.md` 与
+`src/contract/adapter-contract.cjs`；`SeatModelAdapter` 在 `src/host/seat-model-adapter.cjs`，
+`HostCommandAdapter` 在 `src/host/host-command-adapter.cjs`（`0542c1c`）。能力按「角色 + 具体宿主剖面」
+协商。B8依赖的是已证实底座及分权边界，不要求另做参考实现迁移。
 
-下一恢复点是 **B6 单一协调器**：消除「Web Table 自持 SeatCustody」与「Host/SeatModel Adapter 参考实现」两套不相交路径，让真人命令、模型命令、席位绑定、公开时间线和凭据保管服务于同一牌局。约束是不得只增加第三层抽象。之后是 B7（各宿主实际支持的 create/join/status/leave 入口，缺失能力给可见的轮询或手动唤醒兜底，不许静默卡住）。
+**B8逐席模型绑定与上下文已完成本地验收**，唯一裁决为 `REVIEW-LOG.md#b8-seat-model-binding`。
+B6-1 `095b4b6`、B6-2 `71ae5fa`、B7 `bbdcf2b` 已提交；B8仍是手工收口策略下的未提交diff。
+共用令牌与缺少本席牌面的问题已修，最终925测试/557变异/35连接UI/209四人验收通过。
+B9 `TG-EU-REAL-HOST-SEAT-PROBE` 已在明确授权下完成：当前Codex原生游戏任务实际读牌、生成公开气泡，
+撤销后旧连接被拒，见 `REVIEW-LOG.md#b9-real-host-seat-probe`。只用了一个游戏任务、五轮输入；
+临时配置、连接文件和服务已清理，旧演示未动。成功发言整轮44.917秒，不代表实时体验合格。
+还修复了首次建房长邀请码的窄屏溢出，51项连接UI及20项定向Node通过；未重跑B8全量门禁。
+当前叶仍为 `TG-EU-PROACTIVE-WAKE-SPIKE`：B10选择当前CLI的queue作为同任务候选，已完成默认关闭的
+单次本地探针、独立复核、117项定向测试、89项相邻回归和8条变异。证据见
+`REVIEW-LOG.md#b10-queue-wake-probe-preparation`。随后用户“同意验证”，一次真实queue确实自动唤醒原任务，
+不需A新提示或点击；但未产生AI公开消息，合法终态收据unknown。Codex Gate5为blocked，Claude为not_run，
+详见 `REVIEW-LOG.md#b10-native-queue-wake-probe`。3次任务输入/1次queue的窗口已结束，临时连接和进程已清理。
+B11已在同一节点补齐默认关闭、去敏有界的权威事件记录与离线时序汇总，见 `REVIEW-LOG.md#b11-ai-lifecycle-receipts`。
+文件内容、写入回执及资源关闭分项报告，缺来源/终态与畸形链不虚构成功或时差；没有新增权威事件或改变扑克时钟。
+最终全量1110项通过（显式过滤默认端口1项，另跑7项补验）；37项相关变异全被杀掉、51项连接UI通过。
+585项变异锚点全部静态可达不等于585项已实跑；本批没有重跑四人13手或真实AI模型。
+B12已另获授权，但两次原生只读准备均未发现新MCP；没有Ready、来源消息、queue或游戏评估，窗口已停止。详见 `REVIEW-LOG.md#b12-native-receipts-window`。旧B10工具回执本次可读，已确认回答因hand_advanced丢弃；上段unknown是当时的取证边界，不再是当前原因判断。下一步先核对同一任务MCP加载及可靠关闭；不自动重跑模型、不扩常驻调度、不关闭父节点。
+B13本地关停已完成正式检查与主线程整合，三类交叠失败已修复；最终46项定向/相邻测试、9条实际变异和26项非空捕获整合通过。裁决见 `REVIEW-LOG.md#b13-host-readiness-shutdown`，恢复先读 `RETURN-HANDOFF.md#b13-当前工作`。不重做已完成实现，不重开B12窗口；原任务工具就绪仍未验证，新增真实输入或影响其他任务的刷新需另获授权。
+其后用户明确“允许长期测试”，由 `DEC-20260831-002` 授权B14起的同范围有界实机批次，不再逐次申请输入；全局刷新、宿主重启和发布等边界未授权。B14第一批在具体逐席AI权限门暂停，0原生输入/queue/评估并关闭服务；保留为历史，不当作MCP失败，详见 `REVIEW-LOG.md#b14-native-readiness-permission-boundary`。
+最新用户“允许”由`DEC-20260831-003`确认本席合成底牌/公共聊天、AI公开发言和本机连接凭据。B14新批次已完成1次实际MCP准备和3次单次queue，各有1次start/resolve及成功公开，A无额外点击/提示；两例等待区、一例进行中第1手。Codex Gate5仅固定版本单席探针pass，来源到公开43.857/46.785/43.660秒不证明实时性。权限已撤销、配置/beta/页面及完整捕获正常关闭；失效私有文件及宿主管理MCP清理被工具策略拒绝，Gate9 blocked，不绕过。唯一当前裁决见`REVIEW-LOG.md#b14-native-public-replies`。
+第3例权威迟到字段未显示的问题已修：仅视图映射，真实producer回归先5项失败再20/20，相邻45/45、1条变异被杀、隔离上下文检查及脚本UI14/14；当时窄屏/全量/13手未跑，脚本修复不倒算原生样本。不再把原任务MCP未就绪当作当前事实；新增原生批次仍须满足实际可用和清理停止条件。
+B15已在同一协调器接入默认关闭的有界通知API与显式beta配置；真实本地HTTP/MCP/脚本进程链先公开、后沉默，两次终态已观察。独立检查的两处边界缺陷已修，另补一处取消竞态测试；最终全量Node1239/1239、31条定向变异全部杀掉，0存活/未评估。唯一当批事实见`REVIEW-LOG.md#b15-managed-wake-session`，含首轮失败、各轮耗时和最终身份。该批结束时尚缺本人启停UI，现由下一段B16更新；旧事实不改写成已做过浏览器验证。
+B16已在原牌桌加入本人每窗确认、实际上限、启停/同键核对及分项状态。主线程截图修复新旧窗口回执混用；独立检查以实际红测修复模块挂起阻塞会话恢复及迟到模块丢失未决授权屏障。最终全量Node1314/1314、69844.1736ms，补充浏览器35/35、9360.2016ms，纯状态模块10条正式变异被杀；真实Browser刷新/启停与游戏客户端入口另行记录，不与此前轮次相加。唯一当批事实见`REVIEW-LOG.md#b16-managed-wake-controls`。
+B17按冻结判据尝试连续原生窗口。独立检查先修复一项resolve先于ACK再撤权时的结清回执竞态；最终全量Node1315/1315、69343.9369ms。三批共4次原任务输入、1次queue：第一批readiness成功但专用外壳90秒空闲退出，首个queue回合无MCP调用；延长外壳并验证撤权退出后，另两批readiness完成但既有任务没有重启项目MCP。全程0次start/resolve/AI公开，全部B17临时资源清理。唯一当批事实见`REVIEW-LOG.md#b17-native-managed-wake-carrier-boundary`。下一步先做稳定项目MCP激活/连接换代，再开真实连续批次；第二真实席位与B14 Gate9阻塞仍未闭合，当前叶和父节点均不关闭。
+B18已完成稳定项目MCP与逐席连接热切换的本地及原生显式切片：固定Git忽略活动槽位、逐请求重读、原子激活/换发/清除，以及只管理显式项目受管块的Codex插件配置器。首次全量1327/1328暴露宿主专有配置越过`src/`边界，架构搬到插件层后最终1328/1328；首轮门禁632/638的2存活/4未评估均修复，最终638/638，Browser51/51，Skill有效。随后`H:/tokengold`受管块写入、真人重启，当前任务只发现既定`tokengame_table`；原生实测缺槽失败、激活成功、撤权后旧令牌被拒、同席换发不重启恢复，并由第二浏览器公开消息触发当前Codex一次start/resolve，两页显示AI气泡。该批0 queue，仅关闭B17“稳定项目工具无法重新发现”的载体阻塞，不关闭`TG-EU-PROACTIVE-WAKE-SPIKE`。下一步复用该入口做有界持续通知；B14 Gate9、本轮失效下载手工删除、第二真实AI席、Claude、异地和四真人UAT继续开放。唯一当批事实见`REVIEW-LOG.md#b18-stable-project-mcp-activation`。
+B19已在B18稳定入口完成等待区两次串行原生通知：发送器固定既有专用任务，页面逐席授权并本人开启2次/180秒窗口；第一来源达到尝试/接收/权威结清1/1/1及双页AI气泡后才发送第二来源，最终2/2/2、两页两条AI回复、窗口按次数上限停止。专用任务无需A再次点击或补提示，两个回合分别28.977秒和24.405秒；116.911秒窗口驻留不能当模型耗时。样本未Ready、未开手，因此只关闭稳定入口等待区连续通知子切片，不关闭`TG-EU-PROACTIVE-WAKE-SPIKE`也不翻`proactive_wake_verified`。B19当时的下一叶是牌局进行中来源，现由下一段B20更新；第二真实AI席、Claude、异地、四真人UAT、B14 Gate9及失效下载手工删除继续开放。唯一事实见`REVIEW-LOG.md#b19-stable-managed-wake-native`。
+B20已执行一次牌局内有界样本：两席Ready，第1手行动期内本人开启1次/120秒窗口；专用任务无新点击/提示自动完成17.426秒回合，但页面20.342秒时以`wake_start_failed`、尝试1/接收1/结清0停止，两页无AI气泡。生命周期文件记录第1～4手和第3手B公开消息，却有0评估开始/turn/终态；任务启动早于该B消息，具体更早扑克来源unknown。按停止条件没有重试。已补只保留稳定码、不保留详情/自由文本的失败诊断；最终Node1332/1332、相关变异34/34和脚本浏览器35/35通过，不能倒推本次业务错误码或把原生失败改成通过。B20当时的下一叶是在新窗口读取精确码，现由下一段B21更新；`proactive_wake_verified`仍false，B20收尾时三份失效下载需真人删除。唯一事实见`REVIEW-LOG.md#b20-hand-active-managed-wake-diagnostic`。
+B21没有重试B20窗口，而是在Ready前开启一个新1次/120秒窗口，并在窗口开启后不再添加玩家公开消息。第1手开始后唯一原生queue最终达到尝试/接收/权威结清1/1/1；第1手开始到评估开始23.701秒，评估直到30秒行动截止前约6.302秒才启动，开始到terminal 10.781秒。terminal为`silent/hand_advanced`，发生于第2手开始1.104秒后，两页0条AI气泡。由于本次start成功而没有`failure_code`，B20历史精确码仍为unknown；本批没有源码变更或测试重跑，不能写成牌局内公开或实时性通过，`proactive_wake_verified`仍false。服务端撤权、活动槽、浏览器和相关端口已清；直接PTY停止返回1，不能冒充beta exit0；B21新增一份167字节失效下载，现与前三份一并等待真人手工删除。canonical next leaf仍属于`TG-EU-PROACTIVE-WAKE-SPIKE`：先在不改扑克30秒规则和模型设置的前提下优化原生通知fast-path prompt并做有界对比，再根据数据决定传输优化或提出可配置时限，当前不直接宣布延长时限。唯一事实见`REVIEW-LOG.md#b21-hand-active-managed-wake`。
+B22完成了B21指定的最小fast-path与唯一原生对照。managed通知在两个已校验编号后立即要求首项工具为`ai.start`并禁止前置读取/其他工具；旧B10未设置`noticeKind`的文本逐字不变。新断言先红37/38再绿38/38，旧probe117/117，变异5/5+8/8，合并与独立复核均155/155。唯一queue达到1/1/1、`failure_code=null`；HAND1→start 13.709秒，start→silent 9.817秒，终态在截止前6.476秒且距HAND2 9.678秒。相对B21的HAND→start名义缩短9.992秒，但任务时刻只有秒级、精确source时刻与首项工具顺序unknown，不能把改善全归因prompt或外推SLA；silent、0气泡不是公开回复。当前保留fast-path，不延长30秒、不立即重写传输，也不关闭`TG-EU-PROACTIVE-WAKE-SPIKE`或`TG-EU-PLAYABILITY-GATE`。canonical next leaf转为`TG-EU-PLAYABILITY-GATE`下的最小可复现组合验收：朋友建房→连接各自会话AI→牌局内玩家/AI气泡，不强迫模型固定公开；第二真实AI席、公开往返和四真人UAT仍开放。唯一事实见`REVIEW-LOG.md#b22-fast-path-native`。
+B23完成该组合验收的两个本地入口缺口，但没有执行真实宿主验收。固定sender现在由服务端选择唯一预配置任务；固定页面隐藏/禁用UUID输入且请求、轮询和start/status/stop响应不含`thread_id`，旧自定义queue仍保留手填兼容。实现聚焦184/184、初始变异14/14，独立复核184/184并修失效锚点/错误响应防回显，限定变异11/11；脚本浏览器旧夹具在累计7 checks时按预期失败，固定夹具最终44/44、约11.40秒、0 console/page error，固定4次start无`thread_id`、旧手填1次含测试UUID、45个可见响应零已知ID。
 
-产品闭环成立不等于 MVP 可玩已通过：`TG-EU-PLAYABILITY-GATE` 的两层都还没跑（自动化层要求至少 10 手、故障矩阵与隐私金丝雀，现有验收只到第 3 手；真人层要四个真人 45 分钟签字），而浏览器验收用的是 `simulated: true` 的脚本适配器。它证明 UI 到权威这条链路，不证明任何真实宿主能力。
+B23同时新增`npm run codex:play -- "<当前 Codex 项目根绝对路径>"`：只用`CODEX_THREAD_ID`，按项目→thread→可执行文件完成只读前置后才原子配置；显式可执行文件独占，Windows无显式值时只接受PATH中第一个实际存在且canonical位于`LOCALAPPDATA/OpenAI/Codex/bin/<hex>/codex.exe`的可信候选，非Windows需显式值。受管MCP的`cwd`改为相对项目根；配置变化只提示重启，未变化才同进程启动beta，并强制回环/进程内/无adapter/无receipt，不覆盖模型/推理或自动开通知窗。红0/1后首轮9/9、既有5/5、变异9/9；独立审查修复beta启动失败exit 0、绝对cwd与畸形Windows路径，最终新叶9/9、beta/config/lifecycle 88/88、变异15/15。一键入口子叶0监听、模型、浏览器或原生任务；固定目标脚本浏览器另行单列且0原生模型/queue，真实`H:/tokengold/.codex`未改；短命queue参数和同账户进程元数据仍可能暴露任务ID。唯一事实见`REVIEW-LOG.md#b23-fixed-target-codex-play`。
 
-明确保留为未验证、不得按已通过对待：`TG-EU-CLAUDE-HOST-ADAPTER`（本环境无 Claude Desktop / Cowork 界面，跑不了实机门禁；合同层已把它登记为 `claude_desktop` 剖面且**一项能力都没验证过**，所以那个剖面现在协商不过去——这是准确的表达，不是缺陷）、`TG-EU-PROACTIVE-WAKE-SPIKE`（`SAME_VISIBLE_TASK_SPIKE_V1` 未执行，任何剖面的无点击主动唤醒都未验证，合同层直接拒收该声明）、`TG-EU-PLAYABILITY-GATE`（自动化层已到第 13 手，四真人试玩层未执行）。既有 Codex 桥接与旧牌桌气泡证据只按旧范围保留，不证明新私人房牌桌、双宿主能力、跨宿主私人房或事件驱动主动唤醒已经交付。
+B24依据`DEC-20260901-001`在当前任务实际执行上述命令的首次运行。命令exit 0，只给去敏重启提示并在beta前停止；`H:/tokengold/.codex/config.toml`的唯一托管块现为`cwd = "tokengame"`，块外哈希前后一致，配置无任务UUID、绝对仓库路径或绝对可执行路径，7802无监听。该迁移事实见`REVIEW-LOG.md#b24-project-config-migration`。
+
+B25确认用户已经完成该授权的一次重启：配置写入后出现新的Codex与ChatGPT进程；`codex mcp list --json`可列出相对`cwd`服务器，但当前任务没有`tokengame_table`。同一任务在旧canonical绝对仓库`cwd`时曾实际调用该工具，因此相对运行时假设被直接反证。重跑入口成功起回环beta，两隔离浏览器目检固定目标、UUID不公开、上限1次/60秒；因工具未就绪，窗口未开启、两席未Ready，实际0通知/模型/queue。服务端撤权、本地槽、浏览器、beta和7802均已清，本批新增一份166字节已撤权下载待真人删除。生成器已在本地恢复canonical绝对仓库`cwd`，相对块迁移、输出去敏及定向变异通过；真实父项目配置未再次修改。事实见`REVIEW-LOG.md#b25-relative-cwd-host-failure`。
+
+B26已按`DEC-20260901-002`执行真实配置恢复：入口exit 0并在beta前停止，唯一托管块现精确为`cwd = "H:/tokengold/tokengame"`，旧相对值消失；托管块外SHA-256前后均为`01BA4719C80B6FE911B091A7C05124B64EEECE964E09C058EF8F9805DACA546B`，配置无任务UUID或绝对Codex可执行路径，7802无监听。本批0通知、0模型、0queue、0浏览器。事实见`REVIEW-LOG.md#b26-absolute-cwd-real-config-migration`。
+
+B27确认用户完成第二次手动重启，当前任务实际且唯一加载项目`tokengame_table`；缺活动槽时原生只读失败关闭、激活后只读成功，宿主工具恢复已闭合。随后两隔离headed页面只发一条合成公开来源，固定当前正在运行的开发任务窗口在60.003秒以尝试/接收/权威结清1/1/0停止；同期目标任务仍为`inProgress`，0个可重入新模型回合、0次权威start/resolve、0条AI气泡，精确排队规则unknown。没有重投或手工抢待办。两页0 error/0 warning；服务端撤权、活动槽、浏览器、beta和7802均已清，本批新增一份失效下载后仓库精确模式累计7份、1165字节，未读未删。事实见`REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target`。
+
+B28没有重试B27通知，而是把可控的空闲载体前提写成产品合同：managed启动横幅、固定目标页面说明与每窗本人确认、项目Skill及三份入口/操作文档均要求目标游戏任务先结束当前回复并保持空闲；同时明确queue已接收不等于模型开始或权威结清。聚焦Node首轮18/19后修正同义措辞，最终19/19、1833.6463ms；脚本浏览器46/46、20729.272ms、0错误、6项清理通过，桌面与320px目检；完整Node1356/1356、79933.5359ms。Skill普通校验遇GBK载体失败，同一校验器加UTF-8模式后有效。本批0通知/queue/原生模型/权威评估，活动槽不存在且7802无监听。事实见`REVIEW-LOG.md#b28-idle-game-task-handoff`。
+
+**当前唯一恢复点不再是补入口说明、配置迁移、宿主重启，也不是重试正在执行的同一开发任务。** 下一叶是真实本地朋友组合：每位玩家从自己的游戏任务启动，结束启动回复并保持任务空闲，再由Web牌桌开有限窗口；仍按权威start与唯一terminal判断成功，不以queue接收数代替。页面确认只是用户声明，不是宿主空闲遥测。当前不自动创建新任务、不扩到远端部署或第二模型。`proactive_wake_verified=false`，`TG-EU-PROACTIVE-WAKE-SPIKE`和`TG-EU-PLAYABILITY-GATE`保持开放。
+
+- `latest_review_ref`: `REVIEW-LOG.md#b28-idle-game-task-handoff`
+- `readiness`: `idle_task_handoff_locally_ready_real_friend_combination_blocked`
+- `known_failures`: 相对cwd运行时失败是已修历史；B27同一活动任务通知只到1/1/0且精确排队规则unknown，B28页面确认不能证明宿主空闲；真实空闲任务组合、第二真实AI/公开往返/Claude/异地/四真人UAT仍开放，七份撤权下载仍待真人删除。
+- `next_owner`: `user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available`
+B9过滤日志复算：成功样本从玩家事件到权威公开33.460秒，公开后收尾11.556秒；已超过该次行动截止3.822秒。
+这些是已存日志的分段事实，不是本轮新模型调用，更不能称为实时性能通过。
+
+`TG-EU-PLAYABILITY-GATE` 不能笼统写“两层未跑”：历史及B8自动化都已执行到第13手；B8的209项通过，
+四真人45分钟层未执行。第3手/80项是旧版本检查点；第13手/209项是明确产物对应的脚本模型运行，
+它们都不能替代真实宿主生成或真人可玩性。
+
+明确保留为未验证、不得按已通过对待：`TG-EU-CLAUDE-HOST-ADAPTER`（当前安装状态 unknown，
+`claude_desktop` 剖面没有实机能力证据）、`TG-EU-PROACTIVE-WAKE-SPIKE`（B14已证明固定版本单席无点击公开，B16有本地启停UI，B19有等待区连续公开，B21有牌局内跨手合法终态，B22有一次截止前同手silent，B23完成固定目标去敏和本地一键入口，B24～B27已闭合相对cwd失败、绝对cwd迁移、真人重启和工具恢复，B28已闭合空闲任务入口说明；但B27固定当前活动任务只到1/1/0，B28没有原生模型样本，B22仍为0气泡、source与首项工具顺序unknown，Gate9清理blocked，完整连续原生运行和实时公开未验证，
+Claude未执行，合同继续拒收完整主动能力声明）、四真人45分钟试玩。当前开发载体是Codex Desktop，
+不是旧记录中的Claude Code终端；不得将B14的有限探针或旧CLI结果外推为完整入口与主动能力交付。
+既有 Codex CLI 桥接证据只按旧范围保留，不证明新私人房、双宿主、跨宿主私人房或主动唤醒已经交付。
 
 ## 本地探针执行结论
 

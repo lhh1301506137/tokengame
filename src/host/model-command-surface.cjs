@@ -33,19 +33,34 @@ const MODEL_FORBIDDEN_PARAMS = Object.freeze([
   "seat_handle",
   "recovery_credential",
   "viewer_seat_id",
+  "binding_id",
+  "trustedScope",
+  "trusted_scope",
+  "scope",
+  "model_token",
+  "session_token",
+  "player_id",
+  "credential",
+  "claim_token",
 ]);
 
 // intent_id / turn_id 到句柄的映射上限。不设上限的话，领了却从不启动的意图会一直累积：
 // 权威那边的 claim 租约会到期回收，本地这份不会，于是它成了一个只增不减的表。
 // 满了丢最旧的：最旧的那些要么已经过了 30 秒 claim 租约，要么已经被权威收回。
 const MAX_TRACKED_IDS = 512;
+const WAKE_ID = /^(?:intent|turn)-[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/;
+// 自动通知只保留稳定错误码，不保留 details、异常正文或上游响应。
+// 这让真人能区分“待办已失效”和“领取世代冲突”，又不会把模型/玩家文字变成诊断出口。
+const WAKE_ERROR_CODE = /^[a-z][a-z0-9_]{0,79}$/;
+const MAX_WAKE_RECEIPTS = 512;
 
 class ModelSurfaceError extends Error {
-  constructor(code, details = undefined) {
+  constructor(code, details = undefined, status = 400) {
     super(code);
     this.name = "ModelSurfaceError";
     this.code = code;
     this.details = details;
+    this.status = status;
   }
 }
 
@@ -61,6 +76,20 @@ class ModelCommandSurface {
     if (typeof options.request !== "function") {
       throw new ModelSurfaceError("invalid_field", { field: "request" });
     }
+    if (options.scopeIsCurrent !== undefined && typeof options.scopeIsCurrent !== "function") {
+      throw new ModelSurfaceError("invalid_field", { field: "scopeIsCurrent" });
+    }
+    if (options.maxWakeReceipts !== undefined && (!Number.isSafeInteger(options.maxWakeReceipts)
+      || options.maxWakeReceipts < 1 || options.maxWakeReceipts > MAX_WAKE_RECEIPTS)) {
+      throw new ModelSurfaceError("invalid_field", { field: "maxWakeReceipts" });
+    }
+    if (options.maxWakeAttempts !== undefined && (!Number.isSafeInteger(options.maxWakeAttempts)
+      || options.maxWakeAttempts < 1 || options.maxWakeAttempts > MAX_WAKE_RECEIPTS)) {
+      throw new ModelSurfaceError("invalid_field", { field: "maxWakeAttempts" });
+    }
+    if (options.onWakeReceipt !== undefined && typeof options.onWakeReceipt !== "function") {
+      throw new ModelSurfaceError("invalid_field", { field: "onWakeReceipt" });
+    }
     // 三样都是私有字段，不是命名约定。类外无论如何取不到：点号取不到、
     // Reflect.ownKeys 列不出、Object.keys 看不见、JSON.stringify 序列化不出。
     //
@@ -72,13 +101,33 @@ class ModelCommandSurface {
     // 给自己发了一张替那一席行动的通行证，而 ai.start 只查这张表。
     this.#custody = options.custody;
     this.#request = options.request;
+    this.#scopeIsCurrent = options.scopeIsCurrent ?? (() => true);
+    this.#maxWakeReceipts = options.maxWakeReceipts ?? MAX_WAKE_RECEIPTS;
+    this.#maxWakeAttempts = options.maxWakeAttempts ?? MAX_WAKE_RECEIPTS;
+    this.#onWakeReceipt = options.onWakeReceipt ?? (() => {});
   }
 
   #custody;
 
   #request;
 
-  // 权威发的 id -> { handle, claimToken }。intent_id 与 turn_id 共用一张表，键空间由
+  #scopeIsCurrent;
+
+  #generations = new Map();
+
+  #nextGeneration = 0;
+
+  // 仅协调器读取的观察账。没有正文、上下文、凭据或第二份游戏结果；失败不是终态。
+  // 去重跟绑定而不是跟一次监听窗口走，stop/start 和 claim 续期不能重新投递旧意图。
+  #wake = new Map();
+
+  #maxWakeReceipts;
+
+  #maxWakeAttempts;
+
+  #onWakeReceipt;
+
+  // 权威发的 id -> { handle, claimToken, bindingId, generation }。两种 id 共用一张表，键空间由
   // 权威保证不撞（intent- / turn- 前缀）。
   //
   // claimToken 记在这里而不是给模型：世代围栏是「这个宿主进程还持有领取权吗」的凭证，
@@ -100,16 +149,156 @@ class ModelCommandSurface {
   // （set / delete 任意键）都是替某一席发通行证。
   clearIssued() {
     this.#issued.clear();
+    this.#wake.clear();
+    for (const handle of this.#generations.keys()) this.#generations.set(handle, ++this.#nextGeneration);
+  }
+
+  // 绑定换代/撤销在请求 await 之前调用。只删 issued 不够：在途响应会把它再登记回来。
+  invalidateHandle(handle) {
+    this.#generations.set(handle, ++this.#nextGeneration);
+    this.#wake.delete(handle);
+    for (const [id, entry] of this.#issued) {
+      if (entry.handle === handle) this.#issued.delete(id);
+    }
+  }
+
+  forgetHandle(handle) {
+    this.invalidateHandle(handle);
+    this.#generations.delete(handle);
+  }
+
+  captureScope(trustedScope, handle) {
+    if (trustedScope !== undefined && (trustedScope === null || typeof trustedScope !== "object"
+      || typeof trustedScope.seat_handle !== "string" || trustedScope.seat_handle === ""
+      || typeof trustedScope.binding_id !== "string" || trustedScope.binding_id === "")) {
+      throw new ModelSurfaceError("model_scope_rejected", undefined, 403);
+    }
+    const seatHandle = trustedScope?.seat_handle ?? handle;
+    if (!this.#custody.handles().includes(seatHandle)) {
+      throw new ModelSurfaceError("model_scope_rejected", undefined, 403);
+    }
+    if (!this.#generations.has(seatHandle)) this.#generations.set(seatHandle, ++this.#nextGeneration);
+    const scope = {
+      handle: seatHandle,
+      bindingId: trustedScope?.binding_id ?? null,
+      generation: this.#generations.get(seatHandle),
+    };
+    this.assertScopeCurrent(scope);
+    return scope;
+  }
+
+  assertScopeCurrent(scope) {
+    if (this.#generations.get(scope.handle) !== scope.generation
+      || !this.#custody.handles().includes(scope.handle)
+      || !this.#scopeIsCurrent({ seat_handle: scope.handle, binding_id: scope.bindingId })) {
+      throw new ModelSurfaceError("model_binding_changed", undefined, 403);
+    }
+  }
+
+  #wakeState(scope) {
+    this.assertScopeCurrent(scope);
+    if (scope.bindingId === null) return null;
+    let state = this.#wake.get(scope.handle);
+    if (state === undefined) {
+      state = { generation: scope.generation, bindingId: scope.bindingId, records: new Map(), attempted: new Set(), unavailable: false };
+      this.#wake.set(scope.handle, state);
+    }
+    if (state.generation !== scope.generation || state.bindingId !== scope.bindingId) {
+      throw new ModelSurfaceError("model_binding_changed", undefined, 403);
+    }
+    return state;
+  }
+
+  // 不属于 MODEL_COMMANDS。只返回本绑定的一个最小记录副本，调用者不能改写观察账。
+  wakeReceipt(scope, intentId) {
+    const state = this.#wakeState(scope);
+    const receipt = state?.records.get(intentId);
+    return { available: state !== null && !state.unavailable, receipt: receipt === undefined ? null : { ...receipt } };
+  }
+
+  reserveWakeIntent(scope, intentId) {
+    const state = this.#wakeState(scope);
+    if (state === null || state.unavailable) return { accepted: false, reason: "wake_receipt_unavailable" };
+    if (state.attempted.has(intentId)) return { accepted: false, reason: "wake_intent_already_attempted" };
+    if (state.attempted.size >= this.#maxWakeAttempts) return { accepted: false, reason: "wake_intent_history_full" };
+    if (state.records.get(intentId)?.phase !== "claimed") return { accepted: false, reason: "wake_receipt_unavailable" };
+    state.attempted.add(intentId);
+    return { accepted: true };
+  }
+
+  #observeWake(scope, id, phase, { turnId = null, errorCode = null } = {}) {
+    if (scope?.bindingId === null || scope === undefined) return;
+    let state;
+    try {
+      state = this.#wakeState(scope);
+      if (state.unavailable) return;
+      const intentId = phase === "resolved" || phase === "resolve_failed"
+        ? [...state.records.values()].find((entry) => entry.turn_id === id)?.intent_id
+        : id;
+      if (typeof intentId !== "string" || !WAKE_ID.test(intentId) || !intentId.startsWith("intent-")) {
+        state.unavailable = true;
+        return;
+      }
+      let entry = state.records.get(intentId);
+      if (phase === "claimed") {
+        if (entry !== undefined) return; // 重新领取不能抹掉旧阶段/已尝试事实。
+        if (state.records.size >= this.#maxWakeReceipts) { state.unavailable = true; return; }
+        entry = { intent_id: intentId, turn_id: null, phase: "claimed" };
+        state.records.set(intentId, entry);
+      } else if (entry === undefined) {
+        state.unavailable = true;
+        return;
+      } else if (!["start_failed", "resolve_failed", "unknown", "resolved"].includes(entry.phase)) {
+        if (phase === "started") {
+          if (typeof turnId !== "string" || !WAKE_ID.test(turnId) || !turnId.startsWith("turn-")
+            || [...state.records.values()].some((other) => other !== entry && other.turn_id === turnId)) {
+            entry.phase = "unknown";
+          } else {
+            entry.turn_id = turnId;
+            entry.phase = "started";
+          }
+        } else {
+          entry.phase = phase;
+          if (["start_failed", "resolve_failed"].includes(phase)) {
+            entry.error_code = typeof errorCode === "string" && WAKE_ERROR_CODE.test(errorCode)
+              ? errorCode : null;
+          }
+        }
+      }
+      const observed = this.#onWakeReceipt(Object.freeze({ ...entry }));
+      if (observed?.then !== undefined) Promise.resolve(observed).catch(() => { state.unavailable = true; });
+    } catch {
+      // 观察失败只能让自动通知失败关闭，不能改变已经发生的模型命令/权威结果。
+      if (state !== undefined) state.unavailable = true;
+    }
+  }
+
+  #observeWakeFailure(command, params, trustedScope, error) {
+    if (trustedScope === undefined || !["ai.start", "ai.resolve"].includes(command)) return;
+    try {
+      const scope = this.captureScope(trustedScope);
+      const state = this.#wakeState(scope);
+      const id = command === "ai.start" ? params.intent_id : params.turn_id;
+      const known = command === "ai.start" ? state.records.has(id)
+        : [...state.records.values()].some((entry) => entry.turn_id === id);
+      if (known) this.#observeWake(scope, id, command === "ai.start" ? "start_failed" : "resolve_failed", {
+        errorCode: error?.code,
+      });
+    } catch { /* 未知/跨世代的输入不能污染另一绑定的观察账。 */ }
   }
 
   // 权威发的 id 记到句柄与领取令牌上。模型下一步只出示这个 id，其余由本层补。
-  track(id, handle, claimToken = null) {
+  track(id, handle, claimToken = null, scope = undefined) {
     if (typeof id !== "string" || id === "") return;
+    // 合同一致性 fixture 会用一个不存在的句柄 seed 计数；它不能变成真实授权。
+    // 真实领取总会传入已验证 scope，无效 seed 即使被出示也会在 captureScope 被拒。
+    const issuedScope = scope ?? { bindingId: null, generation: null };
+    if (scope !== undefined) this.assertScopeCurrent(issuedScope);
     if (this.#issued.size >= MAX_TRACKED_IDS) {
       const oldest = this.#issued.keys().next();
       if (!oldest.done) this.#issued.delete(oldest.value);
     }
-    this.#issued.set(id, { handle, claimToken });
+    this.#issued.set(id, { handle, claimToken, bindingId: issuedScope.bindingId, generation: issuedScope.generation });
   }
 
   // 权威 id 对应的句柄，不带领取令牌。
@@ -127,7 +316,7 @@ class ModelCommandSurface {
     return this.#issued.get(id)?.handle ?? null;
   }
 
-  issuedFor(id, field) {
+  issuedFor(id, field, trustedScope) {
     if (typeof id !== "string" || id === "") {
       throw new ModelSurfaceError("invalid_field", { field });
     }
@@ -137,6 +326,11 @@ class ModelCommandSurface {
       // 与 seat-custody.cjs 拒绝猜席位是同一条理由。
       throw new ModelSurfaceError("unknown_authority_id", { field });
     }
+    const scope = this.captureScope(trustedScope, entry.handle);
+    if (entry.handle !== scope.handle || entry.bindingId !== scope.bindingId) {
+      throw new ModelSurfaceError("authority_id_scope_mismatch", { field }, 403);
+    }
+    this.assertScopeCurrent(entry);
     return entry;
   }
 
@@ -149,41 +343,65 @@ class ModelCommandSurface {
   }
 
   // 单条命令。返回 { ok, status, body }，与 request 同形，不抛业务错误以外的东西。
-  async call(command, rawParams = {}) {
+  async call(command, rawParams = {}, trustedScope = undefined, operation = {}) {
     if (!MODEL_COMMANDS.includes(command)) {
       throw new ModelSurfaceError("command_not_model_facing", { command: command ?? null });
     }
     const params = rawParams === null || typeof rawParams !== "object" || Array.isArray(rawParams)
       ? {}
       : { ...rawParams };
-    this.assertNoIdentityParams(command, params);
-
-    if (command === "ai.take_intents") return this.takeIntents(params);
-    if (command === "ai.start") return this.start(params);
-    if (command === "ai.resolve") return this.resolve(params);
+    try {
+      this.assertNoIdentityParams(command, params);
+      if (command === "ai.take_intents") return await this.takeIntents(params, trustedScope, operation);
+      if (command === "ai.start") return await this.start(params, trustedScope, operation);
+      if (command === "ai.resolve") return await this.resolve(params, trustedScope, operation);
+    } catch (error) {
+      this.#observeWakeFailure(command, params, trustedScope, error);
+      throw error;
+    }
     // 公开读取：不带凭据，也不带席位身份。
-    return this.#request(command, params);
+    const scope = trustedScope === undefined ? null : this.captureScope(trustedScope);
+    const result = await this.#request(command, params, operation);
+    if (scope !== null) this.assertScopeCurrent(scope);
+    return result;
   }
 
   // 逐句柄领取，把结果并成一份。
   //
-  // 为什么扇出而不是让模型指定席位：让模型选席位就得给它一个席位标识，那正是要拿掉的
-  // 东西。扇出没有放大权限——这个进程本来就持有这些席位的凭据，模型能看到的仍然只是
-  // 「本机拥有的席位有哪些待办」，与逐个句柄各调一次的结果一样。
-  async takeIntents(params) {
-    const handles = this.#custody.handles();
+  // 远端调用只取可信绑定指定的一席；无 scope 的调用是受控进程内驱动，排除外部绑定席。
+  async takeIntents(params, trustedScope, operation = {}) {
+    const externalScope = trustedScope === undefined ? null : this.captureScope(trustedScope);
+    const handles = externalScope === null
+      ? this.#custody.handles().filter((handle) => this.#scopeIsCurrent({ seat_handle: handle, binding_id: null }))
+      : [externalScope.handle];
     const intents = [];
     const failures = [];
     for (const handle of handles) {
-      const injected = this.#custody.inject("ai.take_intents", { ...params, seat_handle: handle });
-      const result = await this.#request("ai.take_intents", injected);
+      let scope;
+      let result;
+      try {
+        scope = externalScope ?? this.captureScope(undefined, handle);
+        const injected = this.#custody.inject("ai.take_intents", { ...params, seat_handle: handle });
+        if (operation.signal?.aborted) throw new ModelSurfaceError("wake_cancelled", undefined, 409);
+        result = await this.#request("ai.take_intents", injected, operation);
+        this.assertScopeCurrent(scope);
+        if (operation.signal?.aborted) throw new ModelSurfaceError("wake_cancelled", undefined, 409);
+      } catch (error) {
+        // 内部驱动一席换绑，不带走别席；外部请求只有一席，整份拒绝即可。
+        if (externalScope !== null || !(error instanceof ModelSurfaceError)) throw error;
+        failures.push({ code: error.code, status: error.status });
+        continue;
+      }
       if (!result.ok) {
+        // 外部只有本席，失败就是这次调用的结果，不能伪装为「没有待办」。
+        if (externalScope !== null) return result;
         // 一席失败不该让其他席的待办一起丢。收集起来随成功结果一起回报。
         failures.push({ code: result.body?.code ?? "take_intents_failed", status: result.status });
         continue;
       }
       for (const intent of result.body?.result?.intents ?? []) {
-        this.track(intent.intent_id, handle, intent.claim_token ?? null);
+        this.track(intent.intent_id, handle, intent.claim_token ?? null, scope);
+        this.#observeWake(scope, intent.intent_id, "claimed");
         // seat_id 是公开字段（公开投影里就有），但模型不需要它，留着只会诱使模型回传。
         // claim_token 更进一步：它是本宿主的领取凭证，交给模型只会多一条搬运路径。
         // 摘掉两者之后，模型手上除了 intent_id 没有别的可出示。
@@ -206,31 +424,44 @@ class ModelCommandSurface {
     };
   }
 
-  async start(params) {
-    const { handle, claimToken } = this.issuedFor(params.intent_id, "intent_id");
+  async start(params, trustedScope, operation = {}) {
+    const scope = this.issuedFor(params.intent_id, "intent_id", trustedScope);
+    const { handle, claimToken } = scope;
     // 领取令牌由本层补，与席位身份同理。模型没见过它，所以也不可能改坏它。
     const injected = this.#custody.inject("ai.start", {
       ...params,
       seat_handle: handle,
       ...(claimToken === null ? {} : { claim_token: claimToken }),
     });
-    const result = await this.#request("ai.start", injected);
+    const result = await this.#request("ai.start", injected, operation);
+    this.assertScopeCurrent(scope);
     if (result.ok) {
       const turnId = result.body?.result?.started?.turn_id;
-      this.track(turnId, handle, null);
+      this.track(turnId, handle, null, scope);
       // 意图已经变成回合，这个 intent_id 不会再用。
       this.#issued.delete(params.intent_id);
+      this.#observeWake(scope, params.intent_id,
+        result.ok === true && result.body?.ok !== false ? "started" : "unknown", { turnId });
+    } else {
+      this.#observeWake(scope, params.intent_id, "start_failed", { errorCode: result.body?.code });
     }
     return result;
   }
 
-  async resolve(params) {
-    const { handle } = this.issuedFor(params.turn_id, "turn_id");
+  async resolve(params, trustedScope, operation = {}) {
+    const scope = this.issuedFor(params.turn_id, "turn_id", trustedScope);
+    const { handle } = scope;
     const injected = this.#custody.inject("ai.resolve", { ...params, seat_handle: handle });
-    const result = await this.#request("ai.resolve", injected);
+    const result = await this.#request("ai.resolve", injected, operation);
+    this.assertScopeCurrent(scope);
     // 成功与否都摘掉：回合已经交出去了，重放同一个 turn_id 该由权威判定，
     // 不该由本层用一份陈旧映射帮它成立。
     if (result.ok) this.#issued.delete(params.turn_id);
+    const receipt = result.body?.result?.resolved;
+    const resolved = result.ok === true && result.body?.ok !== false && receipt?.turn_id === params.turn_id;
+    this.#observeWake(scope, params.turn_id, resolved ? "resolved" : "resolve_failed", {
+      errorCode: resolved ? null : result.body?.code,
+    });
     return result;
   }
 }
@@ -270,4 +501,5 @@ module.exports = {
   MODEL_FORBIDDEN_PARAMS,
   ModelCommandSurface,
   ModelSurfaceError,
+  MAX_WAKE_RECEIPTS,
 };

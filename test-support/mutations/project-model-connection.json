@@ -1,0 +1,91 @@
+{
+  "name": "项目级 MCP 固定入口与逐席连接热切换",
+  "test": "test/project-model-connection.test.cjs",
+  "mutations": [
+    {
+      "id": "stable-directory-renamed",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "const PROJECT_PRIVATE_DIRECTORY = \".tokengame-private\";",
+      "replace": "const PROJECT_PRIVATE_DIRECTORY = \".tokengame-private-mutant\";",
+      "note": "稳定槽位不能随实现漂移，否则已加载 MCP 与激活 CLI 会失联。"
+    },
+    {
+      "id": "stable-file-renamed",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "const PROJECT_CONNECTION_FILENAME = \"active-model-connection.json\";",
+      "replace": "const PROJECT_CONNECTION_FILENAME = \"seat-specific-connection.json\";",
+      "note": "服务器定义必须指向跨牌局不变的文件名。"
+    },
+    {
+      "id": "launcher-keeps-inherited-seat-path",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "  environment.TOKENGAME_MODEL_CONNECTION_FILE = path.join(",
+      "replace": "  environment.TOKENGAME_MODEL_CONNECTION_FILE ||= path.join(",
+      "note": "launcher 必须覆盖继承环境，不能把上一项目或上一席带进当前项目。"
+    },
+    {
+      "id": "active-file-can-import-itself",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "  if (samePath(sourceValue, target)) throw projectError(\"model_connection_source_is_active\");",
+      "replace": "  if (false) throw projectError(\"model_connection_source_is_active\");",
+      "note": "活动文件不能同时充当下载源，避免失败覆盖和身份含糊。"
+    },
+    {
+      "id": "activation-ignores-publish-failure",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "    const rename = options.rename ?? fs.renameSync;\n    if (typeof rename !== \"function\") throw projectError(\"model_connection_activate_failed\");\n    rename(temporary, target);",
+      "replace": "    const rename = fs.renameSync;\n    if (typeof rename !== \"function\") throw projectError(\"model_connection_activate_failed\");\n    rename(temporary, target);",
+      "note": "发布失败必须保留旧完整连接，测试注入不能被绕过。"
+    },
+    {
+      "id": "activation-deletes-download-source",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "  return { status: \"activated\", replaced, source_retained: true };",
+      "replace": "  fs.unlinkSync(sourceValue);\n  return { status: \"activated\", replaced, source_retained: false };",
+      "note": "未经真人选择不得删除浏览器下载源，CLI 只管理固定活动槽位。"
+    },
+    {
+      "id": "clear-deletes-private-directory",
+      "file": "src/host/project-model-connection.cjs",
+      "find": "  try { fs.unlinkSync(target); } catch { throw projectError(\"model_connection_clear_failed\"); }",
+      "replace": "  try { fs.rmSync(directory, { recursive: true, force: true }); } catch { throw projectError(\"model_connection_clear_failed\"); }",
+      "note": "clear 只能删固定槽位，不能扫掉同目录其他文件。"
+    },
+    {
+      "id": "outside-project-accepted",
+      "file": "plugins/tokengame/codex/project-config.cjs",
+      "find": "  if (!projectStat.isDirectory() || projectStat.isSymbolicLink() || !insideProject(project, repository)) {",
+      "replace": "  if (!projectStat.isDirectory() || projectStat.isSymbolicLink()) {",
+      "note": "显式项目根必须包含仓库，不能借安装命令改无关项目。"
+    },
+    {
+      "id": "unmanaged-server-conflict-overwritten",
+      "file": "plugins/tokengame/codex/project-config.cjs",
+      "find": "  if (begin === -1 && /^\\[mcp_servers\\.tokengame_project\\]\\s*$/m.test(previous)) {",
+      "replace": "  if (false) {",
+      "note": "同名非受管服务器不得被静默并存或覆盖。"
+    },
+    {
+      "id": "project-mcp-exposes-probe-tool",
+      "file": "plugins/tokengame/codex/project-config.cjs",
+      "find": "    + \"enabled_tools = [\\\"tokengame_table\\\"]\\n\"",
+      "replace": "    + \"enabled_tools = [\\\"tokengame_table\\\", \\\"tokengame_host_probe\\\"]\\n\"",
+      "note": "产品项目服务器只暴露牌桌工具，旧探针不能扩大默认能力面。"
+    },
+    {
+      "id": "first-config-hides-restart",
+      "file": "plugins/tokengame/codex/project-config.cjs",
+      "find": "  return { status: \"configured\", changed: true, restart_required: true };",
+      "replace": "  return { status: \"configured\", changed: true, restart_required: false };",
+      "note": "首次新增项目服务器后必须如实提示宿主重载。"
+    },
+    {
+      "id": "config-ignores-publish-failure",
+      "file": "plugins/tokengame/codex/project-config.cjs",
+      "find": "    const rename = options.rename ?? fs.renameSync;\n    if (typeof rename !== \"function\") throw projectError(\"tokengame_codex_config_write_failed\");\n    rename(temporary, target);",
+      "replace": "    const rename = fs.renameSync;\n    if (typeof rename !== \"function\") throw projectError(\"tokengame_codex_config_write_failed\");\n    rename(temporary, target);",
+      "note": "配置发布失败不能被当作成功，也不能破坏原 TOML。"
+    }
+  ],
+  "excluded": []
+}

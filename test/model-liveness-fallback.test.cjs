@@ -31,7 +31,6 @@ const { requestEnvelope } = require("../src/contract/adapter-contract.cjs");
 const { stackedDeck } = require("../src/game/holdem.cjs");
 
 const RULES = "table-rules-v1";
-const TOKEN = "liveness-test-model-token-00001";
 
 function deck() {
   return stackedDeck([
@@ -52,7 +51,7 @@ async function withHost(t, { dueWork = false, ...options } = {}) {
     driver.start();
     t.after(() => driver.stop());
   }
-  const host = new TableWebHost({ core, modelCommandToken: TOKEN, ...options });
+  const host = new TableWebHost({ core, modelBindingEnabled: true, ...options });
   const origin = await host.start({ port: 0 });
   t.after(() => host.stop());
   const post = async (route, body, headers = {}) => {
@@ -63,22 +62,31 @@ async function withHost(t, { dueWork = false, ...options } = {}) {
     });
     return { status: response.status, body: await response.json() };
   };
+  let modelToken = "unbound-test-token";
   return {
     host,
     post,
+    bind: async (sessionToken) => {
+      const result = await post("/api/model/bind", {
+        session_token: sessionToken, acknowledged: true, binding_request_id: "liveness-binding-request-0001",
+      });
+      assert.equal(result.body.ok, true, result.body.code);
+      modelToken = result.body.connection.model_token;
+    },
     model: (command, params = {}) => post(
       "/api/model/command",
       requestEnvelope(command, params),
-      { [MODEL_COMMAND_TOKEN_HEADER]: TOKEN },
+      { [MODEL_COMMAND_TOKEN_HEADER]: modelToken },
     ),
     act: (token, command, params = {}) => post("/api/action", { session_token: token, command, params }),
   };
 }
 
 test("一席都没绑时，模型读得出「等真人入座」而不是「暂时没事」", async (t) => {
-  const { model } = await withHost(t);
+  const { host } = await withHost(t);
 
-  const empty = await model("ai.take_intents");
+  // B8 外部调用必须先由真人绑定；这个内部空托管状态仍供 driver 返回可见的入座指引。
+  const empty = await host.modelCommand("ai.take_intents", {});
   assert.equal(empty.status, 200, JSON.stringify(empty.body));
   assert.equal(empty.body.result.seats_polled, 0);
   assert.equal(empty.body.result.intents.length, 0);
@@ -92,15 +100,16 @@ test("一席都没绑时，模型读得出「等真人入座」而不是「暂�
 });
 
 test("席位在但此刻没待办时，模型读得出「继续轮询」", async (t) => {
-  const { model, post, act } = await withHost(t);
+  const { model, post, act, bind } = await withHost(t);
   const created = (await post("/api/room/create", { player_id: "p1", table_rules_version: RULES })).body;
   const joined = (await post("/api/room/join", { player_id: "p2", invite_code: created.invite_code })).body;
   for (const token of [created.session_token, joined.session_token]) {
     await act(token, "room.confirm_public_scope", { acknowledged: true });
   }
+  await bind(created.session_token);
 
   const idle = await model("ai.take_intents");
-  assert.equal(idle.body.result.seats_polled, 2);
+  assert.equal(idle.body.result.seats_polled, 1, "外部宿主只轮询自己绑定的一个席位");
   assert.equal(idle.body.result.intents.length, 0);
   // 与上一条的差别就是这一个值。两处都写 "human_entry" 或都写 "table" 都能让单独一条通过，
   // 所以两条必须都在，而且必须不同。
@@ -110,13 +119,14 @@ test("席位在但此刻没待办时，模型读得出「继续轮询」", async
 });
 
 test("有待办时不报等待，也不报下一步", async (t) => {
-  const { model, post, act } = await withHost(t, { dueWork: true });
+  const { model, post, act, bind } = await withHost(t, { dueWork: true });
   const created = (await post("/api/room/create", { player_id: "p1", table_rules_version: RULES })).body;
   const joined = (await post("/api/room/join", { player_id: "p2", invite_code: created.invite_code })).body;
   for (const token of [created.session_token, joined.session_token]) {
     await act(token, "room.confirm_public_scope", { acknowledged: true });
     await act(token, "seat.ready", { ready: true });
   }
+  await bind(created.session_token);
 
   // 等到真有一条待办。开局由核心自己的时钟推进，所以这里轮询而不是假定它已经开了。
   let taken = null;

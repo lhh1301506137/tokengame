@@ -23,8 +23,10 @@
 // 系统分配的临时端口撞上。
 const DEFAULT_TABLE_PORT = 7802;
 const DEFAULT_TABLE_ORIGIN = `http://127.0.0.1:${DEFAULT_TABLE_PORT}`;
+const MODEL_CONNECTION_SCHEMA = "tokengame.model-connection.v1";
 
 module.exports = {
   DEFAULT_TABLE_ORIGIN,
+  MODEL_CONNECTION_SCHEMA,
   DEFAULT_TABLE_PORT,
 };

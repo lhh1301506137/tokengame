@@ -1,41 +1,28 @@
 "use strict";
 
-// 朋友私人房内测的启动入口。一条命令。
-//
-// 它与 `npm run web` 的差别只有一件事，而那件事是 B6 之后新出现的：模型命令口需要一个
-// 进程级令牌，`npm run web` 从来不生成它。于是那条路默认关着，而它关着的方式是安静的
-// ——牌桌照常能玩，只是没有任何一席的宿主 AI 能说话，而 /api/health 里那行 disabled
-// 不会有人主动去看。这个入口存在的全部理由就是把那一步做掉，并把人需要的两个值
-// 交到人手上。
-//
-// 三条自我约束，与 run-table-core.cjs / run-table-web.cjs 一致，外加一条：
-//   1. 不新增产品语义。它只生成令牌、起协调器、打印事实。
-//   2. 不发明鉴权。对外监听由协调器自己拒绝，这里不提供任何绕过它的参数。
-//   3. 不冒充模型能力。没挂适配器就报 null，也不声称主动唤醒。
-//   4. 秘密不进终端。人要拿令牌去填宿主配置，所以它落在文件里，终端只说路径。
-//      `npm run beta > log.txt` 与一次截屏因此都不含秘密。
-//
-// 刻意**不做**的事：不写任何宿主的配置文件。令牌怎么进 Codex / Claude Desktop 的注册项
-// 是人的决定，替人改全局配置越界了。所以这里打印一段可粘贴的文本，仅此而已。
+// 本地私人房原型入口。开启真人逐席 AI 绑定，不生成“任何模型都能控制整桌”的共用令牌。
+// 仍仅监听回环，不安装插件、不修改宿主配置、不声称真实宿主或主动唤醒已验证。
 
-const fs = require("node:fs");
 const path = require("node:path");
-const crypto = require("node:crypto");
 
 const { CommandSurface } = require("./authority/command-surface.cjs");
 const { createDueWorkDriver } = require("./authority/due-work.cjs");
 const { DEFAULT_AUTHORITY_TOKEN } = require("./authority/command-server.cjs");
 const { HttpCoreClient, InProcessCoreClient } = require("./host/core-client.cjs");
 const { TableWebHost } = require("./host/table-web-host.cjs");
-const { DEFAULT_TABLE_ORIGIN, DEFAULT_TABLE_PORT } = require("./shared/endpoints.cjs");
+const { createAiLifecycleReceipts } = require("./host/ai-lifecycle-receipts.cjs");
+const { loadCodexWakeQueue } = require("./host/codex-queue-sender.cjs");
+const { DEFAULT_TABLE_PORT } = require("./shared/endpoints.cjs");
 
-const TOKEN_FILE = "model-token.txt";
+// 只有 fork/spawn 时继承的 Node IPC 可送达；不增加 HTTP 或模型可用的关停能力。
+const BETA_SHUTDOWN_MESSAGE = Object.freeze({ schema: "tokengame.beta-control.v1", command: "shutdown" });
+const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 // 端口默认取约定端口，不取 0。
 //
-// 这一条与 `npm run web` 不同，理由是内测的形态不同：随机端口每次重启都变，而人刚把
-// TOKENGAME_TABLE_ORIGIN 填进宿主配置里。约定端口让那份配置只填一次，也让没填的人
-// 直接就对——MCP 插件的默认值是同一个常量。
+// 这一条与 `npm run web` 不同，理由是内测的形态不同：连接文件带着本次 origin，随机端口
+// 每次重启都变会迫使所有席位重新下载，即使牌桌只是同进程恢复。约定端口也让手工兼容入口
+// 的默认值保持可用；项目 MCP 自身不再因换席而改配置。
 //
 // 端口被占用时直接失败而不是回落到随机口：回落之后人的宿主配置指向的是上一次那个端口，
 // 表现是「模型说连不上牌桌，而牌桌明明开着」。宁可停下来说清楚。
@@ -48,71 +35,41 @@ function readPort(raw, name, fallback = 0) {
   return port;
 }
 
-// 令牌只有两个来源：环境里已经有一个（人自己管着），或者本次现生成一个。
-//
-// 没有第三种。写一个「本地够用了」的默认值等于本机任何进程都能替这个协调器上所有席位
-// 发言——而那正是这道门要挡的东西，一个默认值会让它对每一台装了这个仓库的机器同时失效。
-function resolveModelToken(fromEnv) {
-  if (typeof fromEnv === "string" && fromEnv !== "") {
-    return { token: fromEnv, generated: false };
-  }
-  // 32 字节 = 64 个十六进制字符。randomBytes 是 CSPRNG；Math.random 在这里是错的答案，
-  // 它的种子可预测，而这一串是「替所有席位发言」的凭证。
-  return { token: crypto.randomBytes(32).toString("hex"), generated: true };
-}
-
-// 令牌落盘。终端只得到路径。
-//
-// 为什么是文件而不是打印出来：人的下一步是把它粘到宿主配置里，那时人本来就在编辑器里。
-// 而打印出来意味着它进了终端回滚缓冲、进了任何一次 `> log.txt`、进了任何一张截屏。
-// 两者对「人能不能拿到」没有差别，对「它会不会不小心被带到别处」差别很大。
-//
-// 权限位只在 POSIX 上有意义。Windows 上 mode 基本被忽略，所以不假装它是一道门——
-// 那台机器上的保护是「这个目录在 .gitignore 里，而且只有本机用户能读家目录」。
-function writeTokenFile(stateDir, token) {
-  fs.mkdirSync(stateDir, { recursive: true });
-  const file = path.join(stateDir, TOKEN_FILE);
-  fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
-  try {
-    fs.chmodSync(file, 0o600);
-  } catch {
-    // Windows 上会失败或无效。不当成错误：这一行是 POSIX 上的加固，不是功能。
-  }
-  return file;
-}
-
-function joinInstructions({ origin, tokenFile, adapter }) {
+function joinInstructions({ origin, adapter, banner }) {
   return [
     "",
-    "———— 朋友私人房内测已启动 ————",
+    "———— 本地私人房原型已启动 ————",
     "",
     `牌桌地址：${origin}`,
+    "仅供本机隔离浏览器/宿主测试；此回环地址不能直接发给异地朋友。远程联机尚未开放。",
     "",
     "第一个人（建房）：",
     `  1. 浏览器打开 ${origin}`,
-    "  2. 点「建房」，把页面上显示的邀请码发给朋友",
-    "  3. 勾选公开范围确认，然后按 Ready",
+    "  2. 点「创建牌桌」，先确认公开范围，再取得邀请码",
+    "  3. 按「我准备好了」",
     "",
     "后面的人（加入，2 到 4 人）：",
     `  1. 浏览器打开 ${origin}`,
-    "  2. 点「加入」，填入邀请码",
-    "  3. 勾选公开范围确认，然后按 Ready",
+    "  2. 在独立浏览器上下文中点「加入牌桌」，填入邀请码并确认公开范围",
+    "  3. 按「我准备好了」",
     "",
     "让自己的宿主 AI 在座位旁说话：",
-    `  1. 模型令牌在 ${tokenFile}`,
-    "  2. 把它填进宿主里 TokenGame MCP 的环境变量：",
-    "       TOKENGAME_MODEL_TOKEN=<上面那个文件里的值>",
-    origin === DEFAULT_TABLE_ORIGIN
-      ? "     牌桌地址不用填：这是约定端口，插件默认就连它。"
-      : `       TOKENGAME_TABLE_ORIGIN=${origin}`,
+    "  0. 首次按插件 README 的当前宿主接入章节配置项目；新增服务器后可能需要重启一次宿主。",
+    "  1. 在自己的牌桌上确认权限，点「下载本席 AI 连接文件」",
+    "  2. 由真人运行 npm run connection:activate -- <下载文件的绝对路径>",
+    "     文件已经带有本次牌桌地址，不要复制给其他玩家，也不要把内容粘贴到对话。",
+    "     原下载文件不会自动删除；确认激活后请自行安全删除。换发无需重启 MCP。",
     "  3. 在宿主里让模型调 tokengame_table 的 ai.take_intents",
+    "  4. 可在牌桌上随时撤销；随后运行 npm run connection:clear 清本地活动槽位。",
     "",
-    "关于唤醒：没有任何宿主验证过无点击主动唤醒，所以本机不提供它。",
-    "模型靠**轮询** ai.take_intents 拿待办；还没有人入座时它会明确回一句",
-    "「等真人入座」，而不是静默地空转。需要有人按一下才动的地方就是需要按一下。",
+    "关于唤醒：固定版本的单席一次通知已验证，持续主动产品尚未验证。",
+    banner?.managed_wake === "available"
+      ? "有界通知发送器已配置，但尚未启动；必须由本人另行开启最多4次/10分钟的窗口。开启前先让固定目标游戏任务结束当前回复并保持空闲；任务正在运行时，通知可能已接收却不能并发结清。"
+      : "有界自动通知默认关闭；当前可由宿主轮询领取 ai.take_intents。",
+    "宿主停止运行时可能需要用户发消息或点击继续；这不是持续自主 AI 已验证的证明。",
     "",
     adapter === null
-      ? "本进程没有挂推理运行时，所以协调器自己不会替任何席位说话——发言全部来自各人宿主里的模型。"
+      ? "未挂推理运行时；模型通道有请求也不等于真实模型能力已验证。"
       : `本进程挂了推理运行时 ${adapter.label}${adapter.simulated ? "（模拟，不是真实宿主能力）" : ""}。`,
     "",
     "Ctrl+C 停止。",
@@ -134,92 +91,255 @@ function loadAdapter(spec) {
   return adapter;
 }
 
-async function main() {
-  const webPort = readPort(process.env.TOKENGAME_WEB_PORT, "TOKENGAME_WEB_PORT", DEFAULT_TABLE_PORT);
-  const webHost = process.env.TOKENGAME_WEB_HOST || "127.0.0.1";
-  const commandOrigin = process.env.TOKENGAME_COMMAND_ORIGIN || "";
-  const stateDir = process.env.TOKENGAME_BETA_STATE_DIR
-    || path.join(__dirname, "..", "artifacts", "beta");
-  const adapter = loadAdapter(process.env.TOKENGAME_MODEL_ADAPTER);
-  const { token, generated } = resolveModelToken(process.env.TOKENGAME_MODEL_TOKEN);
-
-  let core;
-  let ownedDueWork = null;
-  if (commandOrigin !== "") {
-    core = new HttpCoreClient({
-      origin: commandOrigin,
-      token: process.env.TOKENGAME_AUTHORITY_TOKEN || DEFAULT_AUTHORITY_TOKEN,
+// 可调用入口与 CLI 共用资源归属/清理路径。surface 只供进程内确定性测试注入；没有调试 HTTP 命令。
+async function startBeta({ env = process.env, surface: suppliedSurface } = {}) {
+  const webPort = readPort(env.TOKENGAME_WEB_PORT, "TOKENGAME_WEB_PORT", DEFAULT_TABLE_PORT);
+  const webHost = env.TOKENGAME_WEB_HOST || "127.0.0.1";
+  const commandOrigin = env.TOKENGAME_COMMAND_ORIGIN || "";
+  const receiptFile = env.TOKENGAME_AI_RECEIPT_FILE;
+  // 远程命令客户端看不到 SeatAiStore.onEvent；不能写一个看似完整的空捕获文件。
+  if (commandOrigin !== "" && receiptFile !== undefined && receiptFile !== "") {
+    throw Object.assign(new Error("ai_receipt_remote_core_unsupported"), {
+      code: "ai_receipt_remote_core_unsupported",
     });
-  } else {
-    const surface = new CommandSurface({});
-    core = new InProcessCoreClient({ surface });
-    // 自带内核时到期驱动必须由本进程跑：Ready 倒计时、行动截止、120 秒保留窗都不能
-    // 依赖有没有客户端在轮询。连远端内核时那边自己在跑，这里不能再跑一份。
-    ownedDueWork = createDueWorkDriver({
-      orchestrator: surface.orchestrator,
-      onError: (error) => {
-        process.stderr.write(`[due-work] tick 失败: ${error.code || error.message}\n`);
-      },
-    });
-    ownedDueWork.start();
   }
+  const adapter = loadAdapter(env.TOKENGAME_MODEL_ADAPTER);
+  const wakeQueue = loadCodexWakeQueue(env);
+  let core;
+  let surface = null;
+  let ownedDueWork = null;
+  let host = null;
+  let receipts = null;
+  let closePromise = null;
+  const close = (options = {}) => {
+    if (closePromise !== null) return closePromise;
+    closePromise = (async () => {
+      if (ownedDueWork !== null) ownedDueWork.stop();
+      let hostError = null;
+      try { if (host !== null) await host.stop(); } catch (error) { hostError = error; }
+      // HTTP 排空期间可能收到父通道断开；在捕获结束前取本次最新原因。
+      // 已进入 receipts.close 的事实不再改写，后续故障由进程退出单独报告。
+      const reason = options.reason ?? "normal_close";
+      const receiptStatus = receipts === null ? null : await receipts.close({
+        reason: hostError === null ? reason : "shutdown_failed",
+      });
+      if (hostError !== null) throw hostError;
+      return receiptStatus;
+    })();
+    return closePromise;
+  };
 
-  const host = new TableWebHost({ core, modelAdapter: adapter, modelCommandToken: token });
-  // 对外监听在这一步被协调器拒绝（U-TG-LOCAL-BRIDGE-AUTH 未关闭）。刻意不先自己查一遍：
-  // 两处各写一遍判断会让「谁说了算」变得不确定，而这道门的权威在协调器里。
-  const origin = await host.start({ host: webHost, port: webPort });
-  const tokenFile = writeTokenFile(stateDir, token);
-
-  // 启动行给脚本读。绝不含令牌原文——只报它是新生成的还是沿用环境里的、以及它在哪。
-  process.stdout.write(`${JSON.stringify({
+  let origin;
+  try {
+    if (commandOrigin !== "") {
+      core = new HttpCoreClient({
+        origin: commandOrigin,
+        token: env.TOKENGAME_AUTHORITY_TOKEN || DEFAULT_AUTHORITY_TOKEN,
+      });
+    } else {
+      surface = suppliedSurface ?? new CommandSurface({});
+      core = new InProcessCoreClient({ surface });
+      receipts = await createAiLifecycleReceipts({
+        store: surface.orchestrator.ai, filePath: receiptFile,
+        onWarning: (code) => { process.stderr.write(`[ai-receipts] ${code}\n`); },
+      });
+      // 自带内核时到期驱动必须由本进程跑；远程内核由那边推进，不能再跑一份。
+      ownedDueWork = createDueWorkDriver({
+        orchestrator: surface.orchestrator,
+        onError: (error) => {
+          process.stderr.write(`[due-work] tick 失败: ${error.code || error.message}\n`);
+        },
+      });
+      ownedDueWork.start();
+    }
+    host = new TableWebHost({ core, modelAdapter: adapter, modelBindingEnabled: true, wakeQueue });
+    // 对外监听仍由协调器拒绝；接入回执不复制或绕过这一条门禁。
+    origin = await host.start({ host: webHost, port: webPort });
+  } catch (error) {
+    await close({ reason: "startup_failed" });
+    throw error;
+  }
+  const banner = {
     service: "tokengame-beta",
     origin,
     core_transport: core.transport,
     core_origin: commandOrigin === "" ? "in_process" : commandOrigin,
     due_work_owned_here: ownedDueWork !== null,
     model_command_route: "enabled",
-    model_token_generated: generated,
-    model_token_file: path.relative(stateDir, tokenFile) === TOKEN_FILE
-      ? TOKEN_FILE
-      : tokenFile,
-    model_token_dir: stateDir,
+    model_auth: "per_seat_binding",
     // 如实报告。没挂就是没挂。
     model_adapter: adapter === null ? null : {
       label: adapter.label ?? "unnamed-adapter",
       simulated: adapter.simulated !== false,
     },
-    // 主动唤醒在任何宿主上都未经实机验证，所以这里写死 false 而不是省略——省略会让
-    // 读的人以为「没提就是有」。
+    // B14仅验证固定版本的一次通知，不能据此开启持续产品能力声明。
     proactive_wake_verified: false,
+    managed_wake: wakeQueue === null ? "disabled" : "available",
     wake_fallback: "polling",
-  })}\n`);
-  // 人话那一段。路径写全，人要照着去找那个文件。
-  process.stdout.write(joinInstructions({ origin, tokenFile, adapter }));
+  };
+  return { origin, banner, adapter, host, surface, receipts, close };
+}
 
+function drainOutput(stream) {
+  return new Promise((resolve, reject) => {
+    let returned = false;
+    let accepted = false;
+    let callbackDone = false;
+    let drained = false;
+    const cleanup = () => {
+      stream.off("error", fail);
+      stream.off("close", fail);
+      stream.off("drain", onDrain);
+    };
+    const check = () => {
+      if (returned && callbackDone && (accepted || drained)) { cleanup(); resolve(); }
+    };
+    const fail = () => { cleanup(); reject(new Error("output_flush_failed")); };
+    const onDrain = () => { drained = true; check(); };
+    stream.once("error", fail);
+    stream.once("close", fail);
+    stream.once("drain", onDrain);
+    try {
+      // 空写是同一 Writable 队列的屏障，须同时等 callback 和必要的 drain。
+      accepted = stream.write("", (error) => {
+        if (error) { fail(); return; }
+        callbackDone = true;
+        check();
+      });
+      returned = true;
+      check();
+    } catch { fail(); }
+  });
+}
+
+function disconnectParent() {
+  if (!process.connected) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      process.off("disconnect", done);
+      process.off("error", fail);
+    };
+    const done = () => { cleanup(); resolve(); };
+    const fail = () => { cleanup(); reject(new Error("ipc_disconnect_failed")); };
+    process.once("disconnect", done);
+    process.once("error", fail);
+    try { process.disconnect(); } catch { fail(); }
+  });
+}
+
+async function main({ env = process.env } = {}) {
+  let starting;
   let closing = false;
-  const shutdown = async (signal) => {
+  let outputFailed = false;
+  let parentDisconnected = false;
+  let parentDisconnectExpected = false;
+  const closeOptions = { reason: "normal_close" };
+  const diagnostic = (text) => {
+    try { process.stderr.write(text); } catch { outputFailed = true; }
+  };
+  const shutdown = async (signal, reason = "normal_close") => {
     if (closing) return;
     closing = true;
-    process.stderr.write(`\n[${signal}] 正在关停…\n`);
-    try {
-      if (ownedDueWork !== null) ownedDueWork.stop();
-      await host.stop();
-      process.stderr.write("[shutdown] 端口已释放，定时器已停。\n");
-      process.exit(0);
-    } catch (error) {
-      process.stderr.write(`[shutdown] 关停失败: ${error.message}\n`);
+    closeOptions.reason = reason;
+    process.exitCode = 1;
+    let phase = "startup";
+    // 保持引用：一个永不返回的 Promise 本身不会阻止 Node 提前退出。
+    // 只有这条失败兜底强制退出；正常路径排空输出、断 IPC 后自然退出。
+    const timer = setTimeout(() => {
+      diagnostic(`[shutdown] ${phase}_timeout\n`);
       process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    try {
+      const run = await starting;
+      phase = "close";
+      diagnostic(`\n[${signal}] 正在关停…\n`);
+      const receiptStatus = await run.close(closeOptions);
+      diagnostic("[shutdown] 端口已释放，定时器已停。\n");
+      if (receiptStatus !== null) {
+        // 仅启用回执时增加这条白名单收尾记录。离线文件不可能证明自己的写入 ACK/close 成功。
+        diagnostic(`${JSON.stringify({ schema: "tokengame.ai-lifecycle-close.v1", ...receiptStatus })}\n`);
+        if (!receiptStatus.run_complete) {
+          diagnostic(`[ai-receipts] incomplete: ${receiptStatus.stop_reason}\n`);
+        }
+      }
+      if (reason === "normal_close" && !parentDisconnected
+          && (receiptStatus === null || receiptStatus.run_complete)) process.exitCode = 0;
+    } catch (error) {
+      if (phase === "startup") diagnostic(`[fatal] ${error.code || "startup_failed"}\n`);
+      else diagnostic("[shutdown] shutdown_failed\n");
     }
+    phase = "output_flush";
+    const writes = await Promise.allSettled([drainOutput(process.stdout), drainOutput(process.stderr)]);
+    if (writes.some((item) => item.status === "rejected")) {
+      outputFailed = true;
+      diagnostic("[shutdown] output_flush_failed\n");
+      await drainOutput(process.stderr).catch(() => {});
+    }
+    if (outputFailed || parentDisconnected) process.exitCode = 1;
+    phase = "ipc_disconnect";
+    if (inheritedIpc && !process.connected) onParentDisconnect();
+    parentDisconnectExpected = true;
+    try { await disconnectParent(); } catch { process.exitCode = 1; }
+    clearTimeout(timer);
   };
+  const onParentDisconnect = () => {
+    if (parentDisconnectExpected || parentDisconnected) return;
+    parentDisconnected = true;
+    closeOptions.reason = "abnormal_close";
+    process.exitCode = 1;
+    diagnostic("[shutdown] parent_ipc_disconnected\n");
+    void shutdown("IPC_DISCONNECT", "abnormal_close");
+  };
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", () => {
+      outputFailed = true;
+      // 错误可能晚于最后一次排空检查、早于 IPC 断开完成，不能只改局部标记。
+      process.exitCode = 1;
+      void shutdown("OUTPUT_ERROR", "shutdown_failed");
+    });
+  }
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => { void shutdown(signal); });
   }
+  const inheritedIpc = typeof process.send === "function";
+  if (inheritedIpc) {
+    process.on("message", (message) => {
+      if (message !== null && typeof message === "object" && !Array.isArray(message)
+          && Object.keys(message).length === 2
+          && Object.hasOwn(message, "schema") && Object.hasOwn(message, "command")
+          && message.schema === BETA_SHUTDOWN_MESSAGE.schema && message.command === BETA_SHUTDOWN_MESSAGE.command) {
+        void shutdown("IPC");
+      }
+    });
+    process.on("disconnect", onParentDisconnect);
+  }
+  // 先注册控制入口，避免父进程在异步启动期间断开后留下孤儿服务。
+  starting = startBeta({ env });
+  if (inheritedIpc && !process.connected) onParentDisconnect();
+  try {
+    const run = await starting;
+    if (!closing) {
+      // 启动行给脚本读，不含文件路径或任何权限；逐席令牌仍只由本人认证后下载。
+      process.stdout.write(`${JSON.stringify(run.banner)}\n`);
+      process.stdout.write(joinInstructions(run));
+    }
+  } catch {
+    await shutdown("STARTUP_FAILURE", "startup_failed");
+    return false;
+  }
+  return true;
 }
 
-main().catch((error) => {
-  process.stderr.write(`[fatal] ${error.code || "startup_failed"}: ${error.message}\n`);
-  if (error.details !== undefined) {
-    process.stderr.write(`[fatal] details=${JSON.stringify(error.details)}\n`);
-  }
-  process.exit(1);
-});
+if (require.main === module) {
+  main().then((started) => {
+    if (started === false) process.exitCode = 1;
+  }, (error) => {
+    process.stderr.write(`[fatal] ${error.code || "startup_failed"}: ${error.message}\n`);
+    if (error.details !== undefined) {
+      process.stderr.write(`[fatal] details=${JSON.stringify(error.details)}\n`);
+    }
+    process.exit(1);
+  });
+}
+
+module.exports = { startBeta, main, BETA_SHUTDOWN_MESSAGE };

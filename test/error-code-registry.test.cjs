@@ -26,7 +26,7 @@ const contract = require("../src/contract/adapter-contract.cjs");
 
 const ROOT = path.join(__dirname, "..");
 
-// 扫描范围：核心 + 宿主 + 插件。插件也要扫——它是模型和用户真正看到的那一层，
+// 扫描范围：核心 + 宿主 + 插件 + 可执行的 B11 离线入口。插件也要扫——它是模型和用户真正看到的那一层，
 // 而它此前完全不在覆盖检查的视野里。
 function* walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -43,9 +43,10 @@ function* walk(dir) {
 const SOURCES = [
   ...walk(path.join(ROOT, "src")),
   ...walk(path.join(ROOT, "plugins")),
+  path.join(ROOT, "test-support/summarize-ai-receipts.cjs"),
 ];
 
-// 四种出码形状。前一种是原有覆盖检查看得见的，后三种是它的盲区。
+// 已知出码形状。新增工厂也必须进入扫描，不能因为不叫 CoreError 就躲过集中分类。
 const SHAPES = Object.freeze([
   {
     name: "构造器",
@@ -59,6 +60,29 @@ const SHAPES = Object.freeze([
     name: "错误码常量表",
     pattern: /^\s*(?:CODE_[A-Z_]+|[A-Z_]+_CODE)\s*=\s*"([a-z_]+)"/gm,
   },
+  {
+    name: "受限连接错误工厂",
+    pattern: /\bconnectionError\(\s*"([a-z_]+)"/g,
+  },
+  {
+    name: "本地回执错误工厂",
+    // 当前工厂入参是固定字面量或固定字面量的三元式；同时收两条分支，不能只扫第一个码。
+    pattern: /\breceiptError\(([^()]*)\)/g,
+    codes: (match) => [...new Set([...match[1].matchAll(/"(ai_receipt_[a-z_]+)"/g)].map((item) => item[1]))],
+  },
+  {
+    name: "队列传输错误工厂",
+    files: ["src/host/codex-queue-transport.cjs", "src/host/codex-queue-sender.cjs"],
+    pattern: /\b(?:ProbeFailure|fail|cancel)\(\s*"([a-z_]+)"/g,
+  },
+  {
+    name: "有界通知动态拒绝与超时",
+    files: ["src/host/model-command-surface.cjs", "src/host/model-wake-session.cjs"],
+    // reserveWakeIntent的稳定拒绝被管理器提升为CoreError；#bounded的最后一个参数
+    // 是超时code。只收这两种真实出码形状，不扫字段名或用整个字符串表自证。
+    pattern: /(?:reason:\s*"(wake_[a-z_]+)"|,\s*"(wake_[a-z_]+)"\s*\);)/g,
+    codes: (match) => [match[1] ?? match[2]],
+  },
 ]);
 
 function collect() {
@@ -67,11 +91,14 @@ function collect() {
     const source = fs.readFileSync(file, "utf8");
     const rel = path.relative(ROOT, file).replace(/\\/g, "/");
     for (const shape of SHAPES) {
+      if (shape.files !== undefined && !shape.files.includes(rel)) continue;
       // 每次都新建正则实例：带 g 的正则有 lastIndex 状态，共用一个会跳过匹配。
       const re = new RegExp(shape.pattern.source, shape.pattern.flags);
       for (const match of source.matchAll(re)) {
-        if (!found.has(match[1])) found.set(match[1], []);
-        found.get(match[1]).push({ file: rel, shape: shape.name });
+        for (const code of shape.codes?.(match) ?? [match[1]]) {
+          if (!found.has(code)) found.set(code, []);
+          found.get(code).push({ file: rel, shape: shape.name });
+        }
       }
     }
   }
@@ -82,10 +109,10 @@ test("扫描本身没瞎", () => {
   const found = collect();
   // 数量下界。正则失效时它会静默扫到零个，而零个会让下面每一条都通过。
   assert.ok(found.size >= 80, `只扫到 ${found.size} 个错误码，正则大概失效了`);
-  // 三种形状各要真的命中过。少了任何一种，那一类的盲区就回来了而没人知道。
+  // 已在源码使用的形状各要真的命中过。少了任何一种，那一类的盲区就回来了而没人知道。
   const shapesSeen = new Set();
   for (const sites of found.values()) for (const site of sites) shapesSeen.add(site.shape);
-  for (const shape of ["构造器", "响应体字面量"]) {
+  for (const shape of ["构造器", "响应体字面量", "受限连接错误工厂", "本地回执错误工厂"]) {
     assert.ok(shapesSeen.has(shape), `没有扫到任何「${shape}」形状的错误码`);
   }
   // 插件目录必须在视野里。它是模型和用户真正看到的那一层。
@@ -95,6 +122,45 @@ test("扫描本身没瞎", () => {
     "扫描范围里没有插件文件——那一层的错误码此前完全不在覆盖检查视野内");
   assert.ok([...files].some((f) => f.startsWith("src/authority/")), "没扫到核心");
   assert.ok([...files].some((f) => f.startsWith("src/host/")), "没扫到宿主层");
+  for (const code of ["model_connection_invalid", "model_connection_unavailable", "model_connection_origin_conflict"]) {
+    assert.ok(found.get(code)?.some((site) => site.shape === "受限连接错误工厂"),
+      `${code} 必须从真实抛错调用收集，不能把新增构造方式留在盲区`);
+  }
+});
+
+test("回执错误工厂的直接调用与三元分支都从实际出码点进入扫描", () => {
+  const found = collect();
+  for (const code of [
+    "ai_receipt_invalid_limits", "ai_receipt_invalid_source", "ai_receipt_invalid_event",
+    "ai_receipt_write_failed", "ai_receipt_invalid_file", "ai_receipt_file_exists",
+    "ai_receipt_open_failed", "ai_receipt_subscription_failed", "ai_receipt_startup_failed",
+  ]) {
+    assert.ok(found.get(code)?.some((site) => site.file === "src/host/ai-lifecycle-receipts.cjs"
+      && site.shape === "本地回执错误工厂"), `${code} 必须来自真实 receiptError 调用，不靠注册表或兜底例外`);
+  }
+  assert.ok(found.get("ai_receipt_read_failed")?.some((site) => site.file === "test-support/summarize-ai-receipts.cjs"),
+    "可直接运行的离线入口也会抛稳定错误，必须纳入 B11 出码覆盖");
+});
+
+test("回执配置和本地文件故障不重试，权威契约与接线异常明确报缺陷", () => {
+  const expected = {
+    configuration: [
+      "ai_receipt_remote_core_unsupported", "ai_receipt_invalid_file", "ai_receipt_file_exists",
+      "ai_receipt_open_failed", "ai_receipt_write_failed", "ai_receipt_read_failed",
+    ],
+    invalid_request: ["ai_receipt_invalid_limits"],
+    internal: [
+      "ai_receipt_invalid_source", "ai_receipt_invalid_event", "ai_receipt_subscription_failed", "ai_receipt_startup_failed",
+    ],
+  };
+  for (const [category, codes] of Object.entries(expected)) {
+    for (const code of codes) {
+      assert.equal(contract.classifyError(code), category, `${code} 的故障边界归类错误`);
+      assert.deepEqual(contract.dispositionFor(code), {
+        retryable: false, user_visible: true, is_defect: category !== "configuration",
+      }, `${code} 不能自动重发或静默吞掉`);
+    }
+  }
 });
 
 test("每一个出码都已归类，HTTP 与插件响应也算", () => {
@@ -107,6 +173,24 @@ test("每一个出码都已归类，HTTP 与插件响应也算", () => {
     .join("\n  ");
   assert.deepEqual(unclassified, [],
     `以下错误码没有归类，会被按最保守的一档当成缺陷弹给用户：\n  ${detail}`);
+});
+
+test("有界队列错误工厂真实进入扫描；未知接收不得因传输错误而被自动重试", () => {
+  const found = collect();
+  for (const code of ["invalid_configuration", "child_start_failed", "cancelled",
+    "queue_timeout", "queue_child_error", "queue_io_error", "queue_output_limit"]) {
+    assert.ok(found.get(code)?.some((site) => site.shape === "队列传输错误工厂"), `${code} 未从实际出码点进入扫描`);
+    assert.equal(contract.dispositionFor(code).retryable, false, code);
+  }
+  for (const code of ["queue_timeout", "queue_child_error", "queue_io_error", "queue_output_limit"]) {
+    assert.equal(contract.classifyError(code), "execution_uncertain");
+    assert.equal(contract.dispositionFor(code).user_visible, true);
+  }
+  assert.equal(contract.classifyError("core_request_cancelled"), "state");
+  for (const code of ["wake_io_timeout", "wake_queue_timeout", "wake_intent_already_attempted", "wake_intent_history_full"]) {
+    assert.ok(found.get(code)?.some((site) => site.shape === "有界通知动态拒绝与超时"), code);
+    assert.equal(contract.dispositionFor(code).retryable, false, code);
+  }
 });
 
 test("例行 HTTP 状况不当缺陷", () => {

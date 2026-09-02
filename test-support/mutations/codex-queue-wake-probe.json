@@ -1,0 +1,63 @@
+{
+  "name": "B10 bounded same-task queue wake probe",
+  "test": "test/codex-queue-wake-probe.test.cjs",
+  "mutations": [
+    {
+      "id": "b10-explicit-live-only",
+      "file": "test-support/codex-queue-wake-probe.cjs",
+      "find": "if (options?.live !== true) return result;",
+      "replace": "if (false) return result;",
+      "guards": "关闭模式连依赖都不应读取，完整但关闭的配置也必须零副作用"
+    },
+    {
+      "id": "b10-trigger-seat-filter",
+      "file": "test-support/codex-queue-wake-probe.cjs",
+      "find": "event.type === \"PLAYER_PUBLIC_SPEECH\" && event.seat_id === config.triggerSeatId",
+      "replace": "event.type === \"PLAYER_PUBLIC_SPEECH\"",
+      "guards": "其他席位新真人发言不能触发该探针"
+    },
+    {
+      "id": "b10-source-event-fence",
+      "file": "test-support/codex-queue-wake-probe.cjs",
+      "find": "context.source_event_id !== source.event_id || context.source_event_type !== \"PLAYER_PUBLIC_SPEECH\"",
+      "replace": "context.source_event_type !== \"PLAYER_PUBLIC_SPEECH\"",
+      "guards": "领取的来源不匹配必须失败关闭"
+    },
+    {
+      "id": "b10-post-await-boundary",
+      "file": "test-support/codex-queue-wake-probe.cjs",
+      "find": "this.check(); // Cancellation/deadline while awaiting must not permit a send.",
+      "replace": "// MUTANT: omitted post-await boundary check.",
+      "guards": "取消或截止发生于await期间，不得被记作接收已知成功"
+    },
+    {
+      "id": "b10-no-shell-spawn",
+      "file": "src/host/codex-queue-transport.cjs",
+      "find": "shell: false, windowsHide: true, stdio: [\"pipe\", \"pipe\", \"pipe\"]",
+      "replace": "shell: true, windowsHide: true, stdio: [\"pipe\", \"pipe\", \"pipe\"]",
+      "guards": "参数数组不得经shell执行；集成测试在spawn之前也拦住变异"
+    },
+    {
+      "id": "b10-cleanup-failure-not-green",
+      "file": "test-support/codex-queue-wake-probe.cjs",
+      "find": "if (!result.cleanup_ok) result.outcome = \"cleanup_failed\";",
+      "replace": "// MUTANT: ignore failed cleanup.",
+      "guards": "未确认关闭自身资源不能报queued干净完成"
+    },
+    {
+      "id": "b10-windows-drive-qualified-path",
+      "file": "src/host/codex-queue-transport.cjs",
+      "find": "&& (process.platform !== \"win32\" || /^[A-Za-z]:[\\\\/]/.test(value))",
+      "replace": "&& true",
+      "guards": "Windows 根相对路径不能借当前盘符；隔离VM在任意宿主执行原实现的Windows分支，Windows实机另覆四个配置字段"
+    },
+    {
+      "id": "b10-observed-mcp-failure-fence",
+      "file": "test-support/codex-queue-wake-probe.cjs",
+      "find": "const assertHealthy = () => {\n    if (failure !== null) throw failure;\n    if (owned.isClosed()) fail(\"mcp_closed\");\n  };",
+      "replace": "const assertHealthy = () => {};",
+      "guards": "最终公开重读后、发送前已观测到的坏协议、进程退出、I/O错误或输出超限不得被合法回复覆盖"
+    }
+  ],
+  "excluded": []
+}

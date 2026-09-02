@@ -1,0 +1,199 @@
+{
+  "name": "B15 有界托管通知会话与最小权威回执",
+  "note": "仅覆盖本批新增管理器、回执观察和真人控制接线。同席未决槽跨stop/start及撤权重绑保留；thread永久配对到一个seat handle，不把resolve视作清除原生上下文。用真实权威+脚本sender和可控时钟证伪，不调用真实Codex。本文件由实现/检查子代理维护规格与锚点；变异执行由主线程独占安排，不能把锚点存在当作KILLED。",
+  "test": "test/model-wake-session.test.cjs",
+  "mutations": [
+    {
+      "id": "playability-fixed-target-still-requires-page-uuid",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (!Object.hasOwn(input, \"thread_id\")) {",
+      "replace": "    if (false) {",
+      "note": "只有具备内部选择能力的sender可省略thread_id；固定目标不应再要求页面持有UUID。"
+    },
+    {
+      "id": "playability-explicit-foreign-target-accepted",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "        if (selected === null || selected !== threadId) throw new CoreError(\"wake_thread_not_authorized\", 403);",
+      "replace": "        if (false) throw new CoreError(\"wake_thread_not_authorized\", 403);",
+      "note": "即使sender可内部选目标，页面显式提交的外来UUID也必须拒绝。"
+    },
+    {
+      "id": "playability-http-error-leaks-thread",
+      "file": "src/host/model-wake-session.cjs",
+      "test": "test/model-wake-control.test.cjs",
+      "find": "        if (selected === null || selected !== threadId) throw new CoreError(\"wake_thread_not_authorized\", 403);",
+      "replace": "        if (selected === null || selected !== threadId) throw new CoreError(\"wake_thread_not_authorized\", 403, { thread_id: threadId });",
+      "note": "拒绝显式外来任务时错误正文也不能回显任何任务UUID或thread_id字段。"
+    },
+    {
+      "id": "playability-target-capability-hidden",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "  get targetConfigured() { return this.enabled && this.#selectedThread() !== null; }",
+      "replace": "  get targetConfigured() { return false; }",
+      "note": "只投影是否存在安全的服务端固定目标，不投影目标值。"
+    },
+    {
+      "id": "playability-http-response-leaks-thread",
+      "file": "src/host/table-web-host.cjs",
+      "test": "test/model-wake-control.test.cjs",
+      "find": "    const { thread_id: _threadId, ...visible } = wake;\n    return visible;",
+      "replace": "    return { ...wake };",
+      "note": "轮询与start/status/stop响应都不能把固定任务UUID送到浏览器。"
+    },
+    {
+      "id": "wake-start-skips-human-acknowledgement",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (input.acknowledged !== true) throw new CoreError(\"invalid_field\", 400, { field: \"acknowledged\" });",
+      "replace": "",
+      "note": "没有本人明确确认也能创建自动通知窗口。"
+    },
+    {
+      "id": "wake-budget-allows-over-ceiling",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "  if (!Number.isSafeInteger(chosen) || chosen < 1 || chosen > fallback) {",
+      "replace": "  if (!Number.isSafeInteger(chosen) || chosen < 1) {",
+      "note": "窗口预算不能由调用者提高到4次/10分钟之外。"
+    },
+    {
+      "id": "wake-uuid-check-removed",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "  if (typeof value !== \"string\" || !UUID.test(value)) throw new CoreError(\"invalid_field\", 400, { field });",
+      "replace": "  if (typeof value !== \"string\") throw new CoreError(\"invalid_field\", 400, { field });",
+      "note": "任意字符串不能成为request/thread身份键。"
+    },
+    {
+      "id": "wake-old-key-forgets-idempotent-history",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    const previous = history.get(requestId);",
+      "replace": "    const previous = undefined;",
+      "note": "同键不再回放旧窗口，停止键可能复活或同键并发分叉。"
+    },
+    {
+      "id": "wake-request-history-unbounded",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (history.size >= this.#limits.maxRequests) throw new CoreError(\"wake_history_full\", 409);",
+      "replace": "",
+      "note": "控制请求历史必须有界且不能靠逐出旧键复活。"
+    },
+    {
+      "id": "wake-thread-history-unbounded",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (occupant === undefined && this.#registry.threads.size >= this.#limits.maxThreadBindings) {",
+      "replace": "    if (false) {",
+      "note": "永久thread→handle配对本身也要有界。"
+    },
+    {
+      "id": "wake-completed-thread-leaks-across-seats",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (occupant !== undefined && !(occupant.scope.handle === scope.handle && occupant.done",
+      "replace": "    if (occupant !== undefined && !(occupant.done",
+      "note": "A已resolve后B仍不能复用含A私有上下文的原生任务。"
+    },
+    {
+      "id": "wake-stop-start-forgets-pending-slot",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if ([...history.values()].some((request) => !request.owner.#settledAuthority(request))) {",
+      "replace": "    if (false) {",
+      "note": "旧ACK未resolve时，换绑定/窗口键/thread也不能越过同席单槽。"
+    },
+    {
+      "id": "wake-resolve-before-ack-lost-on-revoke",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "      request.owner.#rememberResolvedAuthority(request);",
+      "replace": "",
+      "note": "queue ACK仍在途但权威已精确resolve时，撤权清空surface前必须锁存结清事实；sender cleanup仍须独立成功。"
+    },
+    {
+      "id": "wake-queue-ack-pretends-authority-resolve",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (receipt.phase === \"resolved\") {",
+      "replace": "    if ([\"claimed\", \"started\", \"resolved\"].includes(receipt.phase)) {",
+      "note": "领取或queue ACK不等于模型已公开/沉默回填。"
+    },
+    {
+      "id": "wake-resolve-mismatched-turn-counted",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "    const resolved = result.ok === true && result.body?.ok !== false && receipt?.turn_id === params.turn_id;",
+      "replace": "    const resolved = result.ok === true && result.body?.ok !== false;",
+      "note": "成功标记仍要匹配实际turn；缺回执/错turn不能释放当前intent槽。"
+    },
+    {
+      "id": "wake-start-failure-not-observed",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "      this.#observeWake(scope, params.intent_id, \"start_failed\", { errorCode: result.body?.code });",
+      "replace": "",
+      "note": "真实claim世代拒绝不能被监听器当作继续等待的正常空闲。"
+    },
+    {
+      "id": "wake-start-failure-code-dropped",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "      this.#observeWake(scope, params.intent_id, \"start_failed\", { errorCode: result.body?.code });",
+      "replace": "      this.#observeWake(scope, params.intent_id, \"start_failed\", { errorCode: null });",
+      "note": "自动通知失败要保留受限业务错误码，否则真实宿主失败仍只能停在笼统start_failed。"
+    },
+    {
+      "id": "wake-failure-code-leaks-free-text",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "            entry.error_code = typeof errorCode === \"string\" && WAKE_ERROR_CODE.test(errorCode)\n              ? errorCode : null;",
+      "replace": "            entry.error_code = errorCode;",
+      "note": "上游异常正文与details不能借失败诊断进入本人页面或机器采样。"
+    },
+    {
+      "id": "wake-failure-code-not-projected",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "      request.failureCode = typeof receipt.error_code === \"string\" && /^[a-z][a-z0-9_]{0,79}$/.test(receipt.error_code)\n        ? receipt.error_code : null;",
+      "replace": "      request.failureCode = null;",
+      "note": "最小回执里的稳定错误码必须进入本席窗口投影，才能诊断真实宿主启动失败。"
+    },
+    {
+      "id": "wake-observer-exception-does-not-fail-closed",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "      if (state !== undefined) state.unavailable = true;",
+      "replace": "",
+      "note": "观察器异常不改变业务，但必须禁用依赖该观察账的后续通知。"
+    },
+    {
+      "id": "wake-intent-dedup-removed",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "    if (state.attempted.has(intentId)) return { accepted: false, reason: \"wake_intent_already_attempted\" };",
+      "replace": "",
+      "note": "claim续期或管理器重建不能使当前绑定已尝试意图再次可投递。"
+    },
+    {
+      "id": "wake-attempt-history-unbounded",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "    if (state.attempted.size >= this.#maxWakeAttempts) return { accepted: false, reason: \"wake_intent_history_full\" };",
+      "replace": "",
+      "note": "去重记录满额必须失败关闭，不能持续增长。"
+    },
+    {
+      "id": "wake-receipt-history-unbounded",
+      "file": "src/host/model-command-surface.cjs",
+      "find": "        if (state.records.size >= this.#maxWakeReceipts) { state.unavailable = true; return; }",
+      "replace": "",
+      "note": "最小回执账也必须有硬上限；满额不改变普通模型业务结果。"
+    },
+    {
+      "id": "wake-stop-skips-sender-cleanup-wait",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "        await Promise.race([task.promise, new Promise((resolve) => { timer = this.#timer(resolve, this.#limits.cleanupTimeoutMs); })]);",
+      "replace": "        void task.promise;",
+      "note": "stop不能在本次sender尚未关闭时先回cleanup完成。"
+    },
+    {
+      "id": "wake-clock-validation-disabled",
+      "file": "src/host/model-wake-session.cjs",
+      "find": "    if (!Number.isFinite(at) || at < 0 || at > Number.MAX_SAFE_INTEGER || (this.#lastNow !== null && at < this.#lastNow)) {",
+      "replace": "    if (false) {",
+      "note": "NaN/Infinity/回退不能造成无限等待或elapsed:null假状态。"
+    },
+    {
+      "id": "wake-off-does-not-abort-before-core-await",
+      "file": "src/host/table-web-host.cjs",
+      "test": "test/model-wake-control.test.cjs",
+      "find": "      void this.wakeSessions.stopHandle(session.seat_handle, \"seat_ai_off\");",
+      "replace": "",
+      "note": "真人OFF时本地通知立刻停止；公开权限是否撤销仍由权威OFF判定。"
+    }
+  ]
+}

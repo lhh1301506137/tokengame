@@ -1,0 +1,166 @@
+{
+  "name": "B11 本地权威 AI 生命周期回执",
+  "note": "只做本地脚本测试。文件完整性、writer ACK 与句柄关闭分开；不判断 Gate 5，不调用真实模型。规格由 Primary 串行执行。",
+  "mutations": [
+    {
+      "id": "receipt-payload-leak",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "      hand_index: integer(p.hand_index), street: street(p.street),",
+      "replace": "      payload: p, hand_index: integer(p.hand_index), street: street(p.street),",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "回执必须逐字段白名单，不能持久化聊天、私有上下文或新加入的任意 payload 字段。"
+    },
+    {
+      "id": "receipt-free-id-leak",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "    return crypto.createHmac(\"sha256\", this.key).update(domain).update(\"\\0\").update(value).digest(\"hex\");",
+      "replace": "    return value;",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "自由格式 ID 必须运行内不透明化，不得靠调用者总使用安全 UUID 的假设。"
+    },
+    {
+      "id": "receipt-overwrite-old-evidence",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "(io.openFile ?? fs.open)(filePath, \"wx\", 0o600)",
+      "replace": "(io.openFile ?? fs.open)(filePath, \"w\", 0o600)",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "必须独占创建，已有证据冲突只能失败，不能覆盖。"
+    },
+    {
+      "id": "receipt-record-limit-removed",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "if (this.accepted + 2 >= this.limits.maxRecords)",
+      "replace": "if (false)",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "条数上限包含首尾，满额必须不完整并停止本次捕获。"
+    },
+    {
+      "id": "receipt-byte-limit-removed",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "else if (this.bytesAccepted + line.length + FOOTER_RESERVE_BYTES > this.limits.maxBytes)",
+      "replace": "else if (false)",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "总字节有界，尾记录须有预留空间，不能把无法封尾当完整。"
+    },
+    {
+      "id": "receipt-queue-limit-removed",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "this.pendingRecords + 1 > this.limits.maxQueuedRecords",
+      "replace": "false",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "慢写期间包括在途项的待写队列必须有界，不能反压扑克推进。"
+    },
+    {
+      "id": "receipt-footer-false-complete",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "        capture_complete: completeAtFooter, stop_reason: this.reason,",
+      "replace": "        capture_complete: true, stop_reason: this.reason,",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "满额与异常收尾不能写出与原因/计数矛盾的完整标志。"
+    },
+    {
+      "id": "summary-trusts-missing-footer",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "  const captureComplete = !invalid && result.issues.length === 0 && header !== null && footer?.capture_complete === true;",
+      "replace": "  const captureComplete = !invalid;",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "缺首尾或不完整捕获不能输出伪完整链或时延。"
+    },
+    {
+      "id": "summary-reclaim-as-silent",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": ": terminal.type === \"SEAT_AI_EVALUATION_RECLAIMED\" ? \"reclaimed\" : \"discarded\";",
+      "replace": ": terminal.type === \"SEAT_AI_EVALUATION_RECLAIMED\" ? \"silent\" : \"discarded\";",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "租约回收不是模型的 silent 决定。"
+    },
+    {
+      "id": "beta-receipt-disconnected",
+      "file": "src/run-beta.cjs",
+      "find": "        store: surface.orchestrator.ai, filePath: receiptFile,",
+      "replace": "        store: surface.orchestrator.ai, filePath: \"\",",
+      "test": "test/beta-ai-receipts.test.cjs",
+      "guards": "真实 beta 的 HTTP 模型命令必须接到同一权威事件订阅，不能只让单测替身记录。"
+    },
+    {
+      "id": "beta-ignores-cleanup-failure",
+      "file": "src/run-beta.cjs",
+      "find": "      if (reason === \"normal_close\" && !parentDisconnected\n          && (receiptStatus === null || receiptStatus.run_complete)) process.exitCode = 0;",
+      "replace": "      if (reason === \"normal_close\" && !parentDisconnected) process.exitCode = 0;",
+      "test": "test/beta-ai-receipts.test.cjs",
+      "guards": "文件可读不能抵消 writer/close 失败，真实 beta 收尾必须非零并明确失败。"
+    },
+    {
+      "id": "receipt-footer-write-error-claimed-success",
+      "file": "src/host/ai-lifecycle-receipts.cjs",
+      "find": "        this.captureComplete = null;\n        this.ioFailed = true;",
+      "replace": "        this.captureComplete = true;\n        this.ioFailed = true;",
+      "test": "test/ai-lifecycle-receipts.test.cjs",
+      "guards": "尾行 write 报错后实际效果未知，不能通过猜测把 runtime capture_complete 置为 true。"
+    },
+    {
+      "id": "summary-missing-required-source-reference",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "      && (row.source_event_ref === null || row.hand_index === null)) return false;",
+      "replace": "      && row.hand_index === null) return false;",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "已发布决定必须携带来源引用；缺少引用不能与 engine 来源行未被捕获混为一谈。"
+    },
+    {
+      "id": "summary-accepts-terminal-hand-conflict",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "        if (end.hand_index !== null && end.hand_index !== start.hand_index) anomalies.push(\"terminal_hand_conflict\");",
+      "replace": "",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "公开/沉默终态不能跨手拼到旧 start，结构计数完整也不能输出成功或时差。"
+    },
+    {
+      "id": "summary-accepts-based-street-conflict",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "        if (end.type === \"AI_PUBLIC_SPEECH\" && end.based_on_street !== start.street) anomalies.push(\"based_street_conflict\");",
+      "replace": "",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "终态的 based_on_street 必须核对实际 start 街道，不能只验证 late 与终态自身字段一致。"
+    },
+    {
+      "id": "summary-accepts-discard-hand-conflict",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "        if (end.reason === \"hand_advanced\" && (end.started_hand_index !== start.hand_index\n            || end.current_hand_index <= end.started_hand_index)) anomalies.push(\"discard_hand_conflict\");",
+      "replace": "",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "跨手丢弃的起始手数必须匹配实际回合，当前手数必须真的前进。"
+    },
+    {
+      "id": "summary-splits-conflicting-turn-by-seat",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "    const key = event.turn_ref;",
+      "replace": "    const key = `${event.seat_ref}:${event.turn_ref}`;",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "权威 turn_ref 在一次运行内唯一；换 seat_ref 不能把身份冲突拆成两条完整链。"
+    },
+    {
+      "id": "summary-timing-ignores-global-chain-invalid",
+      "file": "test-support/summarize-ai-receipts.cjs",
+      "find": "  const captureComplete = !invalid && result.issues.length === 0 && header !== null && footer?.capture_complete === true;",
+      "replace": "  const captureComplete = header !== null && footer?.capture_complete === true;",
+      "test": "test/ai-receipt-summary.test.cjs",
+      "guards": "任一链冲突后统一扣下整份输入的完整性和时差，不能让先后顺序决定哪些回合仍显示成功。"
+    },
+    {
+      "id": "receipt-remote-configuration-unclassified",
+      "file": "src/contract/adapter-contract.cjs",
+      "find": "    \"ai_receipt_remote_core_unsupported\",",
+      "replace": "",
+      "test": "test/error-code-registry.test.cjs",
+      "guards": "远程核心加本地回执是需要改配置的非重试故障，不能落入 unknown 缺陷兜底。"
+    },
+    {
+      "id": "receipt-factory-outside-registry-scan",
+      "file": "test/error-code-registry.test.cjs",
+      "find": "    pattern: /\\breceiptError\\(([^()]*)\\)/g,",
+      "replace": "    pattern: /\\bnotReceiptError\\(([^()]*)\\)/g,",
+      "test": "test/error-code-registry.test.cjs",
+      "guards": "receiptError 工厂及三元分支必须实际进入集中扫描；盲区自检要能独立报红。"
+    }
+  ]
+}

@@ -264,7 +264,8 @@ test("席位已释放不算驱动故障，回填被拒才算", async (t) => {
 test("认不出的权威 id 与认不出的句柄都回 null，不猜", () => {
   // 两处「找不到就回落」的诱惑，各自的后果都是替错的人说话。做成单元级断言而不是走完
   // 整局：这两个函数的输入空间就是「认识 / 不认识」，而回落分支只在「不认识」时才走到。
-  const custody = new SeatCustody();
+  const custody = new SeatCustody({ handleFactory: () => "seat_handle-1" });
+  custody.bind({ seatId: "seat-1", credential: "known-seat-credential" });
   const surface = new ModelCommandSurface({
     custody,
     request: async () => ({ ok: true, status: 200, body: { ok: true, result: {} } }),

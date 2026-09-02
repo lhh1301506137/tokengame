@@ -55,7 +55,7 @@
     {
       "id": "model-surface-error-swallowed",
       "file": "src/host/table-web-host.cjs",
-      "find": "      if (!(error instanceof ModelSurfaceError)) throw error;\n      return {\n        ok: false,\n        status: 400,\n        body: {\n          ok: false,\n          code: error.code,",
+      "find": "      if (!(error instanceof ModelSurfaceError)) throw error;\n      return {\n        ok: false,\n        status: error.status,\n        body: {\n          ok: false,\n          code: error.code,",
       "replace": "      if (!(error instanceof ModelSurfaceError)) throw error;\n      return {\n        ok: true,\n        status: 200,\n        body: {\n          ok: true,\n          code: error.code,",
       "note": "本地拒绝包成成功。模型发了一条真人命令或自带了席位身份，却收到 ok:true——它会以为自己发对了，而结果为空。"
     },
@@ -70,7 +70,7 @@
   "excluded": [
     {
       "id": "drive-falls-back-to-all-when-claim-fails",
-      "note": "写过也变异过，然后删掉了产品代码里那个分支。driveOnce 原本有一段 `if (!claim.ok) { 记账; return; }`，它恒假：takeIntents 无条件回 ok:true（逐席失败全部收进 failures），而 modelCommand 只在 ModelSurfaceError 时回 ok:false，那需要「命令不在模型面上」或「自带席位身份」，两者在那个调用点都不可能——命令是字面量，参数是空对象。变异把整个分支换成 if (false) 时没有一条测试变红，因为那段代码从来没被执行过。恒假的分支与恒真的断言是同一类问题，处置也一样：删掉，而不是为它编一条能走到的测试。"
+      "note": "旧版 claim.ok 分支曾恒假。B8 内部领取途中可发生世代变更，由模型面将单席失败收进 failures，其余席继续驱动；外部单席请求则整份拒绝。覆盖见 seat-model-binding.test.cjs，不重新引入驱动端手工扇出。"
     }
   ]
 }

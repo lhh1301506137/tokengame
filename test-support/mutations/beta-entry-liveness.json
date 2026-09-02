@@ -1,6 +1,6 @@
 {
   "name": "内测入口与模型面可见兜底",
-  "note": "B7。两件事：`ai.take_intents` 空手而归时必须说出在等什么（一席都没绑 vs 此刻没待办，两者读起来一样而该做的事相反），以及内测入口必须真的把模型命令口打开、把令牌交到人手上而不打印在终端里。都是「缺失时不能静默卡住」的具体形态。",
+  "note": "B7 兜底回归随 B8 迁移：内部空托管仍有等待说明；外部通道必须逐席绑定。原令牌随机/不打印的否证迁移到本人下载函数，不保留找不到的旧生成器锚点。所有14项仍必须被评估。",
   "test": "test/model-liveness-fallback.test.cjs",
   "mutations": [
     {
@@ -49,33 +49,33 @@
       "id": "beta-route-left-disabled",
       "file": "src/run-beta.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "  const host = new TableWebHost({ core, modelAdapter: adapter, modelCommandToken: token });",
-      "replace": "  const host = new TableWebHost({ core, modelAdapter: adapter });",
+      "find": "    host = new TableWebHost({ core, modelAdapter: adapter, modelBindingEnabled: true, wakeQueue });",
+      "replace": "    host = new TableWebHost({ core, modelAdapter: adapter, wakeQueue });",
       "note": "内测入口生成了令牌却没接上协调器。这正是 `npm run web` 的现状：牌桌照常能玩，模型路由关着，而它关着的方式是安静的——没有任何一席的宿主 AI 能发言，而 /api/health 里那行 disabled 不会有人主动去看。"
     },
     {
       "id": "beta-token-hardcoded",
-      "file": "src/run-beta.cjs",
+      "file": "src/host/table-web-host.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "  return { token: crypto.randomBytes(32).toString(\"hex\"), generated: true };",
-      "replace": "  return { token: \"tokengame-local-beta-token\", generated: true };",
-      "note": "写死一个「本地够用了」的令牌。本机任何进程都能替这个协调器上所有席位发言，而每一台装了这个仓库的机器用的是同一个值。"
+      "find": "      token: this.custody.remember(`model-token-${crypto.randomBytes(32).toString(\"base64url\")}`),",
+      "replace": "      token: this.custody.remember(\"tokengame-local-beta-token\"),",
+      "note": "逐席下载仍不可使用写死的默认令牌，真实 beta 下载行为必须杀掉这个变异。"
     },
     {
       "id": "beta-token-not-random",
-      "file": "src/run-beta.cjs",
+      "file": "src/host/table-web-host.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "  return { token: crypto.randomBytes(32).toString(\"hex\"), generated: true };",
-      "replace": "  return { token: crypto.createHash(\"sha256\").update(\"tokengame\").digest(\"hex\"), generated: true };",
-      "note": "看起来随机但是确定的。长度、字符集、熵下界全部通过，两次启动却是同一个值——这条钉住的是「两次不同」，那是随机性唯一能从外面观察到的性质。"
+      "find": "      token: this.custody.remember(`model-token-${crypto.randomBytes(32).toString(\"base64url\")}`),",
+      "replace": "      token: this.custody.remember(crypto.createHash(\"sha256\").update(\"tokengame\").digest(\"hex\")),",
+      "note": "看起来随机但为固定散列，两次真实 beta 下载的令牌相同，必须失败。"
     },
     {
       "id": "beta-token-printed",
-      "file": "src/run-beta.cjs",
+      "file": "src/host/table-web-host.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "    `  1. 模型令牌在 ${tokenFile}`,",
-      "replace": "    `  1. 模型令牌：${require(\"node:fs\").readFileSync(tokenFile, \"utf8\").trim()}`,",
-      "note": "把令牌印在终端里。人拿到它的难易没变，它被不小心带到别处的概率变了——终端回滚、`> log.txt`、一张截屏。"
+      "find": "    this.modelBindings.set(session.seat_handle, binding);",
+      "replace": "    process.stdout.write(binding.token + \"\\n\");\n    this.modelBindings.set(session.seat_handle, binding);",
+      "note": "本人绑定时把 token 印到 beta 终端，真实下载后扫描整个 stdout/stderr 必须发现它。"
     },
     {
       "id": "beta-claims-proactive-wake",
@@ -83,30 +83,30 @@
       "test": "test/beta-entry.test.cjs",
       "find": "    proactive_wake_verified: false,",
       "replace": "    proactive_wake_verified: true,",
-      "note": "声称主动唤醒已验证。它在任何宿主上都没有实机验证过，而这一行会被读成证据。"
+      "note": "声称持续主动产品已验证。B14只证明固定版本单席有限样本，不能把该字段翻成完整产品能力。"
     },
     {
       "id": "beta-drops-polling-fallback",
       "file": "src/run-beta.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "    \"关于唤醒：没有任何宿主验证过无点击主动唤醒，所以本机不提供它。\",\n    \"模型靠**轮询** ai.take_intents 拿待办；还没有人入座时它会明确回一句\",\n    \"「等真人入座」，而不是静默地空转。需要有人按一下才动的地方就是需要按一下。\",",
-      "replace": "",
+      "find": "      : \"有界自动通知默认关闭；当前可由宿主轮询领取 ai.take_intents。\",",
+      "replace": "      : \"有界自动通知默认关闭。\",",
       "note": "不说兜底是什么。缺主动唤醒时「不静默卡住」的全部内容就是这句话——去掉它，人会以为 AI 会自己醒过来，然后等一个不会到的东西。"
     },
     {
       "id": "beta-hides-token-path",
       "file": "src/run-beta.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "  process.stdout.write(joinInstructions({ origin, tokenFile, adapter }));",
+      "find": "      process.stdout.write(joinInstructions(run));",
       "replace": "",
-      "note": "只打机器可读的启动行，不打人话。既不打印令牌又不告诉人它在哪，等于没给——而启动行里那个相对路径读的人不一定知道拼在哪个目录下。"
+      "note": "只打机器启动行，不告诉人逐席授权/下载与配置路径。保留旧 id 以便追溯，检查对象已迁移到 B8 本人下载说明。"
     },
     {
       "id": "beta-falls-back-to-random-port",
       "file": "src/run-beta.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "  const webPort = readPort(process.env.TOKENGAME_WEB_PORT, \"TOKENGAME_WEB_PORT\", DEFAULT_TABLE_PORT);",
-      "replace": "  const webPort = readPort(process.env.TOKENGAME_WEB_PORT, \"TOKENGAME_WEB_PORT\");",
+      "find": "  const webPort = readPort(env.TOKENGAME_WEB_PORT, \"TOKENGAME_WEB_PORT\", DEFAULT_TABLE_PORT);",
+      "replace": "  const webPort = readPort(env.TOKENGAME_WEB_PORT, \"TOKENGAME_WEB_PORT\");",
       "note": "回落到随机端口。人刚把地址填进宿主配置，重启一次就指向了上一个端口，表现是「模型说连不上牌桌，而牌桌明明开着」。"
     }
   ],

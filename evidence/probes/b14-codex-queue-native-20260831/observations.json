@@ -1,0 +1,132 @@
+{
+  "schema": "tokengame.b14-native-observations.v1",
+  "observed_at": "2026-08-31T10:54:29.680Z",
+  "thread_id": "01a052c9-5259-7a61-b26f-35731734994e",
+  "authorization_refs": [
+    "DEC-20260831-002",
+    "DEC-20260831-003"
+  ],
+  "run_ref": "b3621f0ab5bff24f62c6a8fe86c19c57",
+  "native_task_inputs": 4,
+  "readiness_inputs": 1,
+  "queue_inputs": 3,
+  "game_mcp_calls_by_native_task": 7,
+  "real_evaluations": 3,
+  "public_speech": 3,
+  "silent": 0,
+  "discarded": 0,
+  "native_task_durations_ms": [
+    51321,
+    45561,
+    50070,
+    44381
+  ],
+  "native_configuration": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "max",
+    "override": false,
+    "evidence": "native-readiness-local-evidence.json#/model_context",
+    "qualification": "原任务本地turn_context记录，不是上游供应商密码学证明"
+  },
+  "samples": [
+    {
+      "turn_ref": "0fa0838e34ce8b3a1c50c79e512fa22055f331f8487511e818e4970b2fecc9ca",
+      "source_sequence": 5,
+      "start_sequence": 6,
+      "terminal_sequence": 7,
+      "source_at": 1788171602049,
+      "start_at": 1788171629648,
+      "terminal_at": 1788171645906,
+      "hand_index": 0,
+      "source_street": "preflop",
+      "terminal_street": "preflop",
+      "based_on_street": "preflop",
+      "late": false,
+      "terminal": "AI_PUBLIC_SPEECH",
+      "source_to_start_ms": 27599,
+      "start_to_public_ms": 16258,
+      "source_to_public_ms": 43857
+    },
+    {
+      "turn_ref": "d8050bac77a82502f85367f75cadd6c0e804724990334b2558bc8689f1dcdd3c",
+      "source_sequence": 8,
+      "start_sequence": 9,
+      "terminal_sequence": 10,
+      "source_at": 1788172007776,
+      "start_at": 1788172031837,
+      "terminal_at": 1788172054561,
+      "hand_index": 0,
+      "source_street": "preflop",
+      "terminal_street": "preflop",
+      "based_on_street": "preflop",
+      "late": false,
+      "terminal": "AI_PUBLIC_SPEECH",
+      "source_to_start_ms": 24061,
+      "start_to_public_ms": 22724,
+      "source_to_public_ms": 46785
+    },
+    {
+      "turn_ref": "2584df8196da35a42990704425d39d32267089cd677b5542097cabd25b6a8702",
+      "source_sequence": 12,
+      "start_sequence": 13,
+      "terminal_sequence": 15,
+      "source_at": 1788172362225,
+      "start_at": 1788172389630,
+      "terminal_at": 1788172405885,
+      "hand_index": 1,
+      "source_street": "preflop",
+      "terminal_street": "flop",
+      "based_on_street": "preflop",
+      "late": true,
+      "terminal": "AI_PUBLIC_SPEECH",
+      "source_to_start_ms": 27405,
+      "start_to_public_ms": 16255,
+      "source_to_public_ms": 43660
+    }
+  ],
+  "bridge_observations": [
+    {
+      "sample": "01",
+      "queue_attempts": 1,
+      "claim_attempts": 1,
+      "timeline_reads": 115,
+      "bridge_elapsed_includes_cleanup_ms": 30475,
+      "cleanup_ok": true,
+      "exit_code": 0
+    },
+    {
+      "sample": "02",
+      "queue_attempts": 1,
+      "claim_attempts": 1,
+      "timeline_reads": 3,
+      "bridge_elapsed_includes_cleanup_ms": 589,
+      "cleanup_ok": true,
+      "exit_code": 0
+    },
+    {
+      "sample": "03",
+      "queue_attempts": 1,
+      "claim_attempts": 1,
+      "timeline_reads": 20,
+      "bridge_elapsed_includes_cleanup_ms": 5091,
+      "cleanup_ok": true,
+      "exit_code": 0
+    }
+  ],
+  "cleanup": {
+    "beta_process_exit": "beta-stop.json#/result",
+    "capture_footer": "ai-lifecycle.jsonl:last_line",
+    "close_ack": "beta-stderr.log:last_json_line",
+    "credential_revocation": "revocation-mcp.json",
+    "remaining_policy_block": "cleanup-policy-blocked.json"
+  },
+  "limitations": [
+    "等待区两例、进行中手牌一例，不是三手真人牌局",
+    "同一任务被queue通知，不是默认产品常驻调度器",
+    "第一次样本只见历史，后两例见双页座位气泡",
+    "进行中样本的权威延迟标注未显示，修复证据另批保存",
+    "read_thread新回合items为空；直接工具证据取自同任务本地rollout，未复制隐藏推理或其他任务",
+    "结束后才按正常超时推进的其他手数不计为验证样本",
+    "无第二真实AI席位、Claude、异地、完整插件输入或真人UAT证据"
+  ]
+}

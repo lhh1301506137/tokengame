@@ -1,0 +1,77 @@
+{
+  "name": "MCP 私有连接文件的出入口边界",
+  "test": "test/mcp-model-connection.test.cjs",
+  "mutations": [
+    {
+      "id": "connection-file-ignored",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "  const file = process.env.TOKENGAME_MODEL_CONNECTION_FILE;",
+      "replace": "  const file = undefined;",
+      "note": "忽略本人文件，真实请求必须缺席而非报告通道已通。"
+    },
+    {
+      "id": "connection-schema-not-checked",
+      "file": "src/shared/model-connection-file.cjs",
+      "find": "    || value.schema !== MODEL_CONNECTION_SCHEMA",
+      "replace": "    || false",
+      "note": "其他应用配置不能被当作本席授权。"
+    },
+    {
+      "id": "connection-extra-credentials-accepted",
+      "file": "src/shared/model-connection-file.cjs",
+      "find": "    || Object.keys(value).length !== MODEL_CONNECTION_KEYS.length\n    || Object.keys(value).some((key) => !MODEL_CONNECTION_KEYS.includes(key))",
+      "replace": "    || false",
+      "note": "不导入带核心凭据等额外字段的配置。"
+    },
+    {
+      "id": "connection-short-token-accepted",
+      "file": "src/shared/model-connection-file.cjs",
+      "find": "!/^[A-Za-z0-9_-]{32,256}$/.test(value.model_token)",
+      "replace": "false",
+      "note": "令牌形状无效时必须在网络前拒绝。"
+    },
+    {
+      "id": "connection-origin-conflict-ignored",
+      "file": "src/shared/model-connection-file.cjs",
+      "find": "  if (explicitOrigin && localOrigin(explicitOrigin) !== origin) {",
+      "replace": "  if (false) {",
+      "note": "两个配置不一致不能替玩家猜牌桌。"
+    },
+    {
+      "id": "connection-redirect-forwarded",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "    redirect: \"error\",",
+      "replace": "    redirect: \"follow\",",
+      "note": "重定向不能带着自定义令牌头去其他地址；目标真实服务器的请求计数为零。"
+    },
+    {
+      "id": "connection-token-not-remembered",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "    knownModelTokens.add(connection.token);",
+      "replace": "",
+      "note": "正常字段中的令牌原文同样要挡住，不能只查 model_token 键名。"
+    },
+    {
+      "id": "connection-userinfo-accepted",
+      "file": "src/shared/model-connection-file.cjs",
+      "find": "    || url.username || url.password || url.search || url.hash || url.pathname !== \"/\") {",
+      "replace": "    || url.search || url.hash || url.pathname !== \"/\") {",
+      "note": "配置地址不允许附加登录信息；不能归一化后静默忽略错误配置。"
+    },
+    {
+      "id": "connection-envelope-ok-not-required",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "    || typeof payload.ok !== \"boolean\"",
+      "replace": "",
+      "note": "HTTP200返回任意JSON对象不能当作模型通道成功；错误端口也会返回JSON。"
+    },
+    {
+      "id": "connection-envelope-result-not-required",
+      "file": "plugins/tokengame/mcp/server.cjs",
+      "find": "    || (modelToken && payload.ok && (payload.result === null || typeof payload.result !== \"object\" || Array.isArray(payload.result)))) {",
+      "replace": "    ) {",
+      "note": "成功模型响应必须有对象result，不能把缺结果伪装成合法空待办。"
+    }
+  ],
+  "excluded": []
+}

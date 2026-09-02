@@ -1,0 +1,71 @@
+{
+  "beta": {
+    "started_at": "2026-08-31T10:02:23.380Z",
+    "stopped_at": "2026-08-31T10:39:00.978Z",
+    "trigger": "parent_request",
+    "pid": 37068,
+    "origin": "http://127.0.0.1:52231",
+    "result": {
+      "graceful": true,
+      "exit_code": 0,
+      "signal": null,
+      "forced": false,
+      "exit_observed": true,
+      "output_complete": true,
+      "reason": null
+    },
+    "error": null
+  },
+  "close_ack": {
+    "schema": "tokengame.ai-lifecycle-close.v1",
+    "enabled": true,
+    "run_ref": "b3621f0ab5bff24f62c6a8fe86c19c57",
+    "closed": true,
+    "capture_complete": true,
+    "write_acknowledged": true,
+    "close_succeeded": true,
+    "run_complete": true,
+    "stop_reason": "normal_close",
+    "capture_after_sequence": 0,
+    "capture_through_sequence": 23,
+    "observed_events": 23,
+    "ignored_events": 5,
+    "accepted_events": 18,
+    "written_events": 18,
+    "dropped_events": 0,
+    "pending_records": 0,
+    "pending_bytes": 0,
+    "records_written": 20,
+    "bytes_written": 10242
+  },
+  "revocation": {
+    "observed_at": "2026-08-31T10:38:15.441Z",
+    "isError": true,
+    "ok": false,
+    "code": "model_command_token_rejected",
+    "body_keys": [
+      "ok",
+      "code"
+    ],
+    "game_MCP_calls": 1,
+    "real_model_calls": 0,
+    "duration_ms": 114.8029
+  },
+  "cleanup_policy": {
+    "observed_at": "2026-08-31T10:46:21.639Z",
+    "operation": "validated removal of this batch revoked private file/empty folder plus one exact matching MCP process",
+    "execution": "rejected_before_process_creation",
+    "reason": "blocked by policy",
+    "private_file": "H:/tokengold/.codex/tokengame-b14-authorized-private-3914f461/a.json",
+    "private_file_deleted": false,
+    "private_directory_deleted": false,
+    "mcp_pid": 35872,
+    "mcp_stopped_by_root": false,
+    "revocation_evidence": "revocation-mcp.json",
+    "revocation_code": "model_command_token_rejected",
+    "temporary_config_removed_before_attempt": true,
+    "beta_stopped_before_attempt": true,
+    "protected_b12_touched": false,
+    "no_alternate_cleanup_attempt": true
+  }
+}

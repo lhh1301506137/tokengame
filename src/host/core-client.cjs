@@ -38,6 +38,11 @@ class CoreError extends Error {
   }
 }
 
+function checkCancellation(signal) {
+  if (signal !== undefined && !(signal instanceof AbortSignal)) throw new CoreError("invalid_field", 400, { field: "signal" });
+  if (signal?.aborted) throw new CoreError("core_request_cancelled", 409);
+}
+
 class HttpCoreClient {
   constructor({ origin, token, fetchImpl = fetch } = {}) {
     if (typeof origin !== "string" || origin === "") {
@@ -49,7 +54,8 @@ class HttpCoreClient {
     this.transport = "http";
   }
 
-  async dispatch(command, params = {}) {
+  async dispatch(command, params = {}, { signal } = {}) {
+    checkCancellation(signal);
     let response;
     try {
       response = await this.fetchImpl(`${this.origin}/command`, {
@@ -61,20 +67,25 @@ class HttpCoreClient {
         // 请求信封由合同层构造，不在这里拼字面量：两处各写一份的话，改合同不会影响
         // 传输，而合同文档描述的是 helper。服务端会校验 contract_version，缺了就 400。
         body: JSON.stringify(requestEnvelope(command, params)),
+        ...(signal === undefined ? {} : { signal }),
       });
     } catch (cause) {
+      checkCancellation(signal);
       // 核心不可达要有自己的错误码。让 fetch 的原始报错穿到浏览器等于把 Node 的
       // 网络实现细节变成 UI 文案，而调用方真正需要判断的只有「核心断了」这一件事。
       throw new CoreError("core_unreachable", 502, { command });
     }
 
     let body;
+    checkCancellation(signal);
     try {
       body = await response.json();
     } catch {
+      checkCancellation(signal);
       throw new CoreError("core_response_not_json", 502, { status: response.status });
     }
 
+    checkCancellation(signal);
     if (response.ok === false || body?.ok === false) {
       throw new CoreError(
         body?.code ?? "core_request_failed",
@@ -97,9 +108,12 @@ class InProcessCoreClient {
 
   // 仍然是 async。调用方不该因为换了传输就要改写 await——那会让「两种实现可互换」
   // 变成一句空话，也会让测试走的代码路径和真实部署的不一样。
-  async dispatch(command, params = {}) {
+  async dispatch(command, params = {}, { signal } = {}) {
+    checkCancellation(signal);
     try {
-      return this.surface.dispatch(command, params);
+      const result = await this.surface.dispatch(command, params);
+      checkCancellation(signal);
+      return result;
     } catch (error) {
       // ProbeError 有 code/status/details，形状与 HTTP 那边归一后一致。其它异常是真 bug，
       // 不套壳：套上 CoreError 会让编程错误看起来像一个可处理的业务失败。

@@ -195,8 +195,8 @@
       "id": "F5-26-命令面继续收适配器上下文",
       "file": "src/authority/command-surface.cjs",
       "test": "test/command-surface.test.cjs",
-      "find": "        started: o.startEvaluation({\n          seatId: p.seat_id,\n          intentId: p.intent_id,\n          claimToken: p.claim_token,\n        }).payload,",
-      "replace": "        started: o.startEvaluation({\n          seatId: p.seat_id,\n          context: p.context,\n          intentId: p.intent_id,\n          claimToken: p.claim_token,\n        }).payload,",
+      "find": "        const started = o.startEvaluation({\n          seatId: p.seat_id,\n          intentId: p.intent_id,\n          claimToken: p.claim_token,\n        }).payload;",
+      "replace": "        const started = o.startEvaluation({\n          seatId: p.seat_id,\n          context: p.context,\n          intentId: p.intent_id,\n          claimToken: p.claim_token,\n        }).payload;",
       "why": "命令面把适配器回传的 context 一起交给核心。核心当前忽略它，但契约上留着这个口就是留着回退到「被审计方写审计记录」的路。 查找串于 2026-08-28 随 F5 世代围栏改写：原来是单行调用，现在多了 claimToken 且拆成多行。"
     },
     {

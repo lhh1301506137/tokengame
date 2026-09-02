@@ -201,12 +201,38 @@ test("座位旁聊天：本地隐藏的发言在座位旁降级显示，不静�
 test("座位旁聊天：迟到标注一路带到座位旁", () => {
   const view = build([
     speech(1, "seat-1", "SEAT_AI", "基于翻牌的判断", NOW - 1_000, {
-      payload: { late: true, based_on_street: "flop" },
+      payload: { late_annotation: "延迟 · 基于前一街", based_on_street: "flop", late: false },
     }),
   ]);
-  const [entry] = seat(view, "seat-1").recent_speech;
-  assert.equal(entry.late, true);
-  assert.equal(entry.based_on_street, "flop");
+  const beside = seat(view, "seat-1").recent_speech;
+  assert.equal(view.messages.length, 1);
+  assert.equal(beside.length, 1);
+  for (const entry of [view.messages[0], beside[0]]) {
+    assert.equal(entry.late, true, "迟到只能来自权威的 late_annotation，不采信同名展示字段");
+    assert.equal(entry.based_on_street, "flop");
+  }
+});
+
+test("座位旁聊天：非权威 late 布尔和街道差异不能冒充迟到标注", () => {
+  for (const annotation of [undefined, null, "", "  ", false, true, 1, [], {}]) {
+    const view = build([
+      speech(1, "seat-1", "SEAT_AI", "没有权威迟到标注", NOW - 1_000, {
+        payload: {
+          late: true,
+          late_annotation: annotation,
+          based_on_street: "preflop",
+          street: "flop",
+        },
+      }),
+    ], { extra: { publicHand: { street: "turn" } } });
+    const beside = seat(view, "seat-1").recent_speech;
+    assert.equal(view.messages.length, 1);
+    assert.equal(beside.length, 1);
+    for (const entry of [view.messages[0], beside[0]]) {
+      assert.equal(entry.late, false, `无有效 late_annotation 时误标：${JSON.stringify(annotation)}`);
+      assert.equal(entry.based_on_street, "preflop", "来源街道仍应原样保留");
+    }
+  }
 });
 
 test("座位旁聊天：没有 seat_id 的发言不挂到任何席位上", () => {
