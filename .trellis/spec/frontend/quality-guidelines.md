@@ -6,11 +6,12 @@
 - 测试使用 `node:test` 与 `node:assert/strict`，并以 `--test-concurrency=1` 串行运行，避免端口、环境变量和子进程互相干扰。
 - 当前没有 ESLint、格式化器或 TypeScript 检查脚本；不得把不存在的检查写成已通过。
 - `npm test` 忽略传给它的文件参数，始终跑 `test/*.test.cjs` 全量。想只跑一个文件要直接 `node --test test/<name>.test.cjs`。
-- Node 默认 reporter 不输出 TAP。汇总数字看 `ℹ tests / ℹ pass / ℹ fail` 三行，不要假设有 TAP 计数可解析。
+- Node 默认 reporter 会随运行版本和终端环境变化；不得只接受 `ℹ` 汇总或假定默认一定输出 TAP。机器汇总须与显式 reporter 配套：定向命令可用 `--test-reporter=tap`，既有变异驱动的 `ℹ`/`✖` 解析则显式使用 `--test-reporter=spec`；全量命令保留原始输出，同时核对实际退出码及 tests/pass/fail/cancelled/skipped/todo。`cancelled` 不等于通过，较新 Node 本地通过也不代替 CI 指定的 Node 22 验证。
 - 插件相关变更除自动测试外，还要按 `docs/HOST-PROBE-CHECKLIST.md` 在真实 Codex 宿主验证。
 - 产品牌桌的浏览器验收是 `test-support/table-web-acceptance.mjs`：四个隔离上下文、逐席公开范围确认、连续多手、公开聊天、座位 AI、掉线恢复/暂离/离桌、本地隐藏，要求控制台错误为 0 且 `exit 0`。旧栈的 `four-player-smoke.mjs` 随旧栈冻结。
 - 关键不变量用变异测试证明，而不是只靠「测试通过」。规格放在 `test-support/mutations/*.json`，跑 `node test-support/mutate-suite.cjs <spec.json> [filter]`。判定为 KILLED / SURVIVED / INVALID / ABORT，只有全部 KILLED 才算这条不变量被真的锁住。
 - 三个变异驱动职责不同，不要混用：`mutate-suite.cjs` 吃规格文件；`mutate-check.cjs` 跑单条变异；`mutate-batch.cjs` 吃**行号**（把某行替换成 `void 0;`），传规格文件给它会 ABORT。
+- 变异驱动须用 `process.execPath` 运行下级 Node，不能由 PATH 悄悄换版本。即使已有断言失败，只要该轮存在 `cancelled` 也按 `INVALID` 保留未评估事实；红基线或零真实测试须在任何目标写入前中止。套件缓存本轮正整数绿基线测试数，直接运行 checker 则先取得基线；报告数量不一致、加载或文件级失败均记未评估，不能把已实证的截断报告误算为 KILLED。该数量比较不是完整进程审计器。驱动自身回归只变异独占临时副本，并实证写入、还原和各类退出，不能与共享源码上的变异并行争用目标。
 
 ## 必须保持的模式
 
@@ -25,6 +26,8 @@
 - 等待条件不能与被断言的内容同一件事。等「见到两张底牌」再断言「见到两张底牌」是自我实现的；等 `handIndex`/`pot` 再断言底牌，才能让「已开手、盲注已入池、却没有本席底牌」判失败。
 - 多上下文验收里每一页都要各等一次。四页各自轮询、起点互不相同，「其中一页见到第一手」不等于四页都见到了；只等一页会在稍慢的机器上读到空桌。
 - 时间相关状态机通过注入 `now` 和 `idFactory` 做确定性测试，不依赖真实等待。
+- 模拟其他平台时，`platform`、路径实现和文件系统夹具必须一致。例如 Windows PATH 用 `path.win32` 加精确路径白名单的虚拟文件系统；不能只设 `platform: "win32"`，再让 Linux 文件系统查转换后的 Windows 路径。模拟分支证明路径规则，当前平台真实临时文件用例另行保留，两者都不代表真实 Codex 宿主已可用。
+- 仅剩 `unref()` 定时器的 Promise 不会让 Node 事件循环继续存活。长轮询纯单元测试应注入 `now/setTimeout/clearTimeout` 并显式推进至截止，断言到期前未完成、到期后完成，以及送达/取消/撤权/关闭后的计时器和监听器清理；实际 HTTP 持有服务器与连接的路径另由集成测试覆盖。不能为夹具保活而修改生产 `unref()`、添加无关长计时器或固定 sleep。
 - 任何用户或模型文本进入 DOM 时使用 `textContent`。
 - 面向玩家的长度上限用 `Intl.Segmenter` 数字素，不用 `String.length`。
 

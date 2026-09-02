@@ -4635,3 +4635,135 @@ execution_closure:
   advance_allowed: no
   next_owner: user_and_friend_two_device_acceptance_with_codex_primary_support
 ```
+
+<a id="b31-node22-ci-verification"></a>
+## 2026-09-03 — B31：Node 22 CI 兼容与验证可信度
+
+状态：本地修补与限定独立复核完成，用户已授权本批提交推送；尚待实际发布回执，不关闭两好友 MVP。
+
+发布授权补充：后续用户明确回复“commit+push”，记录在 `PROJECT-DECISION-LOG.md#DEC-20260903-001`。
+本节下方保留本地冻结验证阶段的事实与机器记录，其中“待授权/未提交”指当时的快照，不否定后续授权。
+本次发布前按文件哈希复核与原六次最终验证身份相同，不重复执行本地全量，也不加载或调用原生牌局工具。
+
+### 起点、授权与不变项
+
+前一轮已按用户授权把 B30 提交为 `4135611395b09ba077e156ce59010593232e5b7d` 并推送至
+`lhh1301506137/tokengame/main`。本轮“继续”恢复同一路线的本地 CI 修补；沿用既有本地测试授权，
+没有为每次 Node、WSL 或变异回归重复申请。新一批 commit/push 另待本批明确授权；没有部署、
+重启宿主、创建游戏任务、修改模型设置或进行原生游戏模型/queue 调用。
+
+直接读取的 [GitHub run 33683335693](https://github.com/lhh1301506137/tokengame/actions/runs/33683335693)
+对应上述提交，两个作业均失败。实际运行时为 Node `22.23.2`、npm `10.9.8`：Windows
+1455 项中 1450 通过、5 取消；Ubuntu 1447 项中 1441 通过、1 失败、5 取消。
+原提交独立归档后，在本机 Windows 与 Ubuntu/WSL 的同版本 Node 上复现了相同两类错误。
+官方便携 Node 包先核对官方 SHA-256 再解包使用；没有替换全局 Node、项目依赖或 CI 配置。
+
+产品的 `src/`、`web/`、`plugins/` 与 `package.json` 共 65 文件相对 B30 未改。
+本轮只调整测试、测试驱动及必要规范/记录；旧浏览器、旧 CLI 和历史单席真实宿主结果不升级为
+本轮真人证据。WSL 的本机代理提示单列为载体输出，不归因为扑克或 Dual 规则失败。
+
+### 实际发现与修补过程
+
+1. Windows PATH 反例只模拟了 `platform`，仍让 Linux 的真实文件系统读取转换后的 Windows 路径。
+   改为一致的 `path.win32` 和精确文件系统夹具，保留首候选拒绝、canonical 越界、读取错误、
+   显式路径禁止回退以及当前平台的真实临时文件测试。
+2. 纯 broker 单测等待 `unref()` 的计时器，却没有 HTTP server/socket 持有事件循环。
+   改为注入时钟与定时器，明确推进截止、断言送达/取消/撤权/关闭清理；生产的 `unref()` 未改。
+3. 原变异驱动只识别 `spec` 文本，在 Node 22 的默认管道 TAP 下报“基线未真正运行”。
+   首次规格检查 exit 2、未评估任何变异，失败回执保留；驱动显式选择 reporter 并沿用当前 Node。
+4. 新反例发现 `fail > 0` 同时 `cancelled > 0` 可被旧判定记为 KILLED，现保持 INVALID。
+   实际变异随即暴露旧 scope 负例缺少时钟推进；只改该负例用既有 `pollToTimeout`，
+   使移除撤权检查产生 `Missing expected rejection`，不再靠取消结束，也不放宽取消判定。
+5. 独立复核在临时副本证明“一个断言失败、另一测试退出 17”仍可被误报 KILLED。
+   仅检查文件级失败行未修好：Node 22 的该例只输出第一条断言，数量从基线 2 降为 1。
+   因此采用与既有绿基线测试数对照的窄修补；不把文本驱动宣传为完整进程审计器。
+
+### 最终验证与限定结论
+
+最终冻结的五个代码/测试文件与运行时、命令、原始回执及阶段哈希均在
+`.trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json`，
+该记录 SHA-256 为 `3626a6f7db8baa61650918ae775b159be5cf26690063c22ccec4bc65e64e9a77`。
+原始日志留在忽略目录 `artifacts/b31-ci-validation-20260903/`；带 `-final` 的旧目录是中间状态，
+本次最终结论只用 `-verified` 六个回执，不用目录名字代替文件身份。
+
+| 冻结代码的实际验证 | Windows Node 22.23.2 | Ubuntu/WSL Node 22.23.2 |
+| --- | --- | --- |
+| 主线程完整 `npm test` | 1475/1475；98100.0179ms | 1467/1467；77169.9458ms |
+| 主线程入口变异 | 15/15 KILLED；8129.8736ms墙钟 | 15/15 KILLED；8314.3252ms墙钟 |
+| 主线程远程变异 | 10/10 KILLED；5865.174ms墙钟 | 10/10 KILLED；5954.3218ms墙钟 |
+| 独立上下文限定复核 | 29/29；6117.3493ms | 29/29；5397.5106ms |
+
+上述命令均 exit 0；完整测试和独立回归的 fail/cancelled/skipped/todo 均 0，变异无存活或未评估。
+完整测试的八项差额来自 `codex-queue-wake-probe.test.cjs` 的 Windows 条件注册（四字段×两路径），
+不把缺席用例写成取消或通过。主线程直接读取25条失败原因，两平台除时长外一致、无 ReferenceError；
+撤权反例现在以 `Missing expected rejection` 被杀，而不是等待被取消。
+
+独立检查按 Trellis 的 implement→check 要求执行。初始两夹具复核22/22是历史阶段；后续27/27也未抓住
+额外异常退出反例，不能用通过数量否定P2。最后一次只读修复复核针对冻结三文件，实际29项由13项驱动和
+16项gate回归组成，确认原例从KILLED改为INVALID。它未参与实施，但不声明异模型/异供应商独立性。
+主线程另执行全量及真实变异；两类回执来源在机器记录中分开。
+
+全部最终执行前后，239个代码/测试文件集合SHA-256均为
+`f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5`，
+65个产品文件集合仍为 `8927b69b9cbf6d35814bda9c98e6aa9e80ddde7bc00a7c038408027511a0e18d`。
+变异均已还原，没有更改生产逻辑、CI工作流、依赖、模型或宿主配置。
+
+成本只报告已有回执：捕获器13次主线程命令累计墙钟573461.6865ms（约9.56分钟），
+其中六次完整测试累计529551.5025ms，最终冻结身份的六次命令累计204392.3042ms。
+原提交两条复现命令另计1940.5581ms。以上不等于总等待、总验证成本或账单；代理各轮耗时另列，
+下载/解包、阅读、收尾与token成本没有完整计时，写unknown。保留失败不是重复计算新增产品覆盖。
+
+本轮不重跑完整693条变异、浏览器或原生宿主：产品身份未变，重跑的是本次修改的夹具、驱动和相关集合；
+不能把旧完整变异结果认证成新驱动的完整验证。修复提交的GitHub CI为not_run，本机WSL不是Actions。
+真实双机、双Codex同手公开往返、十手和真人反馈仍待执行，`proactive_wake_verified=false`。
+恢复文档只更新当下工程收尾指针，不重新确认L0–L2，也不关闭既有MVP父节点。
+
+最终治理正文的语言检查实际回执位于 `artifacts/b31-governance-language-final-20260903.json`；
+该指针本身不是通过声明。下一步等待本批commit/push授权，随后核对新提交的两个GitHub作业；
+不在此等待期间自动启动真人局、开隧道、改宿主设置或继续功能开发。
+
+```yaml
+execution_closure:
+  contract: dual-ai.execution-closure.v1
+  result_id: EC-TG-B31-NODE22-LOCAL-VERIFICATION
+  detail_level: evidence_slice
+  scope:
+    scope_id: B31_frozen_five_file_local_verification
+    exact_outcome: Node22测试夹具与验证驱动的本地兼容及已知误判修复；不是MVP或GitHub验收。
+    owner_ref: REVIEW-LOG.md#b31-node22-ci-verification
+  trigger: verification_evidence
+  basis:
+    implementation_identity:
+      kind: file_set_digest
+      scope: 239个产品与验证文件，目录和算法见机器记录identity。
+      identity: sha256:f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5
+      status: current
+    verification_identities:
+      - evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json
+        identity: sha256:3626a6f7db8baa61650918ae775b159be5cf26690063c22ccec4bc65e64e9a77
+        status: current
+    freshness: current
+  acceptance:
+    derivation_timing: before_execution
+    obligations:
+      - {id: B31-A1, predicate: 冻结身份在Windows与WSL的Node22全量均无失败取消。, required: yes, real_condition: 两个平台分别实际执行完整npm测试。}
+      - {id: B31-A2, predicate: 相关两组变异各25条被具体行为断言杀掉并还原。, required: yes, real_condition: 真实变异只串行修改并恢复本仓库源码。}
+      - {id: B31-A3, predicate: 已知异常退出截断反例不得误记KILLED。, required: yes, real_condition: 隔离真实子进程及写入还原回归，由独立上下文复核。}
+      - {id: B31-A4, predicate: 产品及宿主配置不随测试兼容修补改变。, required: yes, real_condition: 比较产品文件哈希和限定差异，不进行原生模型调用。}
+    selected_surfaces: [integration, focused_probe, inspection]
+    observations:
+      - {obligation_id: B31-A1, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/verification/current_runs/windows-full-verified, result: pass, caveat: Windows本机，不是GitHub。}
+      - {obligation_id: B31-A1, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/verification/current_runs/linux-full-verified, result: pass, caveat: 本机WSL，不是GitHub。}
+      - {obligation_id: B31-A2, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/verification/current_runs/windows-mutation-play-verified, result: pass, caveat: Windows入口15条。}
+      - {obligation_id: B31-A2, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/verification/current_runs/windows-mutation-remote-verified, result: pass, caveat: Windows远程10条。}
+      - {obligation_id: B31-A2, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/verification/current_runs/linux-mutation-play-verified, result: pass, caveat: WSL入口15条。}
+      - {obligation_id: B31-A2, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/verification/current_runs/linux-mutation-remote-verified, result: pass, caveat: WSL远程10条；两组不代表完整693条。}
+      - {obligation_id: B31-A3, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/review/final_driver_review, result: pass, caveat: 独立代理执行；不覆盖所有同数量异常退出。}
+      - {obligation_id: B31-A4, evidence_type: inspection, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json#/identity, result: pass, caveat: 只确认本次变更边界，不补证真实宿主能力。}
+    skipped: [完整693条变异本批未跑, 产品未改故浏览器不重跑, 新提交GitHub待推送, 真人双机十手仍待双方参与]
+    result: pass_with_notes
+  semantic_delta: l3_l4_within_scope
+  state: closed
+  claim_limits: [只闭合本地验证证据切片, 不宣布GitHub通过, 不升级原生主动AI, 不关闭MVP或父节点, 不授权本批提交推送]
+  next_owner: user_for_B31_commit_push_permission_then_primary_for_GitHub_verification
+```

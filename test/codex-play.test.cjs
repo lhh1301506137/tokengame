@@ -36,6 +36,32 @@ function fixture(t) {
   return { base, project, repository, executable, config: path.join(project, ".codex", "config.toml") };
 }
 
+// 模拟平台时，路径和文件系统必须属于同一平台；不能用宿主的 /tmp 夹具配 Windows 路径解析。
+// 精确匹配路径，不替解析器纠正分隔符，也不访问/执行宿主的 Codex 文件。
+function executableFs(entries) {
+  const nodes = new Map(entries);
+  const calls = [];
+  function lookup(method, value) {
+    calls.push({ method, value });
+    const node = nodes.get(value);
+    if (node === undefined || node.error) {
+      const code = node?.error ?? "ENOENT";
+      throw Object.assign(new Error(code), { code });
+    }
+    return node;
+  }
+  return {
+    calls,
+    fs: {
+      lstatSync(value) {
+        const node = lookup("lstatSync", value);
+        return { isFile: () => node.kind === "file", isSymbolicLink: () => node.kind === "symlink" };
+      },
+      realpathSync(value) { return lookup("realpathSync", value).canonical ?? value; },
+    },
+  };
+}
+
 function environment(f, extra = {}) {
   return { CODEX_THREAD_ID: THREAD, TOKENGAME_CODEX_EXECUTABLE: f.executable, KEEP_ME: "yes", ...extra };
 }
@@ -135,31 +161,33 @@ test("显式可执行文件优先且独占；无效时绝不读取或回退PATH"
   }
 });
 
-test("Windows PATH只取第一实际候选；不可信第一项立即拒绝，不跳到后项", (t) => {
-  const f = fixture(t);
-  const local = path.join(f.base, "LocalAppData");
-  const trustedA = path.join(local, "OpenAI", "Codex", "bin", "a1", "codex.exe");
-  const trustedB = path.join(local, "OpenAI", "Codex", "bin", "beef02", "codex.exe");
-  for (const file of [trustedA, trustedB]) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, "trusted fixture\n");
+test("Windows PATH只取第一实际候选；不可信第一项立即拒绝，不跳到后项", () => {
+  const win = path.win32;
+  const local = "C:\\fixture\\LocalAppData";
+  const bin = win.join(local, "OpenAI", "Codex", "bin");
+  const trustedA = win.join(bin, "a1", "codex.exe");
+  const trustedB = win.join(bin, "beef02", "codex.exe");
+  const untrusted = "C:\\fixture\\untrusted\\codex.exe";
+  const nonHex = win.join(bin, "not-hex", "codex.exe");
+  const missing = "C:\\fixture\\missing-bin";
+  const files = executableFs([
+    [local, { kind: "directory" }], [bin, { kind: "directory" }],
+    ...[trustedA, trustedB, untrusted, nonHex].map((value) => [value, { kind: "file" }]),
+  ]);
+  const dependencies = { platform: "win32", fs: files.fs };
+  const selected = resolveCodexExecutable({ PATH: [missing, win.dirname(trustedA), win.dirname(trustedB)].join(";"),
+    LOCALAPPDATA: local }, dependencies);
+  assert.equal(selected, trustedA);
+  assert.deepEqual([...new Set(files.calls.filter(({ method }) => method === "lstatSync").map(({ value }) => value))],
+    [win.join(missing, "codex.exe"), trustedA]);
+
+  for (const first of [untrusted, nonHex]) {
+    files.calls.length = 0;
+    assert.throws(() => resolveCodexExecutable({ PATH: [win.dirname(first), win.dirname(trustedA)].join(";"),
+      LOCALAPPDATA: local }, dependencies), { code: "tokengame_codex_executable_untrusted" });
+    assert.equal(files.calls.some(({ value }) => value === first), true);
+    assert.equal(files.calls.some(({ value }) => value === trustedA), false, "拒绝后不得探测下一候选");
   }
-  const missing = path.join(f.base, "missing-bin");
-  const selected = resolveCodexExecutable({ PATH: [missing, path.dirname(trustedA), path.dirname(trustedB)].join(";"),
-    LOCALAPPDATA: local }, { platform: "win32" });
-  assert.equal(selected, fs.realpathSync(trustedA));
-
-  const untrusted = path.join(f.base, "untrusted", "codex.exe");
-  fs.mkdirSync(path.dirname(untrusted), { recursive: true });
-  fs.writeFileSync(untrusted, "untrusted fixture\n");
-  assert.throws(() => resolveCodexExecutable({ PATH: [path.dirname(untrusted), path.dirname(trustedA)].join(";"),
-    LOCALAPPDATA: local }, { platform: "win32" }), { code: "tokengame_codex_executable_untrusted" });
-
-  const nonHex = path.join(local, "OpenAI", "Codex", "bin", "not-hex", "codex.exe");
-  fs.mkdirSync(path.dirname(nonHex), { recursive: true });
-  fs.writeFileSync(nonHex, "wrong channel\n");
-  assert.throws(() => resolveCodexExecutable({ PATH: [path.dirname(nonHex), path.dirname(trustedA)].join(";"),
-    LOCALAPPDATA: local }, { platform: "win32" }), { code: "tokengame_codex_executable_untrusted" });
 
   for (const stat of [
     { isFile: () => false, isSymbolicLink: () => false },
@@ -180,16 +208,71 @@ test("Windows PATH只取第一实际候选；不可信第一项立即拒绝，�
   }
 });
 
+test("Windows PATH按canonical位置判定信任；父目录重定向或首项读取失败不能跳过", () => {
+  const win = path.win32;
+  const local = "C:\\fixture\\LocalAppData";
+  const canonicalLocal = "D:\\canonical\\LocalAppData";
+  const canonicalBin = win.join(canonicalLocal, "OpenAI", "Codex", "bin");
+  const candidate = win.join(local, "OpenAI", "Codex", "bin", "a1", "codex.exe");
+  const trusted = win.join(canonicalBin, "a1", "codex.exe");
+  const outside = "D:\\outside\\codex.exe";
+  const next = win.join(canonicalBin, "beef02", "codex.exe");
+  for (const entry of [
+    { kind: "file", canonical: trusted },
+    { kind: "file", canonical: outside },
+    { error: "EACCES" },
+  ]) {
+    const files = executableFs([
+      [local, { kind: "directory", canonical: canonicalLocal }],
+      [canonicalBin, { kind: "directory" }], [candidate, entry],
+      ...[trusted, outside, next].map((value) => [value, { kind: "file" }]),
+    ]);
+    const resolve = () => resolveCodexExecutable({
+      PATH: [win.dirname(candidate), win.dirname(next)].join(";"), LOCALAPPDATA: local,
+    }, { platform: "win32", fs: files.fs });
+    if (entry.canonical === trusted) assert.equal(resolve(), trusted);
+    else assert.throws(resolve, { code: "tokengame_codex_executable_untrusted" });
+    assert.equal(files.calls.some(({ value }) => value === candidate), true);
+    assert.equal(files.calls.some(({ value }) => value === next), false);
+  }
+});
+
 test("未显式配置时非Windows失败；显式普通文件不受PATH平台回退限制", (t) => {
   const f = fixture(t);
   const env = {};
   Object.defineProperty(env, "PATH", { enumerable: true, get() { throw new Error("non-Windows PATH must not be read"); } });
-  assert.throws(() => resolveCodexExecutable(env, { platform: "linux", path: path.win32 }),
+  assert.throws(() => resolveCodexExecutable(env, { platform: "linux" }),
     { code: "tokengame_codex_executable_required" });
-  assert.equal(resolveCodexExecutable({ TOKENGAME_CODEX_EXECUTABLE: f.executable }, {
-    platform: "linux", path: path.win32,
-  }), fs.realpathSync(f.executable));
+  assert.equal(resolveCodexExecutable({ TOKENGAME_CODEX_EXECUTABLE: f.executable }), fs.realpathSync(f.executable));
 });
+
+for (const { platform, executable, canonical, invalid } of [
+  { platform: "win32", executable: "C:\\explicit\\codex.exe", canonical: "D:\\canonical\\codex.exe",
+    invalid: ["relative\\codex.exe", "/opt/codex", "\\codex.exe"] },
+  { platform: "linux", executable: "/opt/explicit/codex", canonical: "/opt/canonical/codex",
+    invalid: ["relative/codex", "C:\\explicit\\codex.exe", "\\codex.exe"] },
+]) {
+  test(`${platform}显式路径模拟独立于宿主；只接受本平台绝对文件且不回退PATH`, () => {
+    const files = executableFs([
+      [executable, { kind: "file", canonical }], [canonical, { kind: "file" }],
+    ]);
+    const env = { TOKENGAME_CODEX_EXECUTABLE: executable };
+    let pathReads = 0;
+    Object.defineProperty(env, "PATH", { get() { pathReads += 1; throw new Error("PATH fallback forbidden"); } });
+    assert.equal(resolveCodexExecutable(env, { platform, fs: files.fs }), canonical);
+    assert.deepEqual(files.calls.map(({ method, value }) => [method, value]), [
+      ["lstatSync", executable], ["realpathSync", executable], ["lstatSync", canonical],
+    ]);
+    for (const value of invalid) {
+      files.calls.length = 0;
+      env.TOKENGAME_CODEX_EXECUTABLE = value;
+      assert.throws(() => resolveCodexExecutable(env, { platform, fs: files.fs }),
+        { code: "tokengame_codex_executable_invalid" });
+      assert.equal(files.calls.length, 0);
+    }
+    assert.equal(pathReads, 0);
+  });
+}
 
 test("全部前置通过后才原子配置；changed只提示重启，重复运行才同进程启动一次", async (t) => {
   const f = fixture(t);

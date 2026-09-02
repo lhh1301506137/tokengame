@@ -1,5 +1,25 @@
 # TokenGame 项目决策记录
 
+## DEC-20260903-001：授权提交、推送 B31 验证修复并核对 GitHub CI
+
+metadata:
+  date: 2026-09-03
+  source: user_direct
+  scope: release
+  status: user_confirmed
+  supersedes: none
+  affected_docs: [STATUS.md, PROJECT-PLAN-TREE.md, REVIEW-LOG.md, progress.md]
+  resulting_changes:
+    - doc: REVIEW-LOG.md#b31-node22-ci-verification
+      change: 保留本地冻结证据，另记录本批授权、实际提交推送及对应 GitHub 作业结果。
+
+question: 是否允许将已完成本地验证和独立复核的 B31 修复 commit + push，再核对 GitHub CI？
+why_it_matters: 前一轮 B30 推送已经完成，不把该次授权或长期本地测试许可推定为本批新的公开写入授权。
+recommended_answer: 提交本批验证修复与必要记录到既有仓库 main，核对远端与对应两平台 CI；不部署或启动真人牌局。
+user_answer: commit+push
+decision: 允许在 H:/tokengold/tokengame 对已核定的 B31 测试、驱动、规范和必要收尾记录创建本地提交，并非强制推送至既有 https://github.com/lhh1301506137/tokengame.git 的 main，读取对应 GitHub Actions 结果。许可覆盖本批发布回执的必要文档收尾，不是长期自动推送许可。
+follow_up: 精确路径暂存，排除忽略的运行产物、下载、连接凭据、宿主配置和无关修改；复用身份一致的已执行本地测试，不因提交重新跑整套。本次不改模型/宿主配置、不创建游戏任务、不部署、不重写历史、不改变许可证或仓库可见性，不关闭两好友 MVP 或归档未完成任务。实际推送和 CI 结果必须来自工具回执，授权本身不是成功证据。
+
 ## DEC-20260901-002：授权恢复项目级 TokenGame 绝对 `cwd` 并再次重启 Codex
 
 metadata:

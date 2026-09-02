@@ -53,15 +53,19 @@ function testFileFor(mutation) {
 // 名传成了字符串 "undefined"，node --test 找不到文件必然失败，于是四个变异集全部假绿，
 // 每条都显示 ✔。判定的可信度不取决于判定逻辑多严，取决于基线是否已知为绿。
 function assertBaselineGreen(files) {
+  const counts = new Map();
   for (const file of [...new Set(files)]) {
     try {
-      const out = execFileSync("node", ["--test", "--test-concurrency=1", file], {
+      // Node 22 在管道中默认使用 TAP；本驱动的 ℹ/✖ 解析合同必须显式固定为 spec。
+      const out = execFileSync(process.execPath, ["--test", "--test-reporter=spec", "--test-concurrency=1", file], {
         encoding: "utf8", stdio: "pipe",
       });
-      if (!/^\s*ℹ tests \d+/m.test(out)) {
+      const count = Number(/^\s*ℹ tests (\d+)\s*$/m.exec(out)?.[1]);
+      if (!Number.isSafeInteger(count) || count < 1) {
         process.stdout.write(`FATAL 基线未真正运行: ${file}\n`);
         process.exit(2);
       }
+      counts.set(file, count);
       process.stdout.write(`基线绿 ${file}\n`);
     } catch (error) {
       const tail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`
@@ -70,9 +74,10 @@ function assertBaselineGreen(files) {
       process.exit(2);
     }
   }
+  return counts;
 }
 
-assertBaselineGreen(selected.map((mutation) => testFileFor(mutation)));
+const baselineCounts = assertBaselineGreen(selected.map((mutation) => testFileFor(mutation)));
 
 const results = [];
 for (const mutation of selected) {
@@ -95,9 +100,10 @@ for (const mutation of selected) {
   // 而前面几条的结论也就跟着看不见了，所以接住它、记成这一条的判定。
   let output;
   try {
+    const testFile = testFileFor(mutation);
     output = execFileSync(
-      "node",
-      [checker, mutation.file, find, replace, testFileFor(mutation)],
+      process.execPath,
+      [checker, mutation.file, find, replace, testFile, `--baseline-tests=${baselineCounts.get(testFile)}`],
       { encoding: "utf8" },
     );
   } catch (error) {

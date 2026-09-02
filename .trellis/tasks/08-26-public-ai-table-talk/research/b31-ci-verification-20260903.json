@@ -1,0 +1,559 @@
+{
+  "schema": "tokengame.b31-ci-verification.v1",
+  "recorded_at": "2026-09-03",
+  "summary": "B31 仅修 Node 22 测试夹具和验证驱动；当前本地两平台全量及各 25 条受影响变异通过，不升级 GitHub CI、原生宿主或两好友 MVP 声明。",
+  "vcs": {
+    "baseline_head": "4135611395b09ba077e156ce59010593232e5b7d",
+    "branch": "main",
+    "working_tree": "B31_local_uncommitted",
+    "b31_push": "not_authorized_or_executed",
+    "prior_b30_push": "completed_in_previous_turn"
+  },
+  "authorization": {
+    "local_work": "本轮继续及既有长期本地测试授权；测试/回归无需逐次申请。",
+    "framework": "现有 Trellis implement→独立 check→规范/记录收尾。",
+    "new_external_write": "新一批 commit/push 仍待明确授权；未部署、改宿主配置、创建游戏任务或调用原生模型/queue。"
+  },
+  "runtime": {
+    "node": "v22.23.2",
+    "npm": "10.9.8",
+    "windows_node": "artifacts/b31-node22-20260903/windows/node-v22.23.2-win-x64/node.exe",
+    "linux_node": "/tmp/tokengame-b31-node22-yUI5pW/node-v22.23.2-linux-x64/bin/node",
+    "linux_carrier": "本机 Ubuntu/WSL；不是 GitHub ubuntu-latest，内核 Linux 4.4.0-26100-Microsoft。",
+    "official_manifest": "https://nodejs.org/dist/v22.23.2/SHASUMS256.txt",
+    "portable_archives": [
+      {
+        "name": "node-v22.23.2-win-x64.zip",
+        "bytes": 35683585,
+        "sha256": "1177b4137ba5adaa56354ae40f1080c7450e8ae09cecb47da459d1c52ac99f97"
+      },
+      {
+        "name": "node-v22.23.2-linux-x64.tar.xz",
+        "bytes": 31058332,
+        "sha256": "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307"
+      }
+    ],
+    "checksum_before_execution": true,
+    "global_runtime_dependency_or_CI_config_changed": false,
+    "carrier_note": "WSL 原始 stderr 含本机 localhost 代理提示，保留原始字节哈希；不把提示归因产品或 Dual 失败。"
+  },
+  "identity": {
+    "algorithm": "sha256(按相对路径排序后逐文件拼接 path + NUL + lowercase sha256(raw bytes) + LF)",
+    "product": {
+      "files": 65,
+      "sha256": "8927b69b9cbf6d35814bda9c98e6aa9e80ddde7bc00a7c038408027511a0e18d"
+    },
+    "scope": {
+      "files": 239,
+      "sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5"
+    },
+    "file_hashes": {
+      "test/codex-play.test.cjs": "02aa4a8270c188c5eb0a1554bfc9614da17a795a02e51e4d93595ea4c7bdc144",
+      "test/remote-wake-broker.test.cjs": "ac01edaea246b405ae89425a716ff23e114b390507b4a7407fffb91004f7c411",
+      "test-support/mutate-suite.cjs": "14b3e927dae32dac208b079f592f4ea9c44c4041609a50d802e6582ad5647d86",
+      "test-support/mutate-check.cjs": "a6d6ba82493d897e82ea536c4e6abc355c1713555372a7c7d1942fc48fa757aa",
+      "test/mutation-reporter.test.cjs": "4990ea52fe1a36061e8f419bb6e17e062718a4930e074b995ed48d61f5e4a474",
+      "test-support/mutations/codex-play.json": "e17de7b9c76e0bf28a8201590aac23fce9aa09658eb96451ded9378b7f1a9b6e",
+      "test-support/mutations/b30-remote-wake.json": "a5bd80c99339d1c73af17700d7e5805b394398f063ee79d27ec292d385c10134"
+    },
+    "product_catalog": "src/web/plugins/package.json；相对基线 65 个产品文件未变。",
+    "scope_catalog": "src/web/plugins/test/test-support/package.json，受控及未忽略新增文件；239 文件，不含本记录、治理文档或运行产物。",
+    "raw_runner": "artifacts/b31-ci-runner.cjs",
+    "raw_runner_sha256": "144c137067cc81da5e4719fed1dd64a6062e25cbe97bd4a3e3eb58bc8828b843"
+  },
+  "original_ci": {
+    "evidence_source": "主线程直接读取 gh 作业日志；不是 Claude 自述。",
+    "url": "https://github.com/lhh1301506137/tokengame/actions/runs/33683335693",
+    "head": "4135611395b09ba077e156ce59010593232e5b7d",
+    "windows": {
+      "job_id": 100424813703,
+      "conclusion": "failure",
+      "tests": 1455,
+      "pass": 1450,
+      "fail": 0,
+      "cancelled": 5,
+      "duration_ms": 87708.0712
+    },
+    "ubuntu": {
+      "job_id": 100424813972,
+      "conclusion": "failure",
+      "tests": 1447,
+      "pass": 1441,
+      "fail": 1,
+      "cancelled": 5,
+      "duration_ms": 65094.10021
+    },
+    "b31_new_commit_run": "not_run"
+  },
+  "baseline_reproductions": [
+    {
+      "raw_receipt": "artifacts/b31-ci-baseline-20260903/windows-result.json",
+      "receipt_sha256": "32f89e676bdb249037daee1831b298a31a1f7c1781d0f5f486517fd53bb6a95f",
+      "platform": "windows",
+      "node": "v22.23.2",
+      "exit_code": 1,
+      "wall_elapsed_ms": 1069.333,
+      "counts": {
+        "tests": 15,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 5,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 984.9535
+      }
+    },
+    {
+      "raw_receipt": "artifacts/b31-ci-baseline-20260903/linux-result.json",
+      "receipt_sha256": "1be92fa92d1b21f89944d692e488883439429752c705e1d16c9ccd69750ed10d",
+      "platform": "linux_wsl",
+      "node": "v22.23.2",
+      "exit_code": 1,
+      "wall_elapsed_ms": 871.2251,
+      "counts": {
+        "tests": 15,
+        "pass": 9,
+        "fail": 1,
+        "cancelled": 5,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 517.3543
+      }
+    }
+  ],
+  "original_snapshot": {
+    "path": "artifacts/b31-ci-baseline-20260903/source.tar",
+    "sha256": "6b9bff546c09447e5cd2a25dcb250f4e2d3907c637e5681dd02783e5b7134f80",
+    "caveat": "测试使用的 ASCII 代码路径正确；解包中部分中文文档文件名编码有失真，未据此宣称整份文档归档无损。"
+  },
+  "verification": {
+    "commands": {
+      "full": "在指定 Node 22 的进程 PATH 下，以该发行版的 npm-cli.js 执行 test；package 脚本保持 node --test --test-concurrency=1 test/*.test.cjs。",
+      "play_mutations": "指定 Node 22 执行 test-support/mutate-suite.cjs test-support/mutations/codex-play.json。",
+      "remote_mutations": "指定 Node 22 执行 test-support/mutate-suite.cjs test-support/mutations/b30-remote-wake.json。",
+      "sequencing": "Windows/WSL 全量及真实变异全部串行；独立检查只在专属临时副本变异。"
+    },
+    "current_runs": {
+      "linux-full-verified": {
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/linux-full-verified/result.json",
+        "receipt_sha256": "b5c65356a5719a75ec116ba8a6aa63aa67e8568652f75cd71afdbbed5ea55058",
+        "started_at": "2026-09-02T22:16:25.353Z",
+        "finished_at": "2026-09-02T22:17:43.100Z",
+        "exit_code": 0,
+        "wall_elapsed_ms": 77716.2565,
+        "counts": {
+          "tests": 1467,
+          "pass": 1467,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 77169.9458
+        },
+        "stdout_sha256": "38edef292ad471b310eda62a7887abc10395040f505034e60c2442325d34c7e8",
+        "stderr_sha256": "b280c454d6f559e56eb3f5ed39f3ba084b8d1744a3ff7fe016b21ff86dea1aca",
+        "before_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "after_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "source_unchanged": true
+      },
+      "linux-mutation-play-verified": {
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/linux-mutation-play-verified/result.json",
+        "receipt_sha256": "21a699630380a46d12b29ca30f8db971cb1094ed0fe3e1c7db553abbeb8ea70f",
+        "started_at": "2026-09-02T22:18:38.389Z",
+        "finished_at": "2026-09-02T22:18:46.732Z",
+        "exit_code": 0,
+        "wall_elapsed_ms": 8314.3252,
+        "mutation_tallies": [
+          "合计 15：杀掉 15，存活 0，未评估 0"
+        ],
+        "stdout_sha256": "9ea25690ea1b87f16064da54fa164a703baca22243858dcc930a9ccaa616e7d9",
+        "stderr_sha256": "b280c454d6f559e56eb3f5ed39f3ba084b8d1744a3ff7fe016b21ff86dea1aca",
+        "before_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "after_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "source_unchanged": true
+      },
+      "linux-mutation-remote-verified": {
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/linux-mutation-remote-verified/result.json",
+        "receipt_sha256": "47a0e16722a62f2f65a853f6e499b321d9f923cd5f06883d6d00665ebd07cd8d",
+        "started_at": "2026-09-02T22:18:47.507Z",
+        "finished_at": "2026-09-02T22:18:53.490Z",
+        "exit_code": 0,
+        "wall_elapsed_ms": 5954.3218,
+        "mutation_tallies": [
+          "合计 10：杀掉 10，存活 0，未评估 0"
+        ],
+        "stdout_sha256": "5c9ac442ae06f950d2f77082591c8a59568d443fd40224b779b8dcbeb0c83d1e",
+        "stderr_sha256": "b280c454d6f559e56eb3f5ed39f3ba084b8d1744a3ff7fe016b21ff86dea1aca",
+        "before_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "after_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "source_unchanged": true
+      },
+      "windows-full-verified": {
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-full-verified/result.json",
+        "receipt_sha256": "0ab37b9a6d20d5ad174c174125187f95f3002f3a0b307cda45e7c67176feb3f1",
+        "started_at": "2026-09-02T22:14:15.405Z",
+        "finished_at": "2026-09-02T22:15:53.850Z",
+        "exit_code": 0,
+        "wall_elapsed_ms": 98412.3531,
+        "counts": {
+          "tests": 1475,
+          "pass": 1475,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 98100.0179
+        },
+        "stdout_sha256": "f7fd51e14015ef6279702eff3cb8076c0c7f3325a201a055fa08544a67904128",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "before_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "after_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "source_unchanged": true
+      },
+      "windows-mutation-play-verified": {
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-mutation-play-verified/result.json",
+        "receipt_sha256": "48a1aecf414d3991be98406e87b6e805b2391c83564776bab24e9ef545b92cbe",
+        "started_at": "2026-09-02T22:18:22.728Z",
+        "finished_at": "2026-09-02T22:18:30.887Z",
+        "exit_code": 0,
+        "wall_elapsed_ms": 8129.8736,
+        "mutation_tallies": [
+          "合计 15：杀掉 15，存活 0，未评估 0"
+        ],
+        "stdout_sha256": "9eac209dba86c8f44794b4aebca88082df2b5e8a41639b37a456c0579af2eff0",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "before_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "after_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "source_unchanged": true
+      },
+      "windows-mutation-remote-verified": {
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-mutation-remote-verified/result.json",
+        "receipt_sha256": "86acc188a3044111fd95f4b06c1021fc71756259c0e0619122709a3dc439288c",
+        "started_at": "2026-09-02T22:18:31.665Z",
+        "finished_at": "2026-09-02T22:18:37.559Z",
+        "exit_code": 0,
+        "wall_elapsed_ms": 5865.174,
+        "mutation_tallies": [
+          "合计 10：杀掉 10，存活 0，未评估 0"
+        ],
+        "stdout_sha256": "9f97f2fdf84452a5a8e0db997453ca41feff1faf2c853c13ab439aa7d3d692a2",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "before_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "after_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+        "source_unchanged": true
+      }
+    },
+    "count_difference": "Windows 额外 8 项来自 test/codex-queue-wake-probe.test.cjs 的 4 字段×2 root-relative 路径负例条件注册；不是 Linux 取消或漏读计数。",
+    "mutation_reason_inspection": {
+      "performed_by": "primary",
+      "named_kills_per_platform": 25,
+      "reference_error_in_recorded_causes": false,
+      "windows_linux_causes_equal_after_duration_normalization": true,
+      "revoked_generation_reason": "Missing expected rejection；不是取消结束。"
+    },
+    "historical_runs": {
+      "linux-full-1": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/linux-full-1/result.json",
+        "receipt_sha256": "d48574e433c443c66fd286a32d7fec742d432a560aec5f11104e7b6aa671ba66",
+        "exit_code": 0,
+        "wall_elapsed_ms": 86862.2095,
+        "counts": {
+          "tests": 1454,
+          "pass": 1454,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 76023.6152
+        },
+        "mutation_tallies": [],
+        "scope_sha256": "ada5583107f5cf842a94da459619d455d56e4a75b0006279565a89e2d16d2e76"
+      },
+      "linux-full-final": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/linux-full-final/result.json",
+        "receipt_sha256": "64899825269bd6a44baf8db61f259b2cdc8835f5e42881bd52691a2844040be4",
+        "exit_code": 0,
+        "wall_elapsed_ms": 78032.7808,
+        "counts": {
+          "tests": 1465,
+          "pass": 1465,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 77471.3558
+        },
+        "mutation_tallies": [],
+        "scope_sha256": "6181dabcbed5d8c25ac4248987a8acd2cec3b736019a105dca9efa58d3958e55"
+      },
+      "windows-full-1": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-full-1/result.json",
+        "receipt_sha256": "2cb29e0d24b08b1bc8946b855ed2f4a4727371db52fc06fcc7ac6a515df77373",
+        "exit_code": 0,
+        "wall_elapsed_ms": 91820.1978,
+        "counts": {
+          "tests": 1462,
+          "pass": 1462,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 91407.6075
+        },
+        "mutation_tallies": [],
+        "scope_sha256": "ada5583107f5cf842a94da459619d455d56e4a75b0006279565a89e2d16d2e76"
+      },
+      "windows-full-final": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-full-final/result.json",
+        "receipt_sha256": "2be5ef2d9ee399dfe63827f3d4827003a9c02530a5f2c2b1068218bf00dd386f",
+        "exit_code": 0,
+        "wall_elapsed_ms": 96707.7048,
+        "counts": {
+          "tests": 1473,
+          "pass": 1473,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 96401.1524
+        },
+        "mutation_tallies": [],
+        "scope_sha256": "6181dabcbed5d8c25ac4248987a8acd2cec3b736019a105dca9efa58d3958e55"
+      },
+      "windows-mutation-play-1": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-mutation-play-1/result.json",
+        "receipt_sha256": "d597f651627466a2bd257f6af2d461f468ac764a026e6739892c88f84c3db174",
+        "exit_code": 2,
+        "wall_elapsed_ms": 512.3261,
+        "counts": {},
+        "mutation_tallies": [],
+        "scope_sha256": "ada5583107f5cf842a94da459619d455d56e4a75b0006279565a89e2d16d2e76"
+      },
+      "windows-mutation-play-final": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-mutation-play-final/result.json",
+        "receipt_sha256": "9476e912fe65925ae9ee0f198e0aad50e5d3cf46fcb8779c4b5dba4800367fbe",
+        "exit_code": 0,
+        "wall_elapsed_ms": 9003.8367,
+        "counts": {},
+        "mutation_tallies": [
+          "合计 15：杀掉 15，存活 0，未评估 0"
+        ],
+        "scope_sha256": "6181dabcbed5d8c25ac4248987a8acd2cec3b736019a105dca9efa58d3958e55"
+      },
+      "windows-mutation-remote-final": {
+        "freshness": "superseded_for_current_B31",
+        "raw_receipt": "artifacts/b31-ci-validation-20260903/windows-mutation-remote-final/result.json",
+        "receipt_sha256": "247e6ed8a17c0f2d8ad5eaf5768e056da325c0b9c532573c926294d5425c4666",
+        "exit_code": 1,
+        "wall_elapsed_ms": 6130.3266,
+        "counts": {},
+        "mutation_tallies": [
+          "合计 10：杀掉 9，存活 0，未评估 1",
+          "未评估：revoked-generation-cannot-register-again — INVALID 测试存在取消项，未完整评估变异: ✖ 撤权换代后的旧 scope/ACK 不能进入新绑定，已出站未 ACK 的清理仍为未知 (4.5417ms) | ✖ 空长轮询在请求截止时返回，并清除定时器和 abort 监听 | ✖ 取消立即释放本席长轮询，另一席的等待不受影响 | ✖ 撤权立即拒绝待决长轮询并清除计时器与 abort 监听"
+        ],
+        "scope_sha256": "6181dabcbed5d8c25ac4248987a8acd2cec3b736019a105dca9efa58d3958e55"
+      }
+    },
+    "history_note": "带 -final 的旧目录仍是修复前中间阶段，不是当前代码最终证明；当前只引用 -verified 的 6 个冻结身份记录。首次 play -1 exit 2 是 reporter 基线失败，实际变异评估 0 条。"
+  },
+  "review": {
+    "initial_fixture_review": {
+      "reviewer": "/root/b31_ci_check",
+      "independence": "未参与两份测试的实施；独立上下文复核。未声明异模型/异供应商独立性。",
+      "mode": "read_only",
+      "reviewed_files": {
+        "test/codex-play.test.cjs": "02aa4a8270c188c5eb0a1554bfc9614da17a795a02e51e4d93595ea4c7bdc144",
+        "test/remote-wake-broker.test.cjs": "cd8ff95fcda0997a325f08176916a9dc9e727bc05676105edfefd03c31420238"
+      },
+      "verdict": "no_finding",
+      "executions": [
+        {
+          "platform": "windows",
+          "node": "v22.23.2",
+          "tests": 22,
+          "pass": 22,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 481.4638,
+          "exit_code": 0,
+          "tool_receipt": "375238"
+        },
+        {
+          "platform": "linux_wsl",
+          "node": "v22.23.2",
+          "tests": 22,
+          "pass": 22,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 506.4338,
+          "exit_code": 0,
+          "tool_receipt": "b2a484"
+        }
+      ],
+      "anchor_inspection": {
+        "unique_matches": 25,
+        "actual_mutations_run": 0,
+        "tool_receipt": "157a9a"
+      },
+      "boundaries": [
+        "未复跑全量/HTTP",
+        "未验证修复分支GitHub CI或真实Codex",
+        "路径虚拟文件系统不代表安装环境"
+      ]
+    },
+    "later_broker_tail_fix": {
+      "evidence_source": "实现代理工具回执及独立只读复核；当前主线程全量和变异另直接覆盖。",
+      "final_sha256": "ac01edaea246b405ae89425a716ff23e114b390507b4a7407fffb91004f7c411",
+      "windows": {
+        "tests": 9,
+        "pass": 9,
+        "exit_code": 0,
+        "duration_ms": 133.8269
+      },
+      "linux_wsl": {
+        "tests": 9,
+        "pass": 9,
+        "exit_code": 0,
+        "duration_ms": 125.3209
+      },
+      "direct_single_mutation": {
+        "killed": 1,
+        "exit_code": 0,
+        "wall_elapsed_ms": 568.1388
+      }
+    },
+    "driver_repair_history": [
+      {
+        "observation": "fail 与 cancelled 同时出现时误判 KILLED；修为 INVALID，并保留真实隔离回归。",
+        "evidence_source": "实现代理及后续主线程冻结全量"
+      },
+      {
+        "observation": "独立复核的命名失败加异步退出 17 反例；前轮 27/27 不能替代该额外红例。",
+        "tool_receipt": "6fa315"
+      },
+      {
+        "observation": "只增加文件级错误识别仍未修好，12 项定向中仅 11 通过。",
+        "evidence_source": "实现代理回执",
+        "windows_duration_ms": 4934.6795,
+        "linux_duration_ms": 4580.8235,
+        "exit_code": 1
+      },
+      {
+        "observation": "最终计数合同的实现阶段红绿记录。",
+        "evidence_source": "实现代理回执",
+        "red": {
+          "windows": {
+            "pass": 9,
+            "fail": 4,
+            "duration_ms": 5699.8133
+          },
+          "linux_wsl": {
+            "pass": 9,
+            "fail": 4,
+            "duration_ms": 5340.0128
+          },
+          "exit_code": 1
+        },
+        "green": {
+          "windows": {
+            "pass": 13,
+            "fail": 0,
+            "duration_ms": 6107.5312,
+            "tool_receipt": "df4da5"
+          },
+          "linux_wsl": {
+            "pass": 13,
+            "fail": 0,
+            "duration_ms": 5421.7399,
+            "tool_receipt": "fdeae4"
+          },
+          "exit_code": 0
+        }
+      }
+    ],
+    "final_driver_review": {
+      "reviewer": "/root/b31_ci_check",
+      "independence": "未参与实现；同项目的独立上下文只读复核，不声明异模型或异供应商独立性。",
+      "packet": "artifacts/b31-final-repair-review-packet-20260903.md",
+      "packet_sha256": "d5ece87fca7cc35bf9a6ecff8badbf8c90011c79c42d58a1231963400fb7b880",
+      "conclusion": "no_new_finding_in_bounded_repair",
+      "fixed_finding": "前轮 P2：命名断言失败后另一测试退出 17，报告从基线 2 项截为 1 项，旧驱动误判 KILLED；修后同例必须 INVALID。",
+      "executions": [
+        {
+          "platform": "windows",
+          "tests": 29,
+          "pass": 29,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 6117.3493,
+          "exit_code": 0,
+          "tool_receipt": "af03fb"
+        },
+        {
+          "platform": "linux_wsl",
+          "tests": 29,
+          "pass": 29,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 5397.5106,
+          "exit_code": 0,
+          "tool_receipt": "43bf88"
+        }
+      ],
+      "evidence_source": "独立复核代理的工具回执报告；主线程另直接执行全量与真实变异并读取原始记录。",
+      "reviewed_hashes": {
+        "test-support/mutate-suite.cjs": "14b3e927dae32dac208b079f592f4ea9c44c4041609a50d802e6582ad5647d86",
+        "test-support/mutate-check.cjs": "a6d6ba82493d897e82ea536c4e6abc355c1713555372a7c7d1942fc48fa757aa",
+        "test/mutation-reporter.test.cjs": "4990ea52fe1a36061e8f419bb6e17e062718a4930e074b995ed48d61f5e4a474"
+      },
+      "hash_equal_before_after": true,
+      "earlier_red_tool_receipt": "6fa315",
+      "syntax_and_diff_receipt": "db985e",
+      "limitations": [
+        "只确认已知数量截断反例，不证明识别所有同数量异常退出。",
+        "该复核未跑真实生产变异、HTTP、全量或 GitHub/native；这些不得从 29 项推导。"
+      ]
+    },
+    "primary_review": "主线程检查最终差异、基线/取消/数量判定、两个平台全部 25 条实际失败原因以及文件恢复；没有把独立代理的通过转写成主线程实跑。"
+  },
+  "recorded_cost": {
+    "primary_captured_run_count": 13,
+    "primary_captured_total_wall_ms": 573461.6865,
+    "primary_full_run_count": 6,
+    "primary_full_total_wall_ms": 529551.5025,
+    "final_six_commands_wall_ms": 204392.3042,
+    "baseline_two_commands_wall_ms": 1940.5581,
+    "scope_note": "以上只合计捕获器保存的主线程命令，不含上游 CI、基线两条、代理检查、下载/解包、阅读和文档时间；没有重叠叠加为用户等待时间。",
+    "total_turn_wall_time": "unknown",
+    "token_cost": "unknown",
+    "billing_cost": "unknown",
+    "latest_independent_duration_is_in_review": true
+  },
+  "limits": [
+    "GitHub 修复提交尚未运行；本机 WSL 不能替代 Actions。",
+    "本批未重跑完整 693 条变异或 npm run gate；旧 B30 成绩保持历史限定，当前只实跑相关 25 条/平台。",
+    "浏览器、两台电脑、双原生 Codex、十手和真人反馈未在本批执行；proactive_wake_verified 仍为 false，MVP 父任务不关闭。",
+    "测试数量对照只封住已复现截断，不声称能识别所有同数量异常退出。",
+    "没有独立 lint/type-check 脚本；不写成通过。",
+    "旧观察报告不修改，原生宿主和公网资源不启动。"
+  ],
+  "governance_language_receipt": {
+    "pointer": "artifacts/b31-governance-language-final-20260903.json",
+    "status": "以该指针的最终实际回执为准；本字段不先行声明通过。"
+  },
+  "next_owner": "用户决定是否允许本批 commit/push；获准后核对新提交两平台 GitHub CI，再回到已确定的两好友真人验收。"
+}
