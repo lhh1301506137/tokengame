@@ -39,14 +39,19 @@ src/
     table-view-model.cjs     # 权威投影 → table-view.v1 视图模型
     core-client.cjs          # InProcess / Http 两种内核客户端，行为必须一致
     seat-custody.cjs         # 席位凭据本机托管，模型只拿进程内存作用域的不透明句柄
+    remote-wake-broker.cjs   # 本席通知注册/长轮询/ACK；不生成模型内容，不接收原生任务 ID
+    remote-wake-connector.cjs # 宿主中立的出站通知客户端；发送器由适配器注入
   bridge/server.cjs          # 【已替代】插件到旧权威服务的本地受限转发
   shared/http.cjs            # Node HTTP 共用函数
   run-table-core.cjs         # 权威内核进程入口（npm run core）
   run-table-web.cjs          # 浏览器牌桌进程入口（npm run web）
+  run-remote-beta.cjs        # 显式 HTTPS 入口下的好友测试启动器；不启动隧道
   run-probe.cjs              # 【已替代】旧探针启动入口
 plugins/tokengame/
   hooks/                     # Codex Hook 可执行文件及共享库
   mcp/                       # MCP stdio 服务
+  codex/connect.cjs          # 当前 Codex 专用游戏任务的本机连接器启动器
+  codex/run-connector.cjs    # 注入 Codex queue 发送器；不把宿主依赖移入中立模块
   skills/tokengame/          # 面向用户的插件技能
 test/                        # Node 内置测试运行器的契约与集成测试
 test-support/                # 浏览器验收、变异测试驱动、Playwright 定位与测试替身
@@ -64,6 +69,7 @@ docs/                        # 架构、隐私、验收和真实宿主探针说�
 - 多个 Node 服务复用的底层 HTTP 逻辑放在 `src/shared/`。
 - Codex 进程生命周期相关逻辑放在 `plugins/tokengame/hooks/`；可复用的 stdin、桥请求和 pending-marker 操作集中在 `hook-lib.cjs`。
 - 新 UI 的结构、视觉和交互分别留在 `web/table/index.html`、`web/table/table.css`、`web/table/table.js`。
+- 游戏与配置工作面共享一份会话/投影；切换工作面不能创建第二套连接、离席或重绑。远程通知状态是传输状态，不是牌局权威或第二个 AI 调度器。
 - 测试按被验证的边界命名，例如 `room-store.test.cjs`、`table-web-host.test.cjs`、`due-work.test.cjs`。
 
 ## 命名约定

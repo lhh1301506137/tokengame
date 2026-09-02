@@ -23,3 +23,8 @@
 {"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"新旧两套牌桌栈共存期间，防止再复制一份规则判定"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/b16-managed-wake-controls-20260831.md","reason":"B16本人启停UI、实际能力投影、幂等未知结果和异步世代围栏；不调用真实模型"}
 {"file":".trellis/tasks/08-26-public-ai-table-talk/research/b18-stable-project-mcp-activation-20260901.md","reason":"实现一次加载的项目MCP、固定私有槽位、原子激活/清除与Codex插件层受管配置；保留宿主重启授权门"}
+{"file": ".trellis/tasks/08-26-public-ai-table-talk/research/b30-two-friend-remote-carrier-20260903.md", "reason": "B30 两好友远程入口、回环权威、HTTPS public origin 与每席出站 Connector 的采用方案"}
+{"file": "src/host/remote-wake-broker.cjs", "reason": "B30 本席通知注册、长轮询与 ACK 边界"}
+{"file": "test/remote-wake-broker.test.cjs", "reason": "B30 通知传输的可执行反例合同"}
+{"file": "docs/REMOTE-FRIEND-MVP.md", "reason": "两好友当前入口、游戏任务空闲前提与真实验收边界"}
+{"file": "src/host/remote-wake-connector.cjs", "reason": "本机出站连接器；宿主发送器通过适配层注入"}

@@ -5,7 +5,7 @@ const { bridgeRequest } = require("../hooks/hook-lib.cjs");
 const { HUMAN_COMMANDS, MODEL_COMMANDS } = require("../../../src/authority/host-surface.cjs");
 const { requestEnvelope } = require("../../../src/contract/adapter-contract.cjs");
 const {
-  localOrigin,
+  connectionOrigin,
   readModelConnectionFile,
 } = require("../../../src/shared/model-connection-file.cjs");
 
@@ -51,7 +51,7 @@ function modelConnection() {
   }
   const token = process.env.TOKENGAME_MODEL_TOKEN;
   if (typeof token !== "string" || token === "") return null;
-  return { origin: localOrigin(process.env.TOKENGAME_TABLE_ORIGIN || DEFAULT_TABLE_ORIGIN), token };
+  return { origin: connectionOrigin(process.env.TOKENGAME_TABLE_ORIGIN || DEFAULT_TABLE_ORIGIN), token };
 }
 
 // 本进程不再直接打核心。

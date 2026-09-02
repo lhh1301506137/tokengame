@@ -1,0 +1,86 @@
+{
+  "name": "B30 远程连接器的任务隐私、授权、去重和真实就绪边界",
+  "note": "仅运行本地自动化反例。HTTP/IPC 可以是真实本机进程，但 sender 和模型文本为脚本或未调用；本规格不证明真实 Codex、两台机器或公网隧道已通过。",
+  "mutations": [
+    {
+      "id": "native-task-id-must-stay-local",
+      "file": "src/host/remote-wake-connector.cjs",
+      "find": "target_id: this.#config.targetId,",
+      "replace": "target_id: this.#config.threadId,",
+      "test": "test/remote-wake-connector.test.cjs",
+      "note": "把稳定别名换回原生任务 UUID，HTTP 请求中不含原生任务 ID 的断言必须失败。"
+    },
+    {
+      "id": "cancelled-poll-must-not-queue",
+      "file": "src/host/remote-wake-connector.cjs",
+      "find": "const item = pollPayload(payload);\n        if (controller.signal.aborted) break;\n        this.#connection(); // 等待网络期间换发/清除活动文件，旧通知不能再进入原任务。\n        if (first) { first = false; this.#emit(\"connected\"); }\n        if (controller.signal.aborted) break;",
+      "replace": "const item = pollPayload(payload);\n        this.#connection(); // 等待网络期间换发/清除活动文件，旧通知不能再进入原任务。\n        if (first) { first = false; this.#emit(\"connected\"); }",
+      "test": "test/remote-wake-connector.test.cjs",
+      "note": "删除网络返回后到 queue 前的取消围栏，即使 fetch 忽略 abort 也必须由反例抓住误发送。"
+    },
+    {
+      "id": "connection-rotation-must-fence-queue",
+      "file": "src/host/remote-wake-connector.cjs",
+      "find": "        this.#connection(); // 等待网络期间换发/清除活动文件，旧通知不能再进入原任务。",
+      "replace": "",
+      "test": "test/remote-wake-connector.test.cjs",
+      "note": "删除 poll 后重查活动连接文件，会把换发前取得的通知排入旧任务。"
+    },
+    {
+      "id": "notification-replay-reuses-receipt-not-queue",
+      "file": "src/host/remote-wake-connector.cjs",
+      "find": "let entry = history.get(item.notificationId);",
+      "replace": "let entry = undefined;",
+      "test": "test/remote-wake-connector.test.cjs",
+      "note": "丢掉本进程去重记录会在通知重放时再调用 sender，已有 ACK 只能重发不能重新 queue。"
+    },
+    {
+      "id": "other-seat-target-cannot-be-selected",
+      "file": "src/host/remote-wake-broker.cjs",
+      "find": "&& candidate.toLowerCase() === entry.targetId ? entry.targetId : null;",
+      "replace": "&& true ? entry.targetId : null;",
+      "test": "test/remote-wake-broker.test.cjs",
+      "note": "错席目标别名不应被默默转换成本席别名；选择目标的等值校验不可移除。"
+    },
+    {
+      "id": "revoked-generation-cannot-register-again",
+      "file": "src/host/remote-wake-broker.cjs",
+      "find": "    this.#assertScopeCurrent(scope);",
+      "replace": "",
+      "test": "test/remote-wake-broker.test.cjs",
+      "note": "删除当前绑定校验会允许已撤权 scope 重新 poll，换代反例必须失败。"
+    },
+    {
+      "id": "explicit-public-origin-requires-https",
+      "file": "src/host/table-web-host.cjs",
+      "find": "        if (!this.configuredPublicOrigin.startsWith(\"https://\")) throw new Error(\"HTTPS required\");",
+      "replace": "",
+      "test": "test/remote-beta.test.cjs",
+      "note": "默认本地回环 HTTP 仍合法，但显式远程 publicOrigin 不能降级为 HTTP。"
+    },
+    {
+      "id": "model-token-request-never-follows-redirect",
+      "file": "src/host/remote-wake-connector.cjs",
+      "find": "        redirect: \"error\",",
+      "replace": "        redirect: \"follow\",",
+      "test": "test/remote-wake-connector.test.cjs",
+      "note": "模型令牌请求不得通过跳转扩张目的地址；检查必须消费真实 fetch 选项。"
+    },
+    {
+      "id": "launcher-needs-positive-ready-receipt",
+      "file": "plugins/tokengame/codex/connect.cjs",
+      "find": "    if (started?.connected !== true) throw failure(\"wake_connector_start_failed\");",
+      "replace": "",
+      "test": "test/codex-connect.test.cjs",
+      "note": "缺失肯定注册回执时不能报告已接入；同文件另有真实 Node/IPC 正向和超时清理测试。"
+    },
+    {
+      "id": "delivered-without-ack-is-not-cleaned",
+      "file": "src/host/remote-wake-broker.cjs",
+      "find": "queued: false, attempted: entry.pending.delivered, cleanup_ok: !entry.pending.delivered, reason: \"model_binding_changed\",",
+      "replace": "queued: false, attempted: entry.pending.delivered, cleanup_ok: true, reason: \"model_binding_changed\",",
+      "test": "test/remote-wake-broker.test.cjs",
+      "note": "通知已出站且没有 ACK，撤权不能证明远端子进程清理完毕；未知必须保持失败关闭。"
+    }
+  ]
+}

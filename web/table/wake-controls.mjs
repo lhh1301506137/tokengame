@@ -99,6 +99,12 @@ function readTargetConfigured(value) {
   return typeof value.target_configured === "boolean" ? value.target_configured : null;
 }
 
+function readTransport(value) {
+  if (!object(value)) return null;
+  if (!Object.hasOwn(value, "transport")) return "local";
+  return ["local", "remote_connector"].includes(value.transport) ? value.transport : null;
+}
+
 function readContext(view) {
   const own = Array.isArray(view?.seats) ? view.seats.filter((seat) => seat?.is_viewer === true) : [];
   const connection = view?.model_connection;
@@ -193,15 +199,17 @@ export class WakeControls {
     const raw = view?.model_wake;
     const limits = readLimits(raw?.limits);
     const targetConfigured = readTargetConfigured(raw);
+    const transport = readTransport(raw);
     const window = limits !== null && raw?.window !== null ? readWindow(raw?.window, limits) : null;
     const targetChanged = this.#capability !== null
-      && (targetConfigured === null || targetConfigured !== this.#capability.targetConfigured);
+      && (targetConfigured === null || targetConfigured !== this.#capability.targetConfigured
+        || transport !== this.#capability.transport);
     if (targetChanged) this.#clear();
     const valid = object(raw) && typeof raw.enabled === "boolean" && limits !== null && context !== null
-      && targetConfigured !== null && (context.bound ? window !== null : raw.window === null);
-    this.#capability = valid ? { enabled: raw.enabled, limits, targetConfigured } : null;
+      && targetConfigured !== null && transport !== null && (context.bound ? window !== null : raw.window === null);
+    this.#capability = valid ? { enabled: raw.enabled, limits, targetConfigured, transport } : null;
     if (valid) {
-      if (targetConfigured) this.#fields.threadId = "";
+      if (targetConfigured || transport === "remote_connector") this.#fields.threadId = "";
       if (this.#fields.durationSeconds === "") this.#fields.durationSeconds = seconds(Math.min(60_000, limits.max_duration_ms));
       // 正在发命令时轮询仍更新其他牌桌区域；同绑定窗口等待命令回执，避免旧 waiting 覆盖新 stop。
       if (this.#operation === null) {
@@ -221,6 +229,7 @@ export class WakeControls {
   setField(name, value) {
     if (!this.snapshot().editable || !Object.hasOwn(this.#fields, name)
       || (name === "threadId" && this.#capability?.targetConfigured === true)) return;
+    if (name === "threadId" && this.#capability?.transport === "remote_connector") return;
     this.#fields[name] = String(value);
     this.#consent = false;
     this.#error = "";
@@ -242,6 +251,7 @@ export class WakeControls {
     if (!positive(duration) || duration > limits.max_duration_ms) return { error: "持续时长必须在服务端实际上限内，秒数最多三位小数。" };
     const parameters = { max_notifications: notifications, max_duration_ms: duration };
     if (this.#capability?.targetConfigured === true) return parameters;
+    if (this.#capability?.transport === "remote_connector") return { error: "等待本机连接器接入。" };
     if (!UUID.test(threadId)) return { error: "请输入发送器预先配置的专用游戏任务 UUID。" };
     return { thread_id: threadId, ...parameters };
   }
@@ -364,7 +374,8 @@ export class WakeControls {
     const displayedWindow = pendingRequestId != null && window?.request_id !== pendingRequestId ? null : window;
     const scopeAllowed = this.#session !== null && this.#pause === null && context?.bound === true
       && context.confirmed && !context.leaving && capability !== null;
-    const enabled = scopeAllowed && capability.enabled && context.mode === "ON";
+    const connectorReady = capability?.transport !== "remote_connector" || capability.targetConfigured;
+    const enabled = scopeAllowed && capability.enabled && context.mode === "ON" && connectorReady;
     const inactive = window === null || window.state === "idle"
       || (window.state === "stopped" && window.cleanup_pending === false && window.cleanup_ok === true);
     const editable = enabled && inactive && this.#operation === null && this.#uncertain === null;
@@ -378,6 +389,7 @@ export class WakeControls {
     else if (!context.confirmed || context.leaving) { uiState = "blocked"; status = "公开范围尚未确认或正在离桌，不能开启通知。"; }
     else if (context.mode === "OFF") { uiState = "off"; status = "本席 AI 已关闭，不会开启新通知窗口。"; }
     else if (context.mode !== "ON") { uiState = "invalid"; status = "本席 AI 状态未知，不能开启通知。"; }
+    else if (!connectorReady) { uiState = "awaiting_connector"; status = "等待本机连接器接入。目标游戏任务只在你自己的设备上绑定，页面不接收任务 UUID。"; }
     else if (this.#operation !== null) {
       uiState = this.#operation.kind.endsWith("stop") ? "stopping" : "starting";
       status = uiState === "stopping" ? "正在请求停止，尚未确认。" : "正在核对/开启窗口，尚未确认。";
@@ -397,6 +409,7 @@ export class WakeControls {
     return { ui_state: uiState,
       status_text: `${status}${reason ? ` 原因：${reason}。` : ""}${failure ? ` 诊断：${failure}。` : ""}`,
       enabled: capability?.enabled ?? null, target_configured: capability?.targetConfigured ?? null,
+      transport: capability?.transport ?? null,
       limits: capability === null ? null : { ...capability.limits },
       window: displayedWindow === null ? null : { ...displayedWindow }, fields: { ...this.#fields }, consent: this.#consent,
       editable, can_start: editable && this.#consent && parameters.error === undefined,
@@ -407,7 +420,9 @@ export class WakeControls {
       retry_text: this.#uncertain === "stop" ? "核对并停止原窗口" : "核对并重试原请求",
       error: this.#error, validation: editable ? parameters.error
         ?? (capability.targetConfigured
-          ? "请确认本次通知次数与持续时长，再勾选授权。目标任务由本地发送器固定。"
+          ? (capability.transport === "remote_connector"
+            ? "请确认本次通知次数与持续时长，再勾选授权。目标任务由本机连接器绑定。"
+            : "请确认本次通知次数与持续时长，再勾选授权。目标任务由本地发送器固定。")
           : "请确认本次通知次数、持续时长与目标任务，再勾选授权。") : "",
       counts_text: displayedWindow === null ? "尚无本席窗口回执。"
         : `尝试 ${displayedWindow.attempted_count} · 已接收 ${displayedWindow.queued_count} · 权威已结清 ${displayedWindow.resolved_count}（含公开、silent 或丢弃；不是公开回复数）`,
@@ -423,7 +438,7 @@ export class WakeControls {
   // 机器采样只含页面可见的本人状态，不含表单目标任务、会话令牌或不可见的绑定历史。
   visibleState() {
     const view = this.snapshot();
-    return { enabled: view.enabled, target_configured: view.target_configured,
+    return { enabled: view.enabled, target_configured: view.target_configured, transport: view.transport,
       limits: view.limits, window: view.window, ui_state: view.ui_state };
   }
 }

@@ -67,6 +67,9 @@ class HttpCoreClient {
         // 请求信封由合同层构造，不在这里拼字面量：两处各写一份的话，改合同不会影响
         // 传输，而合同文档描述的是 helper。服务端会校验 contract_version，缺了就 400。
         body: JSON.stringify(requestEnvelope(command, params)),
+        // 权威令牌不得由 fetch 自动搬运到 Location 指向的另一 origin。全部重定向失败关闭，
+        // 比区分 301/307 或同源/跨源更容易审计，也不会把错误代理伪装成核心响应。
+        redirect: "error",
         ...(signal === undefined ? {} : { signal }),
       });
     } catch (cause) {

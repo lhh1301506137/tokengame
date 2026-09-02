@@ -1,13 +1,27 @@
 # TokenGame 项目状态
 
-更新日期：2026-09-02
+更新日期：2026-09-03
+
+## B30 当前工作
+
+用户已确认先做“两好友、各自 Codex、十手私人房”的 MVP，再考虑购买服务器和公开大厅。
+本轮在既有权威栈上实现显式 HTTPS 入口、本机出站连接器和外部 Web 的游戏/配置工作面。
+本地候选回归已经收口，可以进入好友实机联通；真实隧道、两台设备、第二席原生 AI 与十手真人签字尚未执行。
+入口与操作边界见 [远程内测指南](docs/REMOTE-FRIEND-MVP.md)，验收事实统一见
+[B30 记录](REVIEW-LOG.md#b30-two-friend-remote-candidate)。
+当前本地证据为身份约束的 Node `1456/1456`、变异 `693/693`、双席浏览器 `18/18` 与四页长程
+`215/215`；第一次完整门禁自身 exit 1、随后仅重跑全部受影响集合的过程也保留在记录中，不能写成
+第二次完整门禁 exit 0。
+
+下方 B8–B28 是当批历史快照，不把旧“未做远程传输”的描述当成本轮代码状态，也不把旧四页脚本成绩
+当成两好友真实验收。原四真人完整 UAT 保留为后续扩展，本轮签字按活动 PRD 的 MVP-0.1 最新节。
 
 ## 初始化状态
 
 - 初始化分类：`fresh_init`
 - 框架就绪度：`continue_ready`
 - 当前阶段：`prototype`
-- 当前目标：把项目推进到「朋友私人房内测候选」——2–4 名朋友能建房、用邀请码加入、按正常无限注德州规则操作，并在各玩家座位旁看到该玩家与其真实宿主 AI 的公开对话。宿主对话是 AI 与入口控制面，Web 牌桌是真人筹码操作面，两者属于同一局、同一席位、同一份权威状态。
+- 当前目标：先交付两好友远程私人房内测候选——同一牌桌、各自真实 Codex AI、至少十手正常无限注德州与公开气泡；以现有 2–4 席权威实现为基础，不为两席重写扑克。外部 Web 负责游戏与配置，Codex 专用任务承载本席 AI，两者属于同一局、同一席位、同一份权威状态。
 - 已完成的地基：当前 MVP 的 L0-L2 章程、可玩牌桌四条体验规则和公开座位 AI 七条交流规则均已确认并完成唯一绑定；宿主中立权威内核已按这些合同实现并闭合 Codex 复核 F1–F6；新牌桌 UI 已与该内核形成单栈产品闭环，四个隔离浏览器上下文的多人回路已闭合。共享 HostAdapter 合同的底座、模型面适配器（`SeatModelAdapter`）与真人面适配器（`HostCommandAdapter`，2026-08-29 `0542c1c`）都已实现并过一致性套件，自动化验收已打到第 13 手。
 - B8已完成：逐席AI授权/换发/撤销、权威本席上下文、私有连接文件与MCP接入、浏览器连接界面；925项测试、557条变异、35项连接UI及209项四人13手验收均通过。该批唯一裁决为 `REVIEW-LOG.md#b8-seat-model-binding`，仅限本地自动化链路。
 - B9已完成：当前Codex Desktop单席显式消息触发的真实生成→同桌两页AI气泡→撤销后旧权限被拒。一个游戏任务、五轮输入、九次游戏MCP调用；两次生成，一次发布、一次跨手丢弃。附带邀请码窄屏修补，51项连接UI及20项定向Node检查通过。该探针唯一裁决为 `REVIEW-LOG.md#b9-real-host-seat-probe`。
@@ -86,8 +100,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: run_real_local_friend_combination_only_with_finished_and_idle_game_task_startup_turns
-  reason: B28_idle_task_handoff_is_locally_executable_but_real_idle_task_combination_and_authority_terminal_remain_unverified
+  recommendation: run_two_device_two_Codex_friend_acceptance_on_B30_local_verified_candidate
+  reason: 远程出站连接、双人Web工作面及当前本地回归已完成；下一有效证据只能由两个空闲游戏任务验证真实公开往返和十手体验。
 
 continuous_risk_authorization:
   status: active
@@ -128,17 +142,17 @@ delegated_mission:
   user_goal: 持续推进朋友私人房原型的本地与真实宿主测试，减少逐次许可等待。
   agreed_product_shape: 正常德扑加本席真实AI公开交流；不扩大当前MVP。
   authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
-  current_batch_goal: B28已把空闲游戏任务前提写进入口、本人确认、Skill与文档并完成本地回归；下一批只在启动回复已结束且任务空闲的真实游戏任务上执行朋友组合，不重试同一活动开发任务，也不扩到远端部署。
-  current_batch_state: idle_game_task_handoff_guidance_locally_verified_real_combination_open
-  in_scope: [local_regression, loopback_synthetic_tables, temporary_seat_connections, original_native_game_task_inputs, bounded_queue_tests, evidence_and_owned_resource_cleanup]
+  current_batch_goal: 按2026-09-03用户确认推进两好友MVP候选：显式HTTPS地址、每机出站连接器、游戏页和独立配置页；本批先用本地合成流验证，真实两机各自Codex十手由用户和好友参与，不提前购买服务器或建设大厅。
+  current_batch_state: B30_local_candidate_verified_waiting_two_friend_real_acceptance
+  in_scope: [local_regression, loopback_synthetic_tables, remote_connector_implementation_without_public_exposure, two_friend_workspace_UI, temporary_seat_connections, bounded_queue_tests, evidence_and_owned_resource_cleanup]
   out_of_scope: [global_MCP_reload, automated_or_additional_host_restart, model_override, second_model_API, new_task_creation, public_or_remote_listen, real_private_data, paid_service_activation, commits_or_deploy]
   allowed_autonomous_decisions: [test_order, finite_batch_size, evidence_capture, in_scope_reversible_repair]
   must_ask_user: [canonical_critical_boundary, affected_L0_L2_change, global_refresh_or_uncovered_restart, unexplained_integrity_failure]
   max_risk: medium
   continuous_risk_authorization_ref: STATUS.md#continuous_risk_authorization
-  latest_review_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  latest_review_ref: REVIEW-LOG.md#b30-two-friend-remote-candidate
   mission_specific_stop_conditions: [explicit_tool_permission_boundary, user_stop, readiness_failure_without_new_evidence, ambiguous_queue_delivery_no_repeat, bounded_batch_limit, unrecoverable_cleanup_or_integrity_failure]
-  verification_floor: 固定目标不向页面暴露UUID、本人每窗确认、跨窗口单槽、权威resolve、取消与清理分项；脚本、本地入口和真实宿主证据分开。
+  verification_floor: 原生任务UUID留在本机，远程只有不透明目标别名；逐席鉴权、本人每窗确认、跨窗口单槽、权威resolve、取消与清理分项；脚本、本地入口、真实隧道和两个真实宿主证据分开。
   preflight_baseline:
     status: B28_idle_game_task_handoff_guidance_local_verification_complete_real_combination_open
     commands_or_checks: [B23_fixed_target_focused_184_of_184, B23_fixed_target_initial_mutations_14_of_14, B23_independent_fixed_target_184_of_184_and_limited_mutations_11_of_11, B23_browser_old_fixture_failed_at_cumulative_7_checks_then_44_of_44, B23_codex_play_red_0_of_1_then_9_of_9, B23_existing_config_5_of_5, B23_initial_play_mutations_9_of_9, B23_independent_entry_9_of_9_beta_config_lifecycle_88_of_88_mutations_15_of_15, B24_real_project_config_migration_exit_0_outside_hash_unchanged_no_listener, B25_restart_process_times_after_config_write, B25_server_listed_but_table_tool_absent, B25_fixed_target_real_page_observed_zero_notification, B25_cleanup_complete, B25_absolute_cwd_red_20_of_23_then_green_34_of_34_mutation_1_of_1, B26_real_absolute_cwd_migration_exit_0_outside_hash_unchanged_no_listener, B27_exactly_one_project_tool_unbound_fail_closed_then_bound_read_pass, B27_two_headed_pages_console_clean, B27_notification_1_1_0_max_duration_60.003s, B27_cleanup_slot_absent_port_7802_free, B28_syntax_pass, B28_skill_default_GBK_carrier_fail_then_python_X_utf8_valid, B28_focused_initial_18_of_19_then_19_of_19_1833.6463ms, B28_browser_46_of_46_20729.272ms_zero_error_cleanup_6_of_6, B28_full_node_1356_of_1356_79933.5359ms, B28_slot_absent_port_7802_free]
@@ -172,6 +186,10 @@ delegated_mission:
     B28_total_actual_queue_inputs: 0
     B28_total_actual_notifications: 0
     B28_total_authority_resolves: 0
+    B30_total_completed_native_task_turns: 0
+    B30_total_actual_native_queue_inputs: 0
+    B30_total_public_tunnel_calls: 0
+    B30_scripted_authority_evidence_ref: REVIEW-LOG.md#b30-two-friend-remote-candidate
     uncertain_sends_count_toward_limit: true
     checkpoint_reporting: 每批汇总实际次数和结果，不把预算当必须消耗的目标。
   scheduling: no_automation_or_goal_created
@@ -251,9 +269,9 @@ project_intelligence:
       challenge: 每机一人不是入口强制条件；共享协调器令牌不能被当作逐席授权。
       plan_ref: TAKEOVER-PLAN.md
     current_reality:
-      implemented_basis: B6/B7已提交；B8逐席授权、B11回执、B13关停和后续宿主切片保留在未提交修改中。B14有三条单次queue真实公开，B19有等待区两次串行公开，B22有一次同手silent；B23本地完成固定目标去敏和Codex当前任务一键入口，B24完成真实项目配置相对化迁移，B25完成重启后失败定位及canonical绝对cwd本地修复，B26已把该修复迁入真实父项目托管块，B27已直接证明重启后项目工具恢复，B28已把空闲任务交接前提落实到入口、本人确认、Skill与文档并通过本地回归。
-      first_gap: 当前入口已从手填UUID/四变量降为一条当前任务命令，绝对cwd重启、工具就绪与空闲任务操作说明已闭合。现在首先缺启动回复确实结束并保持空闲的真实游戏任务朋友组合验收，而不是再次迁移配置、重试同一活动任务或继续拆分本地说明。之后仍缺牌局内公开往返、实时体验、第二真实席及Claude。Gate9因失效文件和历史MCP进程清理被工具策略拒绝而blocked，不开启默认主动能力声明。
-      evidence_limit: B28聚焦19/19、浏览器46/46与全量Node1356/1356只证明本地入口合同和回归；页面本人确认不是宿主空闲遥测。B24/B25/B26/B27共同证明相对cwd运行时失败、绝对cwd修复迁入、真人重启和工具直接恢复；B27的queue接收1不等于模型回合或权威终态，同一活动任务精确调度unknown。B22仍是最近一次已结清的牌局内原生模型样本且为silent/0气泡；四真人验收未跑。
+      implemented_basis: 当前Git基线为89fa971，包含B6到B28的既有权威栈、逐席授权和本地Codex入口。B30未提交增量增加显式HTTPS入口、出站连接器、按席注册与ACK，以及双人优先的外部Web游戏页/配置页；没有第二套权威、第二模型API或代玩家下注。
+      first_gap: 由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复及撤权。不在正在运行的开发任务上重试通知，不把本地脚本当作远程实机。Claude、大厅和服务器采购不阻塞这个阶段。
+      evidence_limit: B30当前本地候选已有1456项Node与693项变异的身份约束组合覆盖、双席整合及四页长程通过；第一次完整gate本身exit1，修正验证定义后只重跑全部受影响集合，不冒充第二次完整gate exit0。真实隧道、第二真实AI和两机十手仍未跑。B14和B19有单席原生公开样本；最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；页面本人确认不是宿主空闲遥测。旧CLI、四浏览器13手和当前脚本连接器都不能替代两真人验收，历史清理阻塞不被本轮回归追认为成功。
     candidates_unknowns_history:
       selected: 复用单协调器与托管，真人逐席绑定，权威启动评估时返回同席快照。
       rejected: 为每席复制权威/托管，或只写说明却保留共用通行令牌。
@@ -263,12 +281,13 @@ project_intelligence:
     - {unknown_id: U-TG-CODEX-UI-SUPPORT, owner: evidence_unknown, status: open, blocking_boundary: capability_claim, blocked_scope_refs: [embedded_UI_claim]}
     - {unknown_id: U-TG-PROACTIVE-WAKE, owner: evidence_unknown, status: open, blocking_boundary: semantic_completion, blocked_scope_refs: [MVP_delivery]}
     - {unknown_id: U-TG-LOCAL-BRIDGE-AUTH, owner: professional_design_unknown, status: open, blocking_boundary: release, blocked_scope_refs: [remote_release]}
-    - {unknown_id: U-TG-FOUR-HUMAN-UAT, owner: evidence_unknown, status: open, blocking_boundary: user_acceptance, blocked_scope_refs: [human_playability_signoff]}
-  readiness: B28_idle_task_handoff_locally_ready_real_friend_combination_blocked
+    - {unknown_id: U-TG-TWO-FRIEND-UAT, owner: evidence_unknown, status: open, blocking_boundary: user_acceptance, blocked_scope_refs: [MVP_0_1_two_device_two_Codex_ten_hand_signoff]}
+    - {unknown_id: U-TG-FOUR-HUMAN-UAT, owner: evidence_unknown, status: deferred_after_MVP_0_1, blocking_boundary: user_acceptance, blocked_scope_refs: [four_human_playability_signoff]}
+  readiness: B30_local_candidate_verified_real_two_friend_acceptance_not_run
   freshness: current
-  execution_closure_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  execution_closure_ref: REVIEW-LOG.md#b30-two-friend-remote-candidate
   latest_probe_evidence_ref: REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target
-  latest_local_evidence_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  latest_local_evidence_ref: REVIEW-LOG.md#b30-two-friend-remote-candidate
   protected_semantic_delta: none
   material_projection_generation: not_triggered_no_new_L0_L2_projection
   route_permission:
@@ -282,7 +301,7 @@ project_intelligence:
     completed_native_window_ref: PROJECT-DECISION-LOG.md#DEC-20260831-003
     completed_native_window_status: stopped_4_of_12_inputs_3_of_4_queues_3_public_permission_revoked_cleanup_policy_blocked
     excluded_from_grant: [global_install, global_MCP_reload, automated_or_additional_host_restart, model_or_reasoning_override, second_model_API, remote_listen, push, deploy, uncapped_model_calls, human_acceptance]
-  next_owner: user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available
+  next_owner: user_and_friend_two_device_acceptance_with_codex_primary_support
 
 # 历史理解记录，不再控制当前恢复路线；旧CLI收据只证明其原有范围。
 historical_project_intelligence_20260828:

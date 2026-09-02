@@ -1,0 +1,240 @@
+{
+  "schema": "tokengame.b30-local-verification.v1",
+  "recorded_at": "2026-09-03",
+  "runtime": {
+    "node": "v24.13.1",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "vcs": {
+    "branch": "main",
+    "baseline_head": "89fa971640de27fcaca09d59077d4fa0c48d74ec",
+    "working_tree": "uncommitted_b30_candidate"
+  },
+  "source_snapshots": {
+    "first_gate": {
+      "path": "H:/tokengold/.codex/b30-gate-snapshot-20260903-a2",
+      "files": 452,
+      "bytes": 5496705,
+      "copy_elapsed_ms": 16821.356,
+      "per_file_sha256_equal_at_copy": true,
+      "git_copied": false,
+      "ignored_runtime_or_private_files_copied": false
+    },
+    "affected_recheck": {
+      "path": "H:/tokengold/.codex/b30-gate-snapshot-20260903-a3",
+      "files": 452,
+      "bytes": 5500801,
+      "copy_elapsed_ms": 4973.9428,
+      "per_file_sha256_equal_at_copy": true,
+      "git_copied": false,
+      "ignored_runtime_or_private_files_copied": false
+    },
+    "failed_carrier_attempt": {
+      "path": "H:/tokengold/.codex/b30-gate-snapshot-20260903-a1",
+      "copied_files": 0,
+      "cause": "PowerShell Split overload selection error",
+      "product_or_test_execution_started": false
+    }
+  },
+  "first_full_gate": {
+    "command": "npm run gate",
+    "cwd": "H:/tokengold/.codex/b30-gate-snapshot-20260903-a2",
+    "exit_code": 1,
+    "wall_elapsed_ms": 965207.6462,
+    "node_tests": {
+      "tests": 1453,
+      "passed": 1453,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 141854.5062
+    },
+    "mutations": {
+      "total": 693,
+      "killed": 689,
+      "survived": 3,
+      "unevaluated": 1
+    },
+    "artifact_directory": "H:/tokengold/.codex/b30-gate-snapshot-20260903-a2/artifacts/gate-run",
+    "artifact_files": 54,
+    "artifact_set_sha256": "ecb66d3212e1e0be23e041de2414296e486e3b2321a59527b8f9e8c1064b1f21",
+    "snapshot_restored_after_mutation": true,
+    "scope_digests_after_equal_before": true
+  },
+  "gate_findings_and_corrections": [
+    {
+      "spec": "test-support/mutations/mcp-model-connection.json",
+      "old_mutant": "connection-userinfo-accepted",
+      "first_result": "survived",
+      "classification": "equivalent_mutant",
+      "reason": "删掉后段校验后，前段原始形状校验仍拒绝含userinfo的地址。",
+      "correction": "改为模拟URL解析悄然剥离userinfo的真实错误，保留产品的双重防线。"
+    },
+    {
+      "spec": "test-support/mutations/multi-hand-verdict.json",
+      "old_mutant": "mjs-drops-verdict-imports",
+      "first_result": "unevaluated",
+      "classification": "stale_mutation_anchor",
+      "reason": "导入行新增validFourSeatBaseline后，旧查找串不再命中。",
+      "correction": "同步当前导入锚点，并只移除原意图中的三项判定导入。"
+    },
+    {
+      "spec": "test-support/mutations/seat-model-binding.json",
+      "old_mutant": "binding-origin-trusts-host-header",
+      "first_result": "survived",
+      "classification": "stale_mutation_target",
+      "reason": "旧变异改写已不参与返回连接文件的this.tableOrigin。",
+      "correction": "改为污染实际使用的this.publicOrigin。"
+    },
+    {
+      "spec": "test-support/mutations/reveal-scenario.json",
+      "old_mutant": "precondition-allows-old-hand",
+      "first_result": "survived",
+      "classification": "equivalent_mutant",
+      "reason": "后续revealTurn仍按afterHandIndex加一校验，删除前置判断不改变ok结果。",
+      "correction": "改为从当前页面覆盖调用方旧手基准的真实错误，并新增一页滞后、一页超前及四页同旧手三项边界测试。"
+    }
+  ],
+  "current_affected_recheck": {
+    "focused_test_command": "node --test --test-concurrency=1 test/mcp-model-connection.test.cjs test/multi-hand-verdict.test.cjs test/seat-model-binding.test.cjs test/reveal-scenario.test.cjs",
+    "focused_tests": {
+      "tests": 108,
+      "passed": 108,
+      "failed": 0,
+      "duration_ms": 1347.0859,
+      "command_wall_elapsed_ms": 1645.0815
+    },
+    "mutation_commands": [
+      {
+        "spec": "test-support/mutations/mcp-model-connection.json",
+        "total": 10,
+        "killed": 10,
+        "survived": 0,
+        "unevaluated": 0,
+        "wall_elapsed_ms": 5744.6622
+      },
+      {
+        "spec": "test-support/mutations/multi-hand-verdict.json",
+        "total": 46,
+        "killed": 46,
+        "survived": 0,
+        "unevaluated": 0,
+        "wall_elapsed_ms": 15242.0102
+      },
+      {
+        "spec": "test-support/mutations/seat-model-binding.json",
+        "total": 22,
+        "killed": 22,
+        "survived": 0,
+        "unevaluated": 0,
+        "wall_elapsed_ms": 22705.7413
+      },
+      {
+        "spec": "test-support/mutations/reveal-scenario.json",
+        "total": 5,
+        "killed": 5,
+        "survived": 0,
+        "unevaluated": 0,
+        "wall_elapsed_ms": 1816.9398
+      }
+    ],
+    "mutation_total": 83,
+    "mutation_killed": 83,
+    "mutation_survived": 0,
+    "mutation_unevaluated": 0,
+    "mutation_commands_wall_elapsed_ms": 45509.3535,
+    "snapshot_restored_to_current_main_candidate": true,
+    "main_vs_snapshot_mismatched_files": 0
+  },
+  "current_composite_regression": {
+    "literal_final_npm_run_gate_exit_0": false,
+    "explanation": "第一次完整门禁的当前实现代码全部Node测试通过；之后产品实现未变，验证代码仅新增3个reveal边界测试并更新4份变异定义。当前聚焦测试和全部受影响变异已重跑通过，因此按字节身份组成当前覆盖；这不是第二次完整npm run gate的exit0。",
+    "node_tests": {
+      "total": 1456,
+      "passed": 1456,
+      "derivation": "1453 - 旧reveal文件25项 + 当前reveal文件28项"
+    },
+    "mutations": {
+      "total": 693,
+      "killed": 693,
+      "survived": 0,
+      "unevaluated": 0,
+      "derivation": "第一次完整门禁未受影响的610项全部被杀；当前四份受影响规格83项全部被杀。"
+    }
+  },
+  "identity": {
+    "product_implementation": {
+      "files": 65,
+      "a2_vs_a3_mismatches": 0,
+      "previous_recorded_digest": "7b014e35f130f4afb70534379f6645d0041a372fdd23069f3c7936943baac445"
+    },
+    "a3_scope_digest_algorithm": "sha256(sorted(relative_path + NUL + lowercase_file_sha256 + LF))",
+    "a3_all_452_sha256": "7acd42c9d1a56bc135c18614a1077899bb45d8b19290199ee0d29fda1e17b594",
+    "a3_implementation_65_sha256": "8927b69b9cbf6d35814bda9c98e6aa9e80ddde7bc00a7c038408027511a0e18d",
+    "a3_verification_173_sha256": "be3d9044296672c92d6fa5a8edf824b5122a0d007eb56a149962a67825d83792",
+    "a3_verification_code_without_mutation_json_120_sha256": "5e1ba419b8f8084559bc0d606e9bfd1db47476c62bb875d5504a34f51caee71c",
+    "a2_vs_a3_verification_changes": [
+      "test-support/mutations/mcp-model-connection.json",
+      "test-support/mutations/multi-hand-verdict.json",
+      "test-support/mutations/reveal-scenario.json",
+      "test-support/mutations/seat-model-binding.json",
+      "test/reveal-scenario.test.cjs"
+    ],
+    "a2_vs_a3_verification_code_changes": [
+      "test/reveal-scenario.test.cjs"
+    ]
+  },
+  "browser_evidence": {
+    "two_seat_local": {
+      "result": "pass",
+      "checks": "18/18",
+      "duration_ms": 10551.8492,
+      "browser_errors": 0,
+      "cleanup_checks": 7,
+      "report": "H:/tokengold/.codex/b30-remote-friend-browser-20260903-final/report.json",
+      "sha256": "d2c25d7504a0dfd3f0f282cd9d5e084e787c0c63eb4ec3a861c00aaddcc21be4"
+    },
+    "workspace": {
+      "result": "pass",
+      "checks": "75/75",
+      "duration_ms": 16638.1123,
+      "browser_errors": 0,
+      "cleanup_checks": 8,
+      "report": "H:/tokengold/.codex/b30-workspace-20260903-final/report.json",
+      "sha256": "0a96b735dddf4639ad10aa39276c6b543fdc4b4b1326690ea0419ef0f67398ce"
+    },
+    "model_binding": {
+      "result": "pass",
+      "checks": "51/51",
+      "duration_ms": 7634,
+      "browser_errors": 0,
+      "cleanup": "unknown",
+      "report": "H:/tokengold/.codex/b30-workspace-model-binding-20260903/result.json",
+      "sha256": "b2a6e341162a9b5406be14df4199e98a7c0ad890ddd761c9b9a9b56ec8fe9b35"
+    },
+    "long_four_context": {
+      "result": "pass",
+      "checks": "215/215",
+      "reached_hand_index": 13,
+      "settled_hands_claim": "not_made",
+      "duration_ms": 533588,
+      "aborted": null,
+      "unexpected_browser_or_network_errors": 0,
+      "deliberate_faults": 16,
+      "client_cancellations": 1,
+      "cleanup_ms": 155,
+      "report": "H:/tokengold/.codex/b30-table-web-acceptance-20260903-b3/result.json",
+      "sha256": "4fd231f6f3b6d3a1b01f870cf33c74bc26e1b9c43c7b848f08f54d74f6620497"
+    }
+  },
+  "unexercised_real_boundaries": {
+    "native_game_model_calls": 0,
+    "native_queue_inputs": 0,
+    "public_tunnel_calls": 0,
+    "paid_service_calls": 0,
+    "real_two_device_two_codex_ten_hand_acceptance": "not_run"
+  },
+  "timing_note": "各批验证存在重叠和并行，单项耗时不得相加为开发总墙钟时间或模型推理SLA。"
+}

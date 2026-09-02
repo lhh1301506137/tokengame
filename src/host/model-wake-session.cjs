@@ -83,6 +83,17 @@ class ModelWakeSessionManager {
 
   get targetConfigured() { return this.enabled && this.#selectedThread() !== null; }
 
+  targetConfiguredFor(trustedScope) {
+    if (!this.enabled) return false;
+    try {
+      const scope = this.#scope(trustedScope);
+      if (typeof this.#queue.targetConfigured === "function") {
+        return this.#queue.targetConfigured(scope) === true;
+      }
+      return this.#selectedThread(undefined, scope) !== null;
+    } catch { return false; }
+  }
+
   // 只公开真人窗口可选的实际边界；不暴露发送器目标、路径或内部调度配置。
   get limits() {
     return { max_notifications: this.#limits.maxNotifications, max_duration_ms: this.#limits.maxDurationMs };
@@ -109,15 +120,15 @@ class ModelWakeSessionManager {
     const requestId = uuid(input.request_id, "request_id");
     let threadId;
     if (!Object.hasOwn(input, "thread_id")) {
-      threadId = this.#selectedThread();
+      threadId = this.#selectedThread(undefined, scope);
       if (threadId === null) throw new CoreError("invalid_field", 400, { field: "thread_id" });
     } else {
       threadId = uuid(input.thread_id, "thread_id");
       if (typeof this.#queue.selectThread === "function") {
-        const selected = this.#selectedThread(threadId);
+        const selected = this.#selectedThread(threadId, scope);
         if (selected === null || selected !== threadId) throw new CoreError("wake_thread_not_authorized", 403);
         threadId = selected;
-      } else if (this.#queue.allowsThread !== undefined && this.#queue.allowsThread(threadId) !== true) {
+      } else if (this.#queue.allowsThread !== undefined && this.#queue.allowsThread(threadId, scope) !== true) {
         throw new CoreError("wake_thread_not_authorized", 403);
       }
     }
@@ -169,10 +180,10 @@ class ModelWakeSessionManager {
     return this.#snapshot(request);
   }
 
-  #selectedThread(candidate = undefined) {
+  #selectedThread(candidate = undefined, scope = undefined) {
     if (typeof this.#queue?.selectThread !== "function") return null;
     try {
-      const selected = this.#queue.selectThread(candidate);
+      const selected = this.#queue.selectThread(candidate, scope);
       return typeof selected === "string" && UUID.test(selected) ? selected.toLowerCase() : null;
     } catch { return null; }
   }
@@ -388,7 +399,9 @@ class ModelWakeSessionManager {
     task.promise = Promise.resolve().then(() => {
       this.#assertCurrent(request);
       task.called = true;
-      return this.#queue({ threadId: request.threadId, intentId, notificationId: randomUUID(), signal: request.controller.signal });
+      const input = { threadId: request.threadId, intentId, notificationId: randomUUID(), signal: request.controller.signal };
+      if (this.#queue.scopeAware === true) input.scope = request.scope;
+      return this.#queue(input);
     }).then((value) => { task.receipt = queueReceipt(value); }, () => {
       // 围栏可能在调用sender之前拒绝。此时零调用/无发送资源是已知事实；
       // 进入sender后的异常仍为unknown。已预留intent的去重记录仍保留，不因此自动重试。

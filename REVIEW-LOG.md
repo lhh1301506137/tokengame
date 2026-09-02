@@ -4440,3 +4440,198 @@ execution_closure:
   remaining_blocking: [空闲游戏任务上的真实朋友组合验收, 第二真实AI席, 牌局内真实公开往返与实时体验, 七份失效下载真人删除, Claude, 异地与四真人UAT]
   next_owner: user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available
 ```
+
+<a id="b30-two-friend-remote-candidate"></a>
+## B30：两好友远程私人房候选与 Web 工作区（2026-09-03）
+
+### 授权、实现和当前边界
+
+用户明确同意按既定计划尽快做出两好友 MVP，好友可在需要真实联通时参与，服务器与公开大厅留在后面。
+本轮只在既有 2–4 席权威栈上实现两好友阶段：房主显式配置 HTTPS 根地址，双方各用本机出站连接器接入
+自己的 Codex 游戏任务；外部 Web 分为私人牌桌和独立配置中心。没有增加第二个扑克权威、付费模型 API、
+AI 下注、大厅或 Claude 实机支持。详细步骤与真人验收条件见 `docs/REMOTE-FRIEND-MVP.md`。
+
+`beta:remote` 仍只绑定回环地址，公网隧道由真人另行选择和启动；Host/Forwarded 请求头不决定公共地址。
+`codex:connect` 连接已有牌桌，区别于另起本地桌的 `codex:play`。项目 Skill 与两份 README 已同步这一区别，
+避免好友各自开出互不相通的房间。注册成功不等于本人授权开窗，queue 接收不等于原生模型开始或权威结清。
+从旧版升级时，已有 MCP 进程仍运行旧代码，即使配置没变也需真人手动重启 Codex 一次；这与后续连接
+文件的热切换不同。这里只补充正确操作说明，没有实际重启宿主或改项目配置。
+
+牌桌恢复双人优先的工作区布局：玩家与 AI 相邻、公共牌居中、本人底牌在下、右侧保留公开时间线；
+配置导航复用原有连接控件与状态，不离席、不换发绑定、不续授权。桌面 1365×800 的本人底牌、合法动作、
+展开的加注输入与确认按钮均经真实几何/命中检查可见；320/390 px 的导航与邀请码不横向溢出。
+这是自有 TokenGame Web 页面，不是 Codex 内嵌窗口或对第三方界面源码的复用。
+
+### 独立上下文复核与修正
+
+按项目 Trellis 流程由独立代理上下文检查，随后由主线程整合验收；这是同一开发环境内的分工，
+不是 Claude 复审，也不声称使用了已独立验证身份的不同模型。
+
+- 原生任务 UUID 曾会进入远程请求，现改为稳定、不透明的 `target_id`；原生 ID 只传本机发送器。
+  不把别名描述成密码学会话隔离，同一项目的活动槽仍只能服务一个玩家。
+- poll 返回后的取消、撤权/文件换发均有发送前围栏；同一通知至多一次 queue 尝试。ACK 响应体断网可
+  重试同一 ACK，不重新发送通知；已出站但未确认的清理继续标为未知，不能自动补发或报干净结束。
+- URL 必须在归一化前满足根地址约束，拒绝路径、反斜杠、控制字符等；显式公共地址强制 HTTPS，
+  携带令牌的 HTTP/MCP 请求不自动跟随重定向。
+- 后台连接入口只有收到肯定 IPC ready 才能报接入；正常撤权退出与未就绪取消已用真实 Node 子进程覆盖，
+  没有调用真实 Codex queue 或更改宿主配置。
+- 新错误工厂和兜底出码进入注册表；更新旧变异锚点。两条旧鉴权变异原本会引用重构后不可见的 `body`，
+  导致 `ReferenceError` 假杀，现由实际版本泄漏/命令回显断言杀掉，不扩大宿主中立导入豁免。
+
+### 已执行验证与失败记录
+
+以下计数互有重叠，不能相加当作产品完成度。分工回归的最终回执为：远程相关 Node `420/420`、
+`10.232 s`；退出码最后修正后入口/错误码/架构 `69/69`、`1.370 s`；新 B30 10 条、旧错误码 15 条、
+同步旧锚点 10 条变异均有效杀掉，合计 `35/35`、0 存活/未评估，约 `55.4 s`。一条故意隐藏就绪文本的
+反例等待约 `28.6 s`，这是测试超时成本，不是模型推理耗时。对应 223 个锚点存在且唯一，13 个实现模块
+语法通过；仓库无独立 lint/type-check 脚本。
+
+UI 分工验收：Node `117/117`；managed 浏览器 `75/75`、0 error、`16638.1123 ms`，8 项清理通过；
+model-binding 浏览器 `51/51`、0 error、约 `7.634 s`。主线程直接读取 managed 报告并目检桌面游戏页和
+配置页，报告为 `H:/tokengold/.codex/b30-workspace-20260903-final/report.json`。这些均为本地脚本环境。
+
+主线程新增真实产品启动入口 + 两独立浏览器 + 两个 Connector + HTTP broker/模型命令面的整合脚本，
+只有本机 sender 和生成内容用明确的脚本替身。首轮错误地只创建 TableWebHost、漏接权威到期驱动，
+7 项检查后等待 Ready 超时，0 浏览器错误且 7 项清理完成；该失败是验收外壳缺失，不是产品不自动发牌。
+修正为复用 `startBeta` 后 `18/18`、`11972.7291 ms`；进一步补上存储内任务 ID 金丝雀，最终仍
+`18/18`、`10551.8492 ms`、0 浏览器错误、7 项清理通过。两席各一次脚本发送和 ACK，双方均见两条
+AI 气泡，正常下一手、刷新恢复和撤权均走普通页面入口。最终产物：
+`H:/tokengold/.codex/b30-remote-friend-browser-20260903-final/report.json`，截图由主线程目检。
+
+既有四页长程验收首轮在第 8b 节自愿亮牌前失败：110 项中 109 通过，手工弃牌仅 2 次而预期 3 次，
+随后未在 8 秒内看到赢家亮牌窗口；四页控制台及意外网络错误均为 0。步骤已记录第 3 手，但中止汇总
+`hands_reached=0` 来自仅在末尾更新的字段，不能当作“没有开手”。原始失败保留在
+`H:/tokengold/.codex/b30-table-web-acceptance-20260903-a1/result.json`。后续把亮牌验收改为正常页面动作推进
+后的全新一手，要求四席、版本 1、唯一行动者与足够的剩余时间；逐次核对三次弃牌请求被权威接受，
+先完成 3 秒亮牌窗口内的断言，再截图，不延长产品行动或亮牌时限。a1 具体自动弃牌者仍为 unknown。
+
+第二次长程 b1 跑到第 13 手，201/204、未中止、0 浏览器错误，约 415.182 秒，三个失败分别是：
+滚动区未画出的子气泡矩形被算入遮挡；测气泡退出前选到已过期样本；开手后席位 797 的基线漏算了底池 3，
+之后正常合计 800 被误判成凭空发筹码。该轮自愿亮牌的三次普通弃牌、四页可见、幂等重放和冲突拒绝均通过。
+原始结果保留在 `H:/tokengold/.codex/b30-table-web-acceptance-20260903-b1/result.json`。
+测试修正只使用浏览器实际 overflow 祖先裁剪，并保留每个有气泡席位的正面积/可读性及真实遮挡反例；
+每个视口和退出观察使用新近接受的普通聊天样本；筹码沿用早先同四席、有限且为正的已核对 800 基线，
+不重新取当前值作为期望、不放宽守恒断言。中止汇总只读最终可观察手数，读取失败写 unknown。
+第三次长程 b2 为 209/211、到第 13 手、未中止、0 浏览器错误，472.008 秒；两条失败均来自切换窄屏、
+截图之后气泡已过期的空样本，非空/可读性防线正确报红。新普通消息的接受→出现→约 11.139 秒后退出→
+时间线保留已通过，筹码固定基线也通过。四上下文、浏览器和本次服务器已关闭。
+原始结果为 `H:/tokengold/.codex/b30-table-web-acceptance-20260903-b2/result.json`；分工还发现最终手数采样
+被误放在第 12 节而非 main finally，提前中止路径与末阶段耗时仍需修正并复验，不能把 b2 当最终版通过。
+最终长程 b3 在修正后的冻结测试字节上完整通过：`215/215`、`aborted=null`、实际到第 13 手（不是已结算
+13 手）、`533588 ms`，四页控制台/页面及故意故障窗口外的网络错误均为 0；16 条故意故障和 1 条客户端
+主动撤回单列。四上下文、浏览器和自有服务已关闭，清理 155 ms，61007 无监听。主线程直接读取结果和时序
+文件：main finally 读到 Alice/Carol 为第 13 手，已关闭的 Bob、已回入口的 Dave 为 unknown，末阶段耗时
+为 5 ms。报告为 `H:/tokengold/.codex/b30-table-web-acceptance-20260903-b3/result.json`，27 张截图由分工
+核对，主线程另直接目检双人游戏/配置及长程窄屏截图。此前失败均保留，不把某次失败的通过部分冒充最终版。
+main 提前失败的实际 VM 路径增加 4 项回归，先 4 项全红、修后与周边合计 `107/107`、`567.0508 ms`，
+并增加 3 条 finally 变异。最终 driver SHA-256 为 `8315be7f09be457f8de6f9ba834fe3387b78fd572c9b50a9d5c51e069aac0c23`。
+
+第一次完整 `npm run gate` 在
+`H:/tokengold/.codex/b30-gate-snapshot-20260903-a2` 的同字节隔离副本执行，Node 为
+`1453/1453`、0 失败/取消/跳过/todo、`141854.5062 ms`；693 条变异为 689 杀掉、3 存活、1 未评估，
+整轮 exit 1、`965207.6462 ms`。四项都属于验证定义问题而非产品实现失败：userinfo 旧变异被另一道等价校验继续拒绝；
+multi-hand 导入锚点漏同步；Host 头旧变异改写了已不再参与输出的字段；旧手亮牌前置被后续同条件再次阻断。
+没有把这次失败写成完整门禁通过，也没有删除产品防线来迁就变异。
+
+四份规格改为真正可到达的错误，其中亮牌测试新增一页滞后、一页超前、四页同旧手三个边界。在全新 a3
+同字节副本，当前四文件聚焦测试 `108/108`、`1347.0859 ms`；四份受影响规格依次为 10、46、22、5 条，
+合计 `83/83` 杀掉、0 存活/未评估，四条命令墙钟合计 `45509.3535 ms`。a2 与 a3 的 65 个产品实现文件
+逐文件无差异；验证代码除 `test/reveal-scenario.test.cjs` 新增三项外无差异，另只有上述四份变异定义变化。
+因此当前字节的组合覆盖为 Node `1456/1456`、变异 `693/693`，但这是一份有身份约束的组合证明，
+**不是**第二次完整 `npm run gate` 的 exit 0。a3 完成变异后与主树候选 452 文件逐项一致，未留下变异代码。
+
+a2 是 452 个受控/未忽略文件、5496705 字节，逐文件 SHA-256 一致；a3 为同 452 文件、5500801 字节。
+两者都没有复制 `.git`、被忽略的运行时或连接秘密。先前 a1 的 PowerShell 路径拆分调用在第一份文件复制前
+失败，只留下空目录，未启动产品或测试。完整门禁、修正、身份与耗时的机器可读事实见
+`.trellis/tasks/08-26-public-ai-table-talk/research/b30-local-verification-20260903.json`。不得引用 B29 的
+1356/668 作为 B30 已跑成绩。
+
+### 尚未完成与下一责任人
+
+本批实际原生模型调用、原生 queue、公网隧道和付费服务调用均为 0。脚本 sender 的成功、真实 Node
+子进程的退出、旧单席宿主样本都不能替代两台电脑的两个真实 Codex。两好友十手、两席各至少一条
+牌局内同手真实公开气泡、双方可玩性反馈仍为 `not_run`，不能宣布 MVP 或实时性能通过。
+`proactive_wake_verified=false`，两个父任务与主动唤醒/可玩性节点保持开放。
+
+本轮临时私有下载由各测试自身清理，旧七份失效下载及历史宿主资源未动；没有自动隧道、模型覆盖、
+宿主重启、commit 或 push。本地候选已达到真人联通测试入口，下一责任人为用户、好友与主开发者：统一候选代码版本，
+按指南设置同一 HTTPS 私人房并执行真实验收；公开大厅、服务器采购与四真人扩展仍后置。
+
+```yaml
+execution_closure:
+  contract: dual-ai.execution-closure.v1
+  result_id: EC-TG-B30-TWO-FRIEND-REMOTE-20260903-A
+  detail_level: material_node_closure
+  scope:
+    scope_id: TG-EU-PLAYABILITY-GATE
+    exact_outcome: MVP-0.1两好友、两设备、两个真实Codex的十手私人房验收；B30只提供本地候选和未完成项，不关闭完整父节点。
+    owner_ref: PROJECT-PLAN-TREE.md#当前恢复点
+  trigger: explicit_decision_relevant_claim
+  basis:
+    semantic_contract_refs:
+      - {node_id: TG-L2-SESSION-LAUNCH, contract_id: SC-TG-L2-SESSION-LAUNCH-20260827-B, decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-019, expected_digest: 'sha256:b122280d82879e0094793b9cfffedabfb9aa0139647c704f42c2246af754f45f', binding_status: verified}
+      - {node_id: TG-L2-PLAYABLE-TABLE, contract_id: SC-TG-L2-PLAYABLE-TABLE-20260827-D, decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-022, expected_digest: 'sha256:d73e30748ac4d7a3fc814e6f44d6aa96676dc3677e0ef04f8f1298e9f84ca453', binding_status: verified}
+      - {node_id: TG-L2-PUBLIC-AI-EXCHANGE, contract_id: SC-TG-L2-PUBLIC-AI-EXCHANGE-20260827-D, decision_ref: PROJECT-DECISION-LOG.md#DEC-20260827-023, expected_digest: 'sha256:584c328120d25e74fb67e6c92f48356774f9f820616c6c57f7977d40f50c1a54', binding_status: verified}
+    project_intelligence_ref: STATUS.md#project_intelligence
+    understanding_view_ref: PROJECT-PLAN-TREE.md#当前恢复点
+    implementation_identity:
+      kind: file_set_digest
+      scope: package.json、src、web、plugins内65个受控或未忽略文件；按相对路径排序，逐文件原始字节SHA-256，再对JSON数组的UTF-8字节做SHA-256。
+      identity: sha256:7b014e35f130f4afb70534379f6645d0041a372fdd23069f3c7936943baac445
+      status: current
+    verification_identities:
+      - {evidence_pointer: 'H:/tokengold/.codex/b30-table-web-acceptance-20260903-b3/result.json', identity: 'sha256:4fd231f6f3b6d3a1b01f870cf33c74bc26e1b9c43c7b848f08f54d74f6620497', status: current}
+      - {evidence_pointer: 'H:/tokengold/.codex/b30-table-web-acceptance-20260903-b3/timing-evidence.json', identity: 'sha256:253f2e363e23aed0dddba899863b02d010b107a371e821347f5e421a1486470d', status: current}
+      - {evidence_pointer: 'H:/tokengold/.codex/b30-remote-friend-browser-20260903-final/report.json', identity: 'sha256:d2c25d7504a0dfd3f0f282cd9d5e084e787c0c63eb4ec3a861c00aaddcc21be4', status: current}
+      - {evidence_pointer: 'H:/tokengold/.codex/b30-workspace-20260903-final/report.json', identity: 'sha256:0a96b735dddf4639ad10aa39276c6b543fdc4b4b1326690ea0419ef0f67398ce', status: current}
+      - {evidence_pointer: 'H:/tokengold/.codex/b30-workspace-model-binding-20260903/result.json', identity: 'sha256:b2a6e341162a9b5406be14df4199e98a7c0ad890ddd761c9b9a9b56ec8fe9b35', status: current}
+      - {evidence_pointer: '.trellis/tasks/08-26-public-ai-table-talk/research/b30-local-verification-20260903.json', identity: 'sha256:8374a7d929e3e9fbade701ce7f5c74abca0308c281bf4c449711cb8d06275e96', status: current}
+    freshness: unknown
+    historical_inputs:
+      - {kind: semantic_implementation_closure, ref: REVIEW-LOG.md#b28-idle-game-task-handoff, disposition: historical_only}
+  acceptance:
+    derivation_timing: before_current_implementation
+    obligations:
+      - {obligation_id: B30-LOCAL-REGRESSION, claim_or_predicate: 当前候选的全部Node用例与全部变异规格均有当前字节对应的通过证据，且没有未评估项或变异残留。, required: yes, real_condition: 完整门禁先固定未受影响集合，再对唯一变化的验证文件重跑全部聚焦用例与受影响变异，并逐文件核对产品、测试和还原身份。}
+      - {obligation_id: B30-LOCAL-TWO-SEAT, claim_or_predicate: 产品入口启动，两独立浏览器和两个脚本Connector在同桌各自授权发言、下一手、恢复并撤权。, required: yes, real_condition: 本机真实HTTP与真实浏览器，明确脚本sender和生成替身}
+      - {obligation_id: B30-WEB-WORKSPACE, claim_or_predicate: 游戏与配置工作面切换保持席位，双人桌面动作可用，窄屏不溢出。, required: yes, real_condition: 1365x800桌面及320和390px浏览器}
+      - {obligation_id: B30-LONG-POKER, claim_or_predicate: 四隔离浏览器经正常动作连续多手与故障矩阵通过。, required: yes, real_condition: 当前产品的脚本模型长程浏览器验收}
+      - {obligation_id: B30-REAL-FRIENDS, claim_or_predicate: 两设备经HTTPS同房十手，两席各有牌局内同手真实Codex公开气泡、无重复通知并给出真人反馈。, required: yes, real_condition: 用户和好友各自的独立电脑及空闲游戏任务}
+    selected_surfaces: [static, integration, browser_smoke, focused_probe, inspection]
+    observations:
+      - {obligation_id: B30-LOCAL-REGRESSION, evidence_type: executed, correspondence: derived, evidence_pointer: '.trellis/tasks/08-26-public-ai-table-talk/research/b30-local-verification-20260903.json', result: pass, caveat: 第一次完整gate为1453项通过、693变异中689杀掉/3存活/1未评估并exit1；修正四项验证定义后当前聚焦108项及全部受影响83变异通过。产品65文件无变化、其余验证代码无变化，据此组成当前1456/1456与693/693；没有声称第二次完整npm run gate exit0。}
+      - {obligation_id: B30-LOCAL-TWO-SEAT, evidence_type: executed, correspondence: direct, evidence_pointer: 'H:/tokengold/.codex/b30-remote-friend-browser-20260903-final/report.json', result: pass, caveat: 18项、10551.8492ms、0浏览器错误、7项清理；真实模型和原生queue均0。}
+      - {obligation_id: B30-WEB-WORKSPACE, evidence_type: executed, correspondence: direct, evidence_pointer: 'H:/tokengold/.codex/b30-workspace-20260903-final/report.json', result: pass, caveat: 75项、16638.1123ms、0浏览器错误、8项清理；不是内嵌宿主UI。}
+      - {obligation_id: B30-LONG-POKER, evidence_type: executed, correspondence: direct, evidence_pointer: 'H:/tokengold/.codex/b30-table-web-acceptance-20260903-b3/result.json', result: pass, caveat: 最终215项通过、到第13手、533588ms、无中止和窗口外浏览器错误；4上下文及浏览器/服务均已关闭，模型为脚本。}
+      - {obligation_id: B30-REAL-FRIENDS, evidence_type: not_run, correspondence: direct, evidence_pointer: docs/REMOTE-FRIEND-MVP.md#两好友实测清单, result: not_run, caveat: 本地脚本、旧单席样本及真实Node进程均不能代替。}
+    skipped:
+      - {check: real_two_device_native_Codex_and_HTTPS, reason: 本轮先实现并验证本地候选，真人联通和临时入口尚未执行。}
+    result: not_run
+  capability_claim:
+    overall_result: partial
+    claims:
+      - capability_id: TG-EU-PLAYABILITY-GATE
+        parent_capability_id: TG-L3-MULTIPLAYER-VERTICAL-SLICE
+        claim: 两好友远程私人房MVP的当前交付状态
+        exact_scope: 本轮两设备、两个真实Codex、至少十手；不是四真人扩展、Claude、大厅或生产发布。
+        result: partial
+        dimensions:
+          semantic: {required: yes, status: sufficient_for_claim, evidence_type: inspection, evidence_pointer: '.trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-1-two-friends', user_readable_meaning: 两好友阶段和不做范围已确认，受保护合同未改。, caveat: 不因阶段收敛关闭完整父合同。}
+          implementation: {required: yes, status: sufficient_for_claim, evidence_type: executed, evidence_pointer: REVIEW-LOG.md#b30-two-friend-remote-candidate, user_readable_meaning: 显式HTTPS地址、出站连接、逐席通知和两个Web工作面已实现并完成本地候选验证。, caveat: 这仍不是双机真实Codex验收。}
+          data: {required: yes, status: sufficient_for_claim, evidence_type: executed, evidence_pointer: 'H:/tokengold/.codex/b30-remote-friend-browser-20260903-final/report.json', user_readable_meaning: 合成本席数据与公开气泡按席隔离，页面和存储不含原生任务ID或模型令牌。, caveat: 可信好友原型，不证明恶意房主或公共互联网安全。}
+          integration: {required: yes, status: insufficient_for_claim, evidence_type: not_run, evidence_pointer: docs/REMOTE-FRIEND-MVP.md, user_readable_meaning: 双机真实HTTPS与两个原生Codex尚未组合验证。, caveat: 两浏览器和脚本发送器只能证明本地集成。}
+          verification: {required: yes, status: insufficient_for_claim, evidence_type: executed, evidence_pointer: REVIEW-LOG.md#b30-two-friend-remote-candidate, user_readable_meaning: 当前本地候选的1456项Node组合覆盖、693项变异组合覆盖、双席整合和四页长程均已通过；MVP所需真人签字未齐。, caveat: 组合覆盖有逐文件身份约束，但不冒充第二次完整gate exit0，也不替代双机验收。}
+          operational: {required: yes, status: insufficient_for_claim, evidence_type: not_run, evidence_pointer: docs/REMOTE-FRIEND-MVP.md#两好友实测清单, user_readable_meaning: 真实安装、连接、网络故障和可玩性反馈仍待双方执行。, caveat: 不承诺生产SLA或进程重启恢复。}
+        safe_wording: 两好友候选已实现并完成本地回归与浏览器验收，已可进入双机真实联通测试；双机真实Codex十手未验收，MVP仍未完成。
+        gaps: [双机HTTPS与双原生AI, 十手真人反馈与签字]
+  route_boundaries:
+    local: {result: supported, evidence_refs: [REVIEW-LOG.md#b30-two-friend-remote-candidate, .trellis/tasks/08-26-public-ai-table-talk/research/b30-local-verification-20260903.json]}
+    adjacent: {result: partial, evidence_refs: [REVIEW-LOG.md#b30-two-friend-remote-candidate]}
+    cumulative: {result: partial, evidence_refs: [docs/REMOTE-FRIEND-MVP.md, PROJECT-PLAN-TREE.md#当前恢复点]}
+  semantic_delta: l3_l4_within_scope
+  state: evidence_pending
+  claim_limits: [本地脚本不是原生模型, queue接收不是权威结清, 旧CLI不证明当前宿主, 不翻proactive_wake_verified, 不关闭真人验收或完整父节点]
+  remaining_non_blocking: [四真人扩展, Claude适配, 内嵌UI, 公开大厅与服务器采购]
+  advance_allowed: no
+  next_owner: user_and_friend_two_device_acceptance_with_codex_primary_support
+```

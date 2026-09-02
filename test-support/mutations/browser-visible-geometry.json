@@ -1,0 +1,35 @@
+{
+  "name": "browser-visible-geometry",
+  "note": "长浏览器按真实 overflow 裁剪测量可见气泡，但空气泡、全部裁掉、真实遮挡仍必须失败。",
+  "test": "test/browser-visible-geometry.test.cjs",
+  "mutations": [
+    {
+      "id": "ignore-overflow-clipping",
+      "file": "test-support/browser-visible-geometry.cjs",
+      "find": "  for (const clip of clips) {",
+      "replace": "  for (const clip of []) {",
+      "note": "原失败：把滚动容器外没有绘制的矩形当成可见遮挡。"
+    },
+    {
+      "id": "real-overlap-reported-as-zero",
+      "file": "test-support/browser-visible-geometry.cjs",
+      "find": "  if (!a || !b) return 0;",
+      "replace": "  if (true) return 0;",
+      "note": "裁剪计算不能吞掉真正盖住行动、公牌或底池的可见部分。"
+    },
+    {
+      "id": "all-clipped-counts-as-readable",
+      "file": "test-support/browser-visible-geometry.cjs",
+      "find": "    readable: occupiedSeats.size > 0 && readableSeats.size === occupiedSeats.size,",
+      "replace": "    readable: true,",
+      "note": "零重叠不代表可读；全裁掉、空数据、隐藏一席必须失败。"
+    },
+    {
+      "id": "one-readable-seat-masks-hidden-other-seat",
+      "file": "test-support/browser-visible-geometry.cjs",
+      "find": "    readable: occupiedSeats.size > 0 && readableSeats.size === occupiedSeats.size,",
+      "replace": "    readable: readableSeats.size > 0,",
+      "note": "别的座位仍可读不能掩盖某一整席气泡被藏掉。"
+    }
+  ]
+}

@@ -35,13 +35,16 @@ function readPort(raw, name, fallback = 0) {
   return port;
 }
 
-function joinInstructions({ origin, adapter, banner }) {
+function joinInstructions({ origin, adapter, banner, publicOriginConfigured = false }) {
+  const remoteReady = publicOriginConfigured && origin.startsWith("https://");
   return [
     "",
     "———— 本地私人房原型已启动 ————",
     "",
     `牌桌地址：${origin}`,
-    "仅供本机隔离浏览器/宿主测试；此回环地址不能直接发给异地朋友。远程联机尚未开放。",
+    remoteReady
+      ? "这是显式配置的 HTTPS 分享地址，可以发给好友；牌局服务本身仍只监听本机回环。"
+      : "仅供本机隔离浏览器/宿主测试；此回环地址不能直接发给异地朋友。远程联机尚未开放。",
     "",
     "第一个人（建房）：",
     `  1. 浏览器打开 ${origin}`,
@@ -96,6 +99,13 @@ async function startBeta({ env = process.env, surface: suppliedSurface } = {}) {
   const webPort = readPort(env.TOKENGAME_WEB_PORT, "TOKENGAME_WEB_PORT", DEFAULT_TABLE_PORT);
   const webHost = env.TOKENGAME_WEB_HOST || "127.0.0.1";
   const commandOrigin = env.TOKENGAME_COMMAND_ORIGIN || "";
+  const configuredPublicOrigin = env.TOKENGAME_PUBLIC_ORIGIN === ""
+    ? undefined
+    : env.TOKENGAME_PUBLIC_ORIGIN;
+  if (![undefined, "", "0", "1"].includes(env.TOKENGAME_REMOTE_WAKE)) {
+    throw Object.assign(new Error("invalid_configuration"), { code: "invalid_configuration" });
+  }
+  const remoteWakeEnabled = env.TOKENGAME_REMOTE_WAKE === "1";
   const receiptFile = env.TOKENGAME_AI_RECEIPT_FILE;
   // 远程命令客户端看不到 SeatAiStore.onEvent；不能写一个看似完整的空捕获文件。
   if (commandOrigin !== "" && receiptFile !== undefined && receiptFile !== "") {
@@ -152,16 +162,25 @@ async function startBeta({ env = process.env, surface: suppliedSurface } = {}) {
       });
       ownedDueWork.start();
     }
-    host = new TableWebHost({ core, modelAdapter: adapter, modelBindingEnabled: true, wakeQueue });
+    host = new TableWebHost({
+      core,
+      modelAdapter: adapter,
+      modelBindingEnabled: true,
+      wakeQueue,
+      publicOrigin: configuredPublicOrigin,
+      remoteWakeEnabled,
+    });
     // 对外监听仍由协调器拒绝；接入回执不复制或绕过这一条门禁。
     origin = await host.start({ host: webHost, port: webPort });
   } catch (error) {
     await close({ reason: "startup_failed" });
     throw error;
   }
+  const publicOrigin = host.publicOrigin;
   const banner = {
     service: "tokengame-beta",
-    origin,
+    origin: publicOrigin,
+    public_origin_configured: host.publicOriginConfigured,
     core_transport: core.transport,
     core_origin: commandOrigin === "" ? "in_process" : commandOrigin,
     due_work_owned_here: ownedDueWork !== null,
@@ -174,10 +193,11 @@ async function startBeta({ env = process.env, surface: suppliedSurface } = {}) {
     },
     // B14仅验证固定版本的一次通知，不能据此开启持续产品能力声明。
     proactive_wake_verified: false,
-    managed_wake: wakeQueue === null ? "disabled" : "available",
+    managed_wake: host.wakeSessions.enabled ? "available" : "disabled",
+    remote_wake_connector: remoteWakeEnabled ? "available" : "disabled",
     wake_fallback: "polling",
   };
-  return { origin, banner, adapter, host, surface, receipts, close };
+  return { origin, publicOrigin, banner, adapter, host, surface, receipts, close };
 }
 
 function drainOutput(stream) {
@@ -321,7 +341,11 @@ async function main({ env = process.env } = {}) {
     if (!closing) {
       // 启动行给脚本读，不含文件路径或任何权限；逐席令牌仍只由本人认证后下载。
       process.stdout.write(`${JSON.stringify(run.banner)}\n`);
-      process.stdout.write(joinInstructions(run));
+      process.stdout.write(joinInstructions({
+        ...run,
+        origin: run.publicOrigin,
+        publicOriginConfigured: run.banner.public_origin_configured,
+      }));
     }
   } catch {
     await shutdown("STARTUP_FAILURE", "startup_failed");

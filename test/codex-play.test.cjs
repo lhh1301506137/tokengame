@@ -233,7 +233,9 @@ test("launch env复制必要宿主键、排除SESSION与全部敌意TokenGame值
     TOKENGAME_COMMAND_ORIGIN: "http://remote.invalid", TOKENGAME_MODEL_ADAPTER: "evil-adapter",
     TOKENGAME_AI_RECEIPT_FILE: "secret-file", TOKENGAME_CODEX_WAKE: "0",
     TOKENGAME_CODEX_CWD: "C:\\wrong", TOKENGAME_CODEX_THREAD: SESSION,
-    TOKENGAME_AUTHORITY_TOKEN: "hostile-token", CODEX_THREAD_ID: THREAD,
+    TOKENGAME_AUTHORITY_TOKEN: "hostile-token",
+    TOKENGAME_PUBLIC_ORIGIN: "https://Friends-Tunnel.Example:443/",
+    CODEX_THREAD_ID: THREAD,
   });
   Object.defineProperty(env, "CODEX_SESSION_ID", {
     enumerable: true, get() { throw new Error("session getter read"); },
@@ -250,8 +252,24 @@ test("launch env复制必要宿主键、排除SESSION与全部敌意TokenGame值
     TOKENGAME_MODEL_ADAPTER: "", TOKENGAME_AI_RECEIPT_FILE: "", TOKENGAME_CODEX_WAKE: "1",
     TOKENGAME_CODEX_EXECUTABLE: fs.realpathSync(f.executable),
     TOKENGAME_CODEX_CWD: fs.realpathSync(f.project), TOKENGAME_CODEX_THREAD: THREAD.toLowerCase(),
+    TOKENGAME_PUBLIC_ORIGIN: "https://friends-tunnel.example",
   });
   assert.equal(env.TOKENGAME_WEB_HOST, "0.0.0.0", "不得改写调用方环境对象");
+});
+
+test("一键入口在写配置前拒绝非法 public origin，且稳定输出不回显其内容", async (t) => {
+  const f = fixture(t);
+  const secret = "http://remote.invalid/path?token=DO_NOT_PRINT";
+  let configured = 0;
+  const result = await launch(f, {
+    env: environment(f, { TOKENGAME_PUBLIC_ORIGIN: secret }),
+    configure: () => { configured += 1; return { changed: false }; },
+  });
+  assert.equal(result.code, 1);
+  assert.equal(configured, 0);
+  assert.match(result.stderr, /tokengame_public_origin_invalid/);
+  assert.equal(`${result.stdout}${result.stderr}`.includes(secret), false);
+  assert.equal(`${result.stdout}${result.stderr}`.includes("DO_NOT_PRINT"), false);
 });
 
 test("成功失败输出均稳定去敏；配置异常不启动beta", async (t) => {

@@ -160,7 +160,7 @@ async function checkFreshInvite(page, invite) {
   }
 }
 async function downloadConnection(page, name) {
-  await page.locator("#model-connection-panel summary").click();
+  await page.locator("#nav-settings").click();
   check(`${name} 未同意时不能下载`, await page.locator("#model-bind-download").isDisabled());
   await page.locator("#model-consent").check();
   const downloadReady = page.waitForEvent("download");
@@ -182,6 +182,7 @@ async function downloadConnection(page, name) {
   check(`${name} 私有文件经 stdio 连接同桌`, !read.isError);
   await refreshProjection(page);
   check(`${name} 请求后页面反映 host_seen`, await page.locator("#model-connection-state").textContent() === "已收到本席宿主请求");
+  await page.locator("#nav-game").click();
   return client;
 }
 
@@ -234,7 +235,7 @@ try {
   const after = JSON.parse(await a.evaluate(() => window.render_game_to_text()));
   check("刷新回原席且保留模型绑定", before.seats.find((seat) => seat.is_viewer).seat_id === after.seats.find((seat) => seat.is_viewer).seat_id
     && before.model_connection.binding_id === after.model_connection.binding_id);
-  await a.locator("#model-connection-panel summary").click();
+  await a.locator("#nav-settings").click();
   await a.setViewportSize({ width: 390, height: 844 });
   await snapshot(a, "narrow-bound.png");
   check("窄屏无横向溢出", await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -256,6 +257,7 @@ try {
   check("撤销后页面显示未绑定", await a.locator("#model-connection-state").textContent() === "尚未绑定本席 AI");
   check("真人控件撤销后旧文件被拒", (await ca.table("view.projection")).isError);
   check("撤销 A 不影响 B", !(await cb.table("view.projection")).isError);
+  await a.locator("#nav-game").click();
   check("撤销后真人仍留在牌桌", await a.locator("#table-main").isVisible());
   await snapshot(a, "narrow-revoked.png");
   check("未宣称无点击唤醒", after.model_connection.proactive_wake_verified === false);

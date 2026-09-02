@@ -11,6 +11,12 @@
 // .mjs 里的东西单元测试加载不了（两个浏览器 UI 也是同样的原因被排除在变异之外），
 // 所以判定式只要留在那边，就永远只能靠跑一次真浏览器来发现它错了。
 
+function observedHandIndex(values) {
+  const known = (Array.isArray(values) ? values : [])
+    .filter((value) => Number.isSafeInteger(value) && value >= 0);
+  return known.length > 0 ? Math.max(...known) : "unknown";
+}
+
 function buildResult({
   banner,
   contexts,
@@ -28,7 +34,7 @@ function buildResult({
     note: "模型适配器是 test-support/scripted-model-adapter.cjs（simulated:true）。"
       + "本文件不构成真实宿主主动唤醒已验证的证据。",
     contexts,
-    hands_reached: finalHandIndex,
+    hands_reached: observedHandIndex([finalHandIndex]),
     console_errors: totalConsole,
     console_detail: consoleReport,
     artifacts,
@@ -79,8 +85,10 @@ function redactDetail(detail) {
 }
 
 function summarize({ steps, failures, totalConsole, finalHandIndex, aborted = null }) {
+  const hand = observedHandIndex([finalHandIndex]);
   const line = `步骤 ${steps.length}：通过 ${steps.filter((s) => s.ok).length}，`
-    + `失败 ${failures.length}；控制台错误 ${totalConsole}；到第 ${finalHandIndex} 手。`;
+    + `失败 ${failures.length}；控制台错误 ${totalConsole}；`
+    + (hand === "unknown" ? "已到手数 unknown。" : `到第 ${hand} 手。`);
   if (aborted === null) return line;
   return `${line} 运行在此中止：${aborted.message ?? String(aborted)}`;
 }
@@ -90,6 +98,14 @@ function summarize({ steps, failures, totalConsole, finalHandIndex, aborted = nu
 // 这几个函数从浏览器脚本里抽出来，不是为了复用——只有一个调用点。是为了让它们能被
 // node --test 和变异驱动碰到：.mjs 里的逻辑单元测试装不进来，而一条装不进来的判定式
 // 等于没有测试。前一轮的「中止却判通过」就是这么漏过去的。
+
+function validFourSeatBaseline(startingTotal, originalSeatIds, currentSeatIds) {
+  const validIds = (ids) => Array.isArray(ids) && ids.length === 4 && new Set(ids).size === 4
+    && ids.every((id) => typeof id === "string" && id.length > 0);
+  return Number.isFinite(startingTotal) && startingTotal > 0
+    && validIds(originalSeatIds) && validIds(currentSeatIds)
+    && currentSeatIds.every((id) => originalSeatIds.includes(id));
+}
 
 // 筹码守恒：双边界而不是等式。
 //
@@ -175,6 +191,6 @@ function handCoverage(handsPlayed, { target, headsUp, multiway, allInAction, all
 }
 
 module.exports = {
-  buildResult, summarize, redactDetail, CREDENTIAL_KEYS,
-  chipConservation, degradationVerdict, handCoverage,
+  buildResult, summarize, redactDetail, CREDENTIAL_KEYS, observedHandIndex,
+  chipConservation, degradationVerdict, handCoverage, validFourSeatBaseline,
 };

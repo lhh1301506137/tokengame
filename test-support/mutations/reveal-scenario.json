@@ -1,0 +1,42 @@
+{
+  "name": "reveal-scenario",
+  "note": "锁定长浏览器 8b 的真实前置与回执：不能沿用耗过时限的旧手、把自动弃牌计入三次手工弃牌，或等到下一手才承认亮牌窗结束。这里只变异测试支持判定，不改产品扑克规则。",
+  "test": "test/reveal-scenario.test.cjs",
+  "mutations": [
+    {
+      "id": "settled-keeps-waiting-for-actor",
+      "file": "test-support/reveal-scenario.cjs",
+      "find": "    return { kind: \"settled\" };",
+      "replace": "    return { kind: \"waiting\" };",
+      "note": "已结算仍等待行动者，会把三秒亮牌窗等掉。"
+    },
+    {
+      "id": "precondition-infers-caller-baseline",
+      "file": "test-support/reveal-scenario.cjs",
+      "find": "function revealPrecondition(tables, { afterHandIndex, now, minimumRemainingMs = 10_000 }) {\n  const reasons = [];",
+      "replace": "function revealPrecondition(tables, { afterHandIndex, now, minimumRemainingMs = 10_000 }) {\n  afterHandIndex = tables[0]?.handIndex - 1;\n  const reasons = [];",
+      "note": "不能从当前四页反推 afterHandIndex 后自证为新手；必须保留调用方已观察到的旧手边界。此前仅删除第一处 handIndex 条件的变异会被 revealTurn 的同一条件挡住，对 ok 判定等价，故替换为这条有效错误。"
+    },
+    {
+      "id": "precondition-ignores-consumed-action",
+      "file": "test-support/reveal-scenario.cjs",
+      "find": "table.handStatus !== \"active\" || table.handRevision !== 1",
+      "replace": "table.handStatus !== \"active\"",
+      "note": "无人弃牌也可能已经自动过牌；新手前置必须未消费行动。"
+    },
+    {
+      "id": "fold-counts-click-without-authority-acceptance",
+      "file": "test-support/reveal-scenario.cjs",
+      "find": "  if (status !== 200 || body?.ok !== true || body.result?.replay === true) {",
+      "replace": "  if (false) {",
+      "note": "按钮点击、被拒、重放都不能计为一次新的手工弃牌。"
+    },
+    {
+      "id": "fold-ignores-automatic-action-gap",
+      "file": "test-support/reveal-scenario.cjs",
+      "find": "      || after.handRevision !== before.handRevision + 1) {",
+      "replace": "      || false) {",
+      "note": "手号相同不代表没有混入超时自动动作。"
+    }
+  ]
+}

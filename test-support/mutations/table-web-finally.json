@@ -1,0 +1,28 @@
+{
+  "name": "table-web-finally",
+  "note": "执行长浏览器实际 main 的提前失败路径，只替换外部 I/O。必须由真正 finally 读取手数、保留 unknown，并补齐末阶段耗时；仅在正常 §12 采样不会通过。",
+  "test": "test/table-web-finally.test.cjs",
+  "mutations": [
+    {
+      "id": "early-abort-discards-observed-hand",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "    finalHandIndex = observedHandIndex(finalHandObservation.map((entry) => entry.hand));",
+      "replace": "    finalHandIndex = \"unknown\";",
+      "note": "真正提前失败时也必须把实际采到的手数写入结果，不能仅在正常末尾更新。"
+    },
+    {
+      "id": "unreadable-page-pretends-no-hand",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "        return { player: player.name, hand: \"unknown\", source: \"page_closed_or_unreadable\" };",
+      "replace": "        return { player: player.name, hand: 0, source: \"page_closed_or_unreadable\" };",
+      "note": "关闭或读取失败是 unknown，不是仍在第 0 手。"
+    },
+    {
+      "id": "last-phase-timing-left-null",
+      "file": "test-support/table-web-acceptance.mjs",
+      "find": "      lastPhase.elapsed_ms = Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : \"unknown\";",
+      "replace": "      lastPhase.elapsed_ms = null;",
+      "note": "没有下一阶段替最后一段结账，finally 必须记录数值或显式 unknown。"
+    }
+  ]
+}

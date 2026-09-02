@@ -8,6 +8,7 @@ const test = require("node:test");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { startBeta: startBetaInProcess } = require("../src/run-beta.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const ENTRY = path.join(ROOT, "src", "run-beta.cjs");
@@ -34,6 +35,7 @@ function startBeta({ env = {}, artifactDir } = {}) {
         TOKENGAME_CODEX_CWD: "",
         TOKENGAME_CODEX_THREAD: "",
         TOKENGAME_WEB_HOST: "127.0.0.1",
+        TOKENGAME_PUBLIC_ORIGIN: "",
         ...env,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -272,4 +274,44 @@ test("对外监听被拒，而且入口不提供绕过它的开关", async (t) =
   const source = fs.readFileSync(ENTRY, "utf8");
   assert.doesNotMatch(source, /ALLOW_(REMOTE|LAN|EXTERNAL)|allowNonLoopback|--unsafe/,
     "入口提供了绕过回环限制的开关——U-TG-LOCAL-BRIDGE-AUTH 还开着，绕过它就是提前放行");
+});
+
+test("显式 public origin 只改变分享地址和连接文件，实际服务仍监听回环", async (t) => {
+  const publicOrigin = "https://two-friends.example";
+  const run = await betaOnce(t, { TOKENGAME_PUBLIC_ORIGIN: publicOrigin });
+  assert.equal(run.banner.origin, publicOrigin);
+  assert.equal(run.banner.public_origin_configured, true);
+  const text = await waitForText(run, /可以发给好友/);
+  assert.match(text, /可以发给好友/);
+  assert.doesNotMatch(text, /远程联机尚未开放|不能直接发给异地朋友/);
+
+  const local = await startBetaInProcess({ env: {
+    TOKENGAME_WEB_PORT: "0",
+    TOKENGAME_WEB_HOST: "127.0.0.1",
+    TOKENGAME_PUBLIC_ORIGIN: publicOrigin,
+  } });
+  t.after(() => local.close());
+  assert.match(local.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
+  const health = await (await fetch(`${local.origin}/api/health`)).json();
+  assert.equal(health.ok, true);
+  const binding = await bindSeat({ banner: { origin: local.origin } });
+  assert.equal(binding.connection.table_origin, publicOrigin);
+  assert.equal(JSON.stringify(run.banner).includes(binding.connection.model_token), false);
+});
+
+test("非法 public origin 在监听前失败且错误输出不回显原值", async (t) => {
+  const secretOrigin = "http://remote.example/private?token=SHOULD_NOT_PRINT";
+  await assert.rejects(
+    () => startBetaInProcess({ env: {
+      TOKENGAME_WEB_PORT: "0",
+      TOKENGAME_WEB_HOST: "127.0.0.1",
+      TOKENGAME_PUBLIC_ORIGIN: secretOrigin,
+    } }),
+    (error) => {
+      assert.match(error.message, /invalid_field|public_origin/);
+      assert.equal(error.message.includes(secretOrigin), false);
+      assert.equal(error.message.includes("SHOULD_NOT_PRINT"), false);
+      return true;
+    },
+  );
 });

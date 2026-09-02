@@ -174,9 +174,9 @@
     {
       "id": "mjs-drops-verdict-imports",
       "file": "test-support/table-web-acceptance.mjs",
-      "find": "  chipConservation, degradationVerdict, handCoverage,\n} = require(\"./acceptance-result.cjs\");",
-      "replace": "} = require(\"./acceptance-result.cjs\");",
-      "note": "浏览器脚本不再引入这三个判定式，抽出来的逻辑变成没人跑的代码。"
+      "find": "  chipConservation, degradationVerdict, handCoverage, validFourSeatBaseline,\n} = require(\"./acceptance-result.cjs\");",
+      "replace": "  validFourSeatBaseline,\n} = require(\"./acceptance-result.cjs\");",
+      "note": "浏览器脚本不再引入这三个判定式，抽出来的逻辑变成没人跑的代码。锚点跟随B30新基线导入；保留validFourSeatBaseline，只移除本条要验证的三个判定式。"
     },
     {
       "id": "mjs-mutates-top-level-not-view",

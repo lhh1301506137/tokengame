@@ -1,0 +1,106 @@
+{
+  "canonical_resolution": {
+    "contract": "dual-ai.user-facing-language-resolution.v1",
+    "expected_normalized_tag": "zh-CN",
+    "normalized_tag": "zh-CN",
+    "parent_count": 1,
+    "pointer": "STATUS.md#user_facing_language_resolution",
+    "status": "resolved"
+  },
+  "changed_file_set": {
+    "files": [
+      "PROJECT-PLAN-TREE.md",
+      "REVIEW-LOG.md",
+      "STATUS.md"
+    ],
+    "source": "vcs_diff",
+    "vcs_available": true,
+    "write_receipts": []
+  },
+  "contract": "dual-ai.governance-language-pre-handback.v1",
+  "files": [
+    {
+      "actual_bytes_checked": true,
+      "body_result": "match",
+      "checker": "private-dual-governance-language.v3",
+      "evaluated_text_byte_count": 3317,
+      "evaluation_scope": "git_added_lines",
+      "excluded_technical_segments": [
+        "code",
+        "identifier",
+        "machine_field",
+        "path",
+        "schema_key"
+      ],
+      "git_added_line_count": 23,
+      "metrics": {
+        "cjk_count": 594,
+        "cjk_ratio": 0.670429,
+        "latin_count": 292,
+        "latin_ratio": 0.329571
+      },
+      "path": "PROJECT-PLAN-TREE.md",
+      "reason": "private_dual_chinese_body_threshold_met",
+      "sha256": "b4a4cb235bfdd185e2973ffe2013bf65f4c89fdf671c9032e8d61d26f126483f",
+      "user_visible_prose": "present",
+      "whole_file_byte_count": 106432,
+      "whole_file_sha256_checked": true
+    },
+    {
+      "actual_bytes_checked": true,
+      "body_result": "match",
+      "checker": "private-dual-governance-language.v3",
+      "evaluated_text_byte_count": 21744,
+      "evaluation_scope": "git_added_lines",
+      "excluded_technical_segments": [
+        "code",
+        "path"
+      ],
+      "git_added_line_count": 195,
+      "metrics": {
+        "cjk_count": 2707,
+        "cjk_ratio": 0.844618,
+        "latin_count": 498,
+        "latin_ratio": 0.155382
+      },
+      "path": "REVIEW-LOG.md",
+      "reason": "private_dual_chinese_body_threshold_met",
+      "sha256": "ca5f1f50b27456b832a1ae2b9f2e447afd3c17831fab62e6cf2a039e88511ad1",
+      "user_visible_prose": "present",
+      "whole_file_byte_count": 391062,
+      "whole_file_sha256_checked": true
+    },
+    {
+      "actual_bytes_checked": true,
+      "body_result": "match",
+      "checker": "private-dual-governance-language.v3",
+      "evaluated_text_byte_count": 4892,
+      "evaluation_scope": "git_added_lines",
+      "excluded_technical_segments": [
+        "code",
+        "machine_field",
+        "schema_key"
+      ],
+      "git_added_line_count": 36,
+      "metrics": {
+        "cjk_count": 905,
+        "cjk_ratio": 0.542241,
+        "latin_count": 764,
+        "latin_ratio": 0.457759
+      },
+      "path": "STATUS.md",
+      "reason": "private_dual_chinese_body_threshold_met",
+      "sha256": "6d17b2a8b9396637347d64f2da3507898b460edb4ccaa5ba34a0513f291bd18d",
+      "user_visible_prose": "present",
+      "whole_file_byte_count": 88280,
+      "whole_file_sha256_checked": true
+    }
+  ],
+  "reasons": [],
+  "repair": {
+    "max_same_turn_rechecks": 1,
+    "max_same_turn_repairs": 1,
+    "permitted": false
+  },
+  "result": "pass"
+}

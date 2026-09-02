@@ -145,6 +145,8 @@ const ERROR_CLASSES = Object.freeze({
     "model_command_token_rejected",
     "model_scope_rejected",
     "model_binding_changed",
+    "model_connection_changed",
+    "wake_connector_changed",
     "player_credentials_incomplete",
     "player_token_rejected",
     "recovery_credential_rejected",
@@ -206,6 +208,11 @@ const ERROR_CLASSES = Object.freeze({
     "turn_not_active",
     "unknown_ai_request",
     "window_already_open",
+    "wake_connector_busy",
+    "wake_connector_cancelled",
+    "wake_connector_in_use",
+    "wake_connector_poll_active",
+    "wake_notification_unknown",
   ]),
   // 配额与限流。等一会儿可能就好了，但等多久由权威说，适配器不该自己定重试节奏。
   quota: Object.freeze([
@@ -217,11 +224,13 @@ const ERROR_CLASSES = Object.freeze({
     "wake_history_full",
     "wake_thread_history_full",
     "wake_intent_history_full",
+    "wake_connector_capacity",
   ]),
   // 并发冲突。同一个键配了不同内容，或版本号陈旧。适配器该重读再决定，不是重发。
   conflict: Object.freeze([
     "entry_key_conflict",
     "wake_request_conflict",
+    "wake_ack_conflict",
     "model_binding_request_conflict",
     "idempotency_key_conflict",
     "revision_conflict",
@@ -240,6 +249,8 @@ const ERROR_CLASSES = Object.freeze({
     "core_response_not_json",
     "core_unreachable",
     "table_unavailable",
+    // 仅连接器同次 poll/ACK 的网络故障可重试，绝不据此重试本机 queue。
+    "wake_connector_network_unavailable",
   ]),
   // queue可能已经被宿主接收。即使底层表现为I/O错误，也不能按普通网络错误重发。
   execution_uncertain: Object.freeze([
@@ -254,6 +265,12 @@ const ERROR_CLASSES = Object.freeze({
     "queue_child_error",
     "queue_io_error",
     "queue_output_limit",
+    "wake_connector_queue_unknown",
+    "wake_connector_queue_failed",
+    "wake_connector_cleanup_unknown",
+    "wake_connector_cleanup_failed",
+    "wake_connector_start_timeout",
+    "wake_connector_detach_failed",
   ]),
   // 这台机器没配这条路。改配置能好，重试不能，也不是缺陷——不配是合法的默认。
   //
@@ -281,6 +298,23 @@ const ERROR_CLASSES = Object.freeze({
     "model_command_token_not_configured",
     "model_binding_required",
     "model_connection_unavailable",
+    "remote_origin_required",
+    "remote_https_required",
+    "remote_beta_start_failed",
+    "wake_connector_configuration_invalid",
+    "wake_connector_disabled",
+    "wake_connector_unavailable",
+    "wake_connector_start_failed",
+    "tokengame_codex_project_invalid",
+    "tokengame_codex_environment_invalid",
+    "tokengame_codex_thread_invalid",
+    // 本地入口校验的稳定错误码，不声明任何宿主实机验证已通过。
+    "tokengame_codex_executable_invalid",
+    "tokengame_codex_executable_not_found",
+    "tokengame_codex_executable_required",
+    "tokengame_codex_executable_untrusted",
+    "tokengame_codex_beta_start_failed",
+    "tokengame_public_origin_invalid",
   ]),
   // 例行 HTTP 状况。客户端问的方式不对，不是本地缺陷。
   //
@@ -320,6 +354,12 @@ const ERROR_CLASSES = Object.freeze({
     "ai_receipt_startup_failed",
     "internal_error",
     "invalid_core_response",
+    "wake_connector_protocol_invalid",
+    "wake_connector_failed",
+    // 入口接线/兜底错误不改变 HOST_PROFILES 的宿主验证状态。
+    "tokengame_codex_config_result_invalid",
+    "tokengame_codex_beta_invalid",
+    "tokengame_codex_play_failed",
   ]),
   // 合同本身没谈成。全是接线错误：版本不匹配、角色名不认、能力名拼错、生命周期乱跳。
   // 一条都不该在正常运行时出现，所以处置与 unknown 相同（当缺陷、不重试）——它们不是

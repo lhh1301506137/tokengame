@@ -6,8 +6,8 @@
     {
       "id": "route-open-without-token",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (!this.modelBindingEnabled) {\n      sendJson(response, 503, { ok: false, code: \"model_command_route_disabled\" });\n      return;\n    }",
-      "replace": "",
+      "find": "    if (!this.modelBindingEnabled) {",
+      "replace": "    if (false) {",
       "note": "未开启逐席接入时不再如实失败关闭，匿名调用变成令牌错误而不是配置关闭。"
     },
     {
@@ -55,29 +55,29 @@
     {
       "id": "version-gate-removed",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (body.contract_version !== CONTRACT_VERSION) {\n      sendJson(response, 400, {\n        ok: false,\n        code: \"contract_version_mismatch\",\n        details: { expected: CONTRACT_VERSION, received: typeof body.contract_version === \"number\" ? body.contract_version : null },\n      });\n      return;\n    }",
-      "replace": "",
+      "find": "    if (body.contract_version !== CONTRACT_VERSION) {",
+      "replace": "    if (false) {",
       "note": "跨版本放行。插件装在宿主自己的配置里，协调器从仓库跑，两者会停在不同提交上——没有闸门时旧插件发来的字段被静默忽略，表现为「某个参数不起作用」而不是一个可判定的错误码。"
     },
     {
       "id": "missing-version-allowed",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (body.contract_version === undefined) {\n      sendJson(response, 400, {\n        ok: false,\n        code: \"contract_version_missing\",\n        details: { expected: CONTRACT_VERSION },\n      });\n      return;\n    }",
-      "replace": "",
+      "find": "    if (body.contract_version === undefined) {",
+      "replace": "    if (false) {",
       "note": "不带版本号的客户端放行。放行等于让上面那道闸门对任何从不带版本的客户端永远不会红——而那正是最旧的那一类客户端。"
     },
     {
       "id": "version-gate-before-token-gate",
       "file": "src/host/table-web-host.cjs",
-      "find": "    const binding = [...this.modelBindings.values()].find((entry) => sameToken(token, entry.token));",
-      "replace": "    if (body.contract_version !== CONTRACT_VERSION) {\n      sendJson(response, 400, { ok: false, code: \"contract_version_mismatch\", details: { expected: CONTRACT_VERSION } });\n      return;\n    }\n    const binding = [...this.modelBindings.values()].find((entry) => sameToken(token, entry.token));",
+      "find": "  async postModelCommand(request, response, body) {",
+      "replace": "  async postModelCommand(request, response, body) {\n    if (!this.verifyModelContract(body, response)) return;",
       "note": "先回答版本再鉴权，使无令牌的请求能探测协调器合同版本。"
     },
     {
       "id": "rejection-echoes-command",
       "file": "src/host/table-web-host.cjs",
-      "find": "    if (binding === undefined) {\n      // 只回码。回显命令名或席位数会让这条路变成枚举口：不带令牌就能问出\n      // 「这个协调器上有几席」「这条命令存不存在」。\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\" });",
-      "replace": "    if (binding === undefined) {\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\", command: body.command ?? null });",
+      "find": "  async postModelCommand(request, response, body) {",
+      "replace": "  async postModelCommand(request, response, body) {\n    const candidate = request.headers[MODEL_COMMAND_TOKEN_HEADER];\n    if (this.modelBindingEnabled && this.modelCommandToken === null\n      && ![...this.modelBindings.values()].some((entry) => sameToken(candidate, entry.token))) {\n      sendJson(response, 403, { ok: false, code: \"model_command_token_rejected\", command: body.command ?? null });\n      return;\n    }",
       "note": "拒绝时回显命令名。这让 403 变成一个命令面的探测口：不带令牌就能逐个试出哪些命令存在。"
     },
     {

@@ -44,10 +44,84 @@ async function until(predicate, label, timeoutMs = 6_000) {
 async function wakeState(page, state) {
   await until(async () => await page.locator("#modelWakeControls").getAttribute("data-state") === state, `控件 ${state}`);
 }
-async function screenshot(page, name) {
+async function screenshot(page, name, { fullPage = true } = {}) {
   const filename = `${name}.png`;
-  await page.screenshot({ path: path.join(output, filename), fullPage: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.screenshot({ path: path.join(output, filename), fullPage });
   report.screenshots.push(filename);
+}
+async function openGame(page) {
+  await page.locator("#nav-game").click();
+  await page.locator("#table-main").waitFor({ state: "visible" });
+}
+async function openSettings(page) {
+  await page.locator("#nav-settings").click();
+  await page.locator("#config-main").waitFor({ state: "visible" });
+}
+async function settingClick(page, id) {
+  await openSettings(page);
+  await page.locator(`#${id}`).click();
+}
+async function tableLayout(page, label, expectedSeats) {
+  await openGame(page);
+  const layout = await page.evaluate(() => {
+    const rect = (el) => {
+      const box = el.getBoundingClientRect();
+      return { left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+        width: box.width, height: box.height };
+    };
+    const intersects = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
+      && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+    const seats = [...document.querySelectorAll("#seats > .seat")];
+    const protectedRects = [".board-area", ".pot", "#actions"].map((selector) => ({
+      selector, box: rect(document.querySelector(selector)) }));
+    const collisions = [];
+    const seatCollisions = [];
+    let bubblesWithinSeat = true;
+    for (const seat of seats) {
+      const seatBox = rect(seat);
+      for (const target of protectedRects) {
+        if (intersects(seatBox, target.box)) seatCollisions.push({ position: seat.dataset.position,
+          target: target.selector });
+      }
+      for (const bubble of seat.querySelectorAll(".seat-bubble")) {
+        const box = rect(bubble);
+        if (box.width === 0 || box.height === 0) continue;
+        bubblesWithinSeat &&= box.left >= seatBox.left - 1 && box.right <= seatBox.right + 1;
+        for (const target of protectedRects) {
+          if (intersects(box, target.box)) collisions.push({ position: seat.dataset.position,
+            speaker: bubble.dataset.speaker, target: target.selector });
+        }
+      }
+    }
+    const machine = JSON.parse(window.render_game_to_text());
+    const panel = rect(document.querySelector(".table-panel"));
+    const sidebar = rect(document.querySelector(".side-panel"));
+    const width = document.documentElement.clientWidth;
+    return { width, scrollWidth: document.documentElement.scrollWidth,
+      seatCount: seats.length, positions: seats.map((seat) => seat.dataset.position),
+      viewerPosition: seats.find((seat) => seat.dataset.viewer === "true")?.dataset.position,
+      companionCount: document.querySelectorAll("#seats .ai-avatar").length,
+      bubbles: document.querySelectorAll("#seats .seat-bubble").length,
+      bubblesWithinSeat, collisions, seatCollisions,
+      settingsOpen: !document.querySelector("#config-main").hidden,
+      sidebarSeparate: width > 1080 ? sidebar.left >= panel.right - 1 : sidebar.top >= panel.bottom - 1,
+      hideControlsVisible: seats.filter((seat) => seat.dataset.viewer !== "true")
+        .every((seat) => rect(seat.querySelector(".seat-hide-row")).height > 0),
+      boardPresent: protectedRects[0].box.width > 0 && protectedRects[0].box.height > 0,
+      machineMatches: machine.ui.surface === "game" && machine.ui.seat_count === seats.length
+        && machine.ui.settings_open === false
+        && machine.ui.scope_confirmation_open === !document.querySelector("#scope-gate").hidden };
+  });
+  check(`${label} 席位与机器视图一致`, layout.seatCount === expectedSeats
+    && new Set(layout.positions).size === expectedSeats && layout.viewerPosition === "bottom"
+    && layout.companionCount === expectedSeats && layout.machineMatches, layout);
+  check(`${label} 气泡不遮牌面动作，侧栏不遮主桌`, layout.bubblesWithinSeat
+    && layout.collisions.length === 0 && layout.seatCollisions.length === 0
+    && layout.sidebarSeparate && layout.hideControlsVisible
+    && layout.boardPresent && layout.scrollWidth <= layout.width + 1, layout);
+  return layout;
 }
 async function openPage() {
   const context = await browser.newContext({ viewport: { width: 1365, height: 1000 } });
@@ -106,6 +180,7 @@ async function openPage() {
   return page;
 }
 async function start(page, { manualThread = false } = {}) {
+  await openSettings(page);
   if (manualThread) await page.locator("#modelWakeTaskId").fill(fixture.threadId);
   await page.locator("#modelWakeMaxNotifications").fill("2");
   await page.locator("#modelWakeDurationSeconds").fill("600");
@@ -113,6 +188,7 @@ async function start(page, { manualThread = false } = {}) {
   await page.locator("#modelWakeStart").click();
 }
 async function say(page, text) {
+  await openGame(page);
   await fixture.control({ command: "advance", ms: 5_500 });
   await page.locator("#say-text").fill(text);
   await page.locator("#say-submit").click();
@@ -128,7 +204,7 @@ try {
   await disabled.locator("#create-form button").click();
   await disabled.locator("#scope-accept").click();
   await disabled.locator("#table-main").waitFor({ state: "visible" });
-  await disabled.locator("#model-connection-panel summary").click();
+  await openSettings(disabled);
   await fixture.control({ command: "bind", seat: 0 });
   await wakeState(disabled, "unavailable");
   check("未配置发送器，即使绑定也不能开启", !(await disabled.locator("#modelWakeStart").isEnabled())
@@ -144,7 +220,7 @@ try {
   await manual.locator("#create-form button").click();
   await manual.locator("#scope-accept").click();
   await manual.locator("#table-main").waitFor({ state: "visible" });
-  await manual.locator("#model-connection-panel summary").click();
+  await openSettings(manual);
   await fixture.control({ command: "bind", seat: 0 });
   await wakeState(manual, "idle");
   check("旧手填模式仍显示并启用任务UUID输入", await manual.locator("#modelWakeTaskField").isVisible()
@@ -156,7 +232,7 @@ try {
     && entry.target_configured === false).at(-1);
   check("旧手填模式按旧合同发送thread_id", manualStart?.has_thread_id === true
     && manualStart.thread_id_matches_fixture === true);
-  await manual.locator("#modelWakeStop").click();
+  await settingClick(manual, "modelWakeStop");
   await wakeState(manual, "stopped");
   await manual.context().close();
   report.manual_fixture_cleanup = await fixture.stop();
@@ -177,7 +253,12 @@ try {
   await b.locator("#join-form button").click();
   await b.locator("#scope-accept").click();
   await b.locator("#table-main").waitFor({ state: "visible" });
-  for (const page of [a, b]) await page.locator("#model-connection-panel summary").click();
+  await until(async () => await a.locator("#seats > .seat").count() === 2, "双席布局");
+  const initialLayout = await tableLayout(a, "1365px 双人默认界面", 2);
+  check("双人明确对置且本人诊断默认折叠", initialLayout.positions.join(",") === "top,bottom"
+    && !initialLayout.settingsOpen);
+  await screenshot(a, "desktop-two-friend-default");
+  for (const page of [a, b]) await openSettings(page);
   await wakeState(a, "unbound");
   check("未连接时不能开启", !(await a.locator("#modelWakeStart").isEnabled()));
   await fixture.control({ command: "bind", seat: 0 });
@@ -194,6 +275,22 @@ try {
   check("每窗确认同时覆盖目标任务可接收新回合", (await a.locator("label[for='modelWakeConsent']").innerText())
     .includes("已结束当前回复并可接收新回合"));
   await screenshot(a, "desktop-fixed-target-ready");
+  const formHandle = await a.locator("#model-bind-form").elementHandle();
+  const bindingBeforeNavigation = await a.evaluate(() => JSON.parse(window.render_game_to_text()).model_connection.binding_id);
+  const commandsBeforeNavigation = fixture.snapshot().commands.filter((item) => item.command !== "view.projection").length;
+  await a.locator("#modelWakeMaxNotifications").fill("1");
+  await a.locator("#modelWakeConsent").check();
+  await openGame(a);
+  check("游戏工作面不展示连接诊断表单", !(await a.locator("#model-bind-form").isVisible())
+    && !(await a.locator("#modelWakeForm").isVisible()));
+  await openSettings(a);
+  check("切换工作面保留同一连接DOM、参数与本人授权", await a.evaluate((original) => original === document.querySelector("#model-bind-form"), formHandle)
+    && await a.locator("#modelWakeMaxNotifications").inputValue() === "1"
+    && await a.locator("#modelWakeConsent").isChecked());
+  check("切换工作面不离席、不重绑、不发权威命令", bindingBeforeNavigation === await a.evaluate(() => JSON.parse(window.render_game_to_text()).model_connection.binding_id)
+    && commandsBeforeNavigation === fixture.snapshot().commands.filter((item) => item.command !== "view.projection").length);
+  await formHandle.dispose();
+  await a.locator("#modelWakeConsent").uncheck();
   check("次数上限来自服务实际配置", await a.locator("#modelWakeMaxNotifications").getAttribute("max") === "2");
   check("未同意时不能开启", !(await a.locator("#modelWakeStart").isEnabled()));
   check("绑定不自动通知", fixture.snapshot().notifications.length === 0);
@@ -211,9 +308,11 @@ try {
   await fixture.control({ command: "begin", index: 0 });
   await say(b, "B16 第二条真人页面测试消息");
   check("未回执期间仍可聊天且通知单槽", fixture.snapshot().notifications.length === 1);
+  await tableLayout(a, "1365px 双人公开玩家气泡", 2);
   await screenshot(a, "desktop-awaiting-resolution");
   for (const width of [390, 320]) {
     await a.setViewportSize({ width, height: 844 });
+    await openSettings(a);
     const layout = await a.evaluate(() => {
       const width = document.documentElement.clientWidth;
       const controls = [...document.querySelectorAll("#modelWakeForm input, #modelWakeForm button")]
@@ -230,6 +329,8 @@ try {
     check(`${width}px 无横向溢出且固定目标控件完整`, layout.visibleControls === 5 && layout.fixedTargetVisible
       && layout.requiredControlsPresent
       && layout.scrollWidth <= layout.width + 1 && layout.controlsWithinViewport, layout);
+    await screenshot(a, `mobile-${width}-notification-settings`);
+    await tableLayout(a, `${width}px 双人公开玩家气泡`, 2);
     await screenshot(a, `mobile-${width}-awaiting-resolution`);
   }
   await a.setViewportSize({ width: 1365, height: 1000 });
@@ -239,6 +340,13 @@ try {
     await until(async () => (await page.locator("#timeline").innerText()).includes(speech), "两页公开脚本气泡");
   }
   check("真实权威公开结果在两页可见", true);
+  await tableLayout(a, "1365px AI公开气泡", 2);
+  check("AI气泡在所属座位内有AI文字和独立说话者标识",
+    await a.locator('#seats .seat-bubble[data-speaker="SEAT_AI"]').count() > 0
+    && (await a.locator('#seats .seat-bubble[data-speaker="SEAT_AI"]').first().innerText()).includes("AI"));
+  await openGame(a);
+  await screenshot(a, "desktop-two-friend-ai-talk");
+  await openSettings(a);
   await until(() => fixture.snapshot().notifications.length === 2, "第二次通知");
   await fixture.control({ command: "resolve", index: 1, decision: "silent" });
   await wakeState(a, "stopped");
@@ -273,25 +381,56 @@ try {
   check("显式重试逐字段保留原请求且仍省略thread_id", fixedStarts().length === beforeRetry + 2
     && JSON.stringify(fixedStarts()[beforeRetry]) === JSON.stringify(fixedStarts()[beforeRetry + 1])
     && fixedStarts().slice(beforeRetry).every((entry) => entry.has_thread_id === false));
-  await a.locator("#modelWakeStop").click();
+  await settingClick(a, "modelWakeStop");
   await wakeState(a, "stopped");
   check("空闲窗口可手动停止且没有追加通知", fixture.snapshot().notifications.length === 2);
 
   // 通知功能失败或被关闭不能拖住真人操作。这里仍使用正常按钮。
   await start(a);
   await wakeState(a, "waiting");
+  await openGame(a);
   await a.locator("#ai-toggle").click();
   await wakeState(a, "off");
   const afterOff = fixture.snapshot().notifications.length;
   await say(b, "B16 AI关闭后玩家仍可聊天");
   check("AI OFF 后不再发送", fixture.snapshot().notifications.length === afterOff);
-  await a.locator("#model-unbind").click();
+  await settingClick(a, "model-unbind");
   await wakeState(a, "unbound");
   check("解绑清除本人窗口投影", fixture.snapshot().windows[0].bound === false);
   check("停止语义有明确说明", (await a.locator("#modelWakeWarning").innerText()).includes("撤回"));
-  for (const page of [a, b]) await page.locator("#ready-toggle").click();
+  for (const page of [a, b]) { await openGame(page); await page.locator("#ready-toggle").click(); }
   check("启停和撤权不阻塞正常Ready", (await fixture.control({ command: "start_hand" })).hand_status === "active");
   await until(async () => (await a.locator("#hand-index").innerText()).includes("1"), "第一手开始");
+  await a.setViewportSize({ width: 1365, height: 800 });
+  await tableLayout(a, "1365×800 进行中双人桌", 2);
+  const checkAboveFold = async (label) => {
+    await a.evaluate(() => window.scrollTo(0, 0));
+    const visible = await a.evaluate(() => {
+      const boxes = (selector) => [...document.querySelectorAll(selector)].map((el) => {
+        const box = el.getBoundingClientRect();
+        const topElement = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return { width: box.width, height: box.height, top: box.top, bottom: box.bottom,
+          unobscured: topElement !== null && (el === topElement || el.contains(topElement)) };
+      });
+      const cards = boxes('#seats > .seat[data-viewer="true"] .seat-hole .card-face');
+      const buttons = boxes("#action-buttons button");
+      const sizing = document.querySelector("#raise-row").hidden ? [] : boxes("#raise-amount, #raise-submit");
+      const machine = JSON.parse(window.render_game_to_text());
+      return { scrollY: window.scrollY, viewportHeight: innerHeight, cards, buttons, sizing,
+        isActor: machine.action_panel.is_actor,
+        allAboveFold: [...cards, ...buttons, ...sizing].every((box) => box.top >= 0
+          && box.bottom <= innerHeight && box.width >= 24 && box.height >= 24 && box.unobscured) };
+    });
+    check(label, visible.scrollY === 0 && visible.isActor && visible.cards.length === 2
+      && visible.buttons.length > 0 && visible.allAboveFold, visible);
+  };
+  await checkAboveFold("1365×800 不滚动即可看到本人底牌与所有合法动作");
+  await screenshot(a, "desktop-1365x800-two-friend-active", { fullPage: false });
+  await a.locator('#action-buttons button[data-action="raise"]').click();
+  await tableLayout(a, "1365×800 展开加注的双人桌", 2);
+  await checkAboveFold("1365×800 展开加注后输入与提交按钮仍在首屏可操作");
+  await screenshot(a, "desktop-1365x800-raise-open", { fullPage: false });
+  await a.setViewportSize({ width: 1365, height: 1000 });
   await screenshot(a, "desktop-revoked-normal-game");
 
   // 可选通知模块卡在加载中时，原有标签页会话仍必须恢复；不能等它完成才进入牌桌。
@@ -327,7 +466,7 @@ try {
     await until(() => a.locator("#table-main").isVisible(), "可选模块未返回时恢复已有牌桌");
     check("通知模块加载挂起不阻塞已存会话恢复", moduleHeld
       && (await a.locator("#hand-index").innerText()).includes("1"));
-    await a.locator("#model-connection-panel summary").click();
+    await openSettings(a);
     await say(a, "B16 通知模块加载中仍可真人聊天");
     await until(async () => (await b.locator("#timeline").innerText()).includes("B16 通知模块加载中仍可真人聊天"), "模块仍挂起时B看到A真人发言");
     check("通知模块仍挂起时真人聊天可用", moduleHeld
@@ -340,7 +479,7 @@ try {
     await wakeState(a, "blocked");
     check("模块迟到成功继承未完成OFF操作的屏障", !(await a.locator("#modelWakeConsent").isEnabled())
       && !(await a.locator("#modelWakeTaskId").isEnabled()));
-    await a.locator("#model-unbind").click();
+    await settingClick(a, "model-unbind");
     check("模块迟到加载后仍可撤销本席连接", fixture.snapshot().windows[0].bound === false);
     check("后发撤销先完成不能解除尚未完成的OFF屏障",
       await a.locator("#modelWakeControls").getAttribute("data-state") === "blocked"
@@ -377,6 +516,23 @@ try {
   check("最终页面状态仍不含任务UUID或thread_id", pageEvidence.taskFieldVisible === false
     && pageEvidence.taskInputDisabled && pageEvidence.taskInputValue === "" && pageEvidence.fixedTargetVisible
     && !pageEvidence.machineText.includes("thread_id") && !pageEvidence.machineText.includes(fixture.threadId));
+
+  // 席位布局必须来自投影：同一张桌动态加入第三、第四席，不生成另一套固定身份页面。
+  await openGame(a);
+  for (const [name, count] of [["b30_ui_c", 3], ["b30_ui_d", 4]]) {
+    const guest = await openPage();
+    await guest.locator("#join-player").fill(name);
+    await guest.locator("#join-code").fill(invite);
+    await guest.locator("#join-form button").click();
+    await guest.locator("#scope-accept").click();
+    await guest.locator("#table-main").waitFor({ state: "visible" });
+    await until(async () => await a.locator("#seats > .seat").count() === count, `${count}席布局`);
+    await tableLayout(a, `1365px 动态${count}席`, count);
+  }
+  await screenshot(a, "desktop-four-seat-layout");
+  await a.setViewportSize({ width: 320, height: 844 });
+  await tableLayout(a, "320px 动态四席", 4);
+  await screenshot(a, "mobile-320-four-seat-layout");
   check("正常链路无浏览器错误", report.errors.length === 0, { count: report.errors.length });
   report.request_capture = requests;
   report.response_capture = responses;

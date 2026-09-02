@@ -46,6 +46,8 @@ const state = {
   // 刻意只放在内存里，不进 sessionStorage：没确认就什么都没建，刷新之后没有任何东西
   // 需要恢复，重新填一次表才是对的。存下来反而会让「刷新后弹出一个说不清来源的对话框」。
   pendingEntry: null,
+  // 纯本地工作面；切换不改变席位、绑定、授权或轮询。
+  workspace: "game",
 };
 
 const el = (id) => document.getElementById(id);
@@ -225,6 +227,8 @@ function enterTable(result) {
   rememberSession(state.sessionToken);
   el("entry-view").hidden = true;
   el("table-main").hidden = false;
+  state.workspace = "game";
+  renderWorkspace();
   if (typeof result.invite_code === "string") {
     el("invite-code").textContent = result.invite_code;
   } else {
@@ -331,7 +335,31 @@ const TERMINAL_SESSION_CODES = [
 
 // ---- 渲染 ----
 
+function renderWorkspace() {
+  const surface = state.sessionToken === null ? "setup" : state.workspace;
+  el("entry-view").hidden = surface !== "setup";
+  el("table-main").hidden = surface !== "game";
+  el("config-main").hidden = surface !== "settings";
+  el("workspace-shell").dataset.workspace = surface;
+  el("workspace-title").textContent = surface === "game" ? "私人牌桌" : "配置中心";
+  el("nav-game").disabled = state.sessionToken === null;
+  el("nav-game").setAttribute("aria-current", surface === "game" ? "page" : "false");
+  el("nav-settings").setAttribute("aria-current", surface === "game" ? "false" : "page");
+}
+
+function selectWorkspace(surface) {
+  if (!["game", "settings"].includes(surface) || (surface === "game" && state.sessionToken === null)) return;
+  state.workspace = surface;
+  if (surface === "settings" && state.sessionToken !== null) el("model-connection-panel").open = true;
+  renderWorkspace();
+  window.scrollTo?.(0, 0);
+}
+
+el("nav-game").addEventListener("click", () => selectWorkspace("game"));
+el("nav-settings").addEventListener("click", () => selectWorkspace("settings"));
+
 function render(view) {
+  renderWorkspace();
   renderScopeGate(view);
   renderRoom(view);
   renderBoard(view);
@@ -436,6 +464,8 @@ function returnToEntry(message) {
   el("scope-gate").hidden = true;
   el("table-main").hidden = true;
   el("entry-view").hidden = false;
+  state.workspace = "game";
+  renderWorkspace();
   el("invite-wrap").hidden = false;
   setConnState("idle", "未连接");
   if (typeof message === "string" && message !== "") {
@@ -466,7 +496,8 @@ el("scope-decline").addEventListener("click", async () => {
 
 function renderRoom(view) {
   const room = view.room;
-  el("room-id").textContent = room?.room_id ?? "—";
+  el("room-id").textContent = typeof room?.room_id === "string"
+    ? `#${room.room_id.replace(/^room-/, "").slice(0, 8)}` : "—";
   el("hand-index").textContent = String(room?.hand_index ?? 0);
 
   // 开局判定的 reason 整个照抄权威，页面只负责把那个词翻成人话。自己拼一句
@@ -547,10 +578,11 @@ function tag(text, kind) {
 // 一个座位 = 玩家 + 他的 AI，上下相邻同一张卡片里。这不是排版偏好：验收要求
 // "玩家和他的 AI 在同一座位相邻"，因为公开发言必须能立刻看出是谁说的——把 AI 的
 // 发言归到一个独立的"AI 列表"里，玩家就得靠记名字来对应。
-function seatNode(seat, view) {
+function seatNode(seat, view, position) {
   const li = document.createElement("li");
   li.className = "seat";
   li.dataset.seatId = seat.seat_id;
+  li.dataset.position = position;
   li.dataset.viewer = String(seat.is_viewer);
   li.dataset.actor = String(seat.is_actor);
   li.dataset.folded = String(seat.hand_status === "folded");
@@ -558,6 +590,11 @@ function seatNode(seat, view) {
 
   const head = document.createElement("div");
   head.className = "seat-head";
+  const avatar = document.createElement("span");
+  avatar.className = "seat-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = seat.locally_hidden.seat ? "·" : String(seat.player_id ?? "?").slice(0, 1).toUpperCase();
+  head.append(avatar);
   const name = document.createElement("span");
   name.className = "seat-name";
   // 整席被本地隐藏时连名字一起隐去，但保留"第 N 席"，否则座位会变成一个无法指认的空块。
@@ -643,6 +680,11 @@ const AI_STATUS = {
 function aiRow(seat) {
   const row = document.createElement("div");
   row.className = "seat-ai-row";
+  const avatar = document.createElement("span");
+  avatar.className = "ai-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = "✦";
+  row.append(avatar);
   // 文字徽标而不是色块。只靠颜色区分玩家与 AI，对色盲用户等于没有区分。
   const badge = document.createElement("span");
   badge.className = "ai-badge";
@@ -778,8 +820,30 @@ function hideButton(onText, offText, target, targetId, isHidden) {
   return button;
 }
 
+function visualSeatLayout(seats) {
+  const sorted = [...seats].sort((left, right) => left.seat_index - right.seat_index);
+  const viewerIndex = sorted.findIndex((seat) => seat.is_viewer);
+  const pivot = viewerIndex < 0 ? 0 : viewerIndex;
+  const aroundViewer = sorted.map((_, index) => sorted[(pivot + index) % sorted.length]);
+  const positionSets = {
+    1: ["bottom"],
+    2: ["bottom", "top"],
+    3: ["bottom", "left", "right"],
+    4: ["bottom", "left", "top", "right"],
+  };
+  const positions = positionSets[aroundViewer.length] ?? positionSets[4];
+  const documentOrder = { top: 0, left: 1, right: 2, bottom: 3 };
+  return aroundViewer
+    .map((seat, index) => ({ seat, position: positions[index] ?? "right" }))
+    .sort((left, right) => documentOrder[left.position] - documentOrder[right.position]);
+}
+
 function renderSeats(view) {
-  el("seats").replaceChildren(...view.seats.map((seat) => seatNode(seat, view)));
+  el("table-main").dataset.seatCount = String(view.seats.length);
+  const list = el("seats");
+  const layout = visualSeatLayout(view.seats);
+  list.dataset.seatCount = String(layout.length);
+  list.replaceChildren(...layout.map(({ seat, position }) => seatNode(seat, view, position)));
 }
 
 // ---- 行动 ----
@@ -937,13 +1001,18 @@ function renderModelWake() {
   el("modelWakeControls").disabled = false;
   el("modelWakeControls").dataset.state = view.ui_state;
   el("modelWakeForm").setAttribute("aria-busy", String(["starting", "stopping"].includes(view.ui_state)));
-  const fixedTarget = view.target_configured === true;
+  const remoteConnector = view.transport === "remote_connector";
+  const fixedTarget = view.target_configured === true || remoteConnector;
   const taskInput = el("modelWakeTaskId");
   if (taskInput.value !== view.fields.threadId) taskInput.value = view.fields.threadId;
   taskInput.disabled = fixedTarget || !view.editable;
   el("modelWakeTaskField").hidden = fixedTarget;
   el("modelWakeFixedTarget").hidden = !fixedTarget;
-  el("modelWakeFixedTarget").textContent = "发送器已固定当前游戏任务，UUID不向页面公开。开启前请让目标任务结束当前回复并保持空闲；任务正在运行时，通知可能已接收却不能并发结清。";
+  el("modelWakeFixedTarget").textContent = remoteConnector && view.target_configured !== true
+    ? "等待本机连接器接入。目标游戏任务只在你自己的设备上绑定，UUID不向页面公开。连接器接入后才能确认并开启通知窗口。"
+    : remoteConnector
+      ? "本机连接器已绑定当前游戏任务，UUID不向页面公开。开启前请让目标任务结束当前回复并保持空闲；任务正在运行时，通知可能已接收却不能并发结清。"
+      : "发送器已固定当前游戏任务，UUID不向页面公开。开启前请让目标任务结束当前回复并保持空闲；任务正在运行时，通知可能已接收却不能并发结清。";
   for (const [id, name] of [["modelWakeMaxNotifications", "maxNotifications"],
     ["modelWakeDurationSeconds", "durationSeconds"]]) {
     const input = el(id);
@@ -1383,6 +1452,13 @@ updateCounter();
 window.render_game_to_text = () => JSON.stringify({
   coordinate_system: "DOM 布局，左上为原点；所有扑克动作由权威决定",
   screen: state.view === null ? "entry" : "table",
+  ui: {
+    surface: state.sessionToken === null ? "setup" : state.workspace,
+    seat_count: state.view?.seats?.length ?? 0,
+    settings_open: state.sessionToken !== null && state.workspace === "settings"
+      && el("model-connection-panel").open === true,
+    scope_confirmation_open: el("scope-gate").hidden === false,
+  },
   room: state.view?.room ?? null,
   hand: state.view?.hand ?? null,
   seats: state.view?.seats ?? [],

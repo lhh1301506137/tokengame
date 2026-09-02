@@ -15,6 +15,8 @@ const cases = {
   overlap_last_finishes: "交叠授权操作中后发操作先完成也不能提前解除屏障",
   old_session_ticket: "旧会话授权回调不能解除迟到模块的新会话屏障",
   fixed_target_render: "固定发送器目标隐藏并禁用UUID输入，只显示无秘密说明",
+  remote_connector_render: "远程连接器未接入也隐藏UUID输入，并明确等待状态",
+  workspace_navigation: "切换配置工作面不离席重绑、不改通知授权且继续原轮询",
 };
 
 if (process.argv[2] === "--wake-bootstrap-worker") {
@@ -193,6 +195,40 @@ async function probe(scenario) {
       assert.match(node("modelWakeFixedTarget").textContent, /UUID不向页面公开/);
       assert.equal(run("wakeControls.snapshot().target_configured"), true);
     }
+    if (scenario === "remote_connector_render") {
+      context.bootstrapView = readyView(run("state.seatId"), false, "remote_connector");
+      assert.equal(run("wakeControls.acceptView(wakeControls.viewTicket(), bootstrapView)"), true);
+      run("renderModelWake()");
+      assert.equal(node("modelWakeTaskField").hidden, true);
+      assert.equal(node("modelWakeTaskId").disabled, true);
+      assert.equal(node("modelWakeTaskId").value, "");
+      assert.equal(node("modelWakeFixedTarget").hidden, false);
+      assert.match(node("modelWakeFixedTarget").textContent, /等待本机连接器接入/);
+      assert.equal(node("modelWakeStart").disabled, true);
+      assert.equal(node("modelWakeControls").dataset.state, "awaiting_connector");
+    }
+    if (scenario === "workspace_navigation") {
+      context.bootstrapView = readyView(run("state.seatId"), true);
+      run("wakeControls.acceptView(wakeControls.viewTicket(), bootstrapView); wakeControls.setField('maxNotifications', '1'); wakeControls.setConsent(true)");
+      const before = run("JSON.stringify({ session: state.sessionToken, seat: state.seatId, connection: state.connectionId, wake: wakeControls.snapshot() })");
+      const requestCount = requests.length;
+      node("model-consent").checked = true;
+      run("selectWorkspace('settings')");
+      assert.equal(node("config-main").hidden, false);
+      assert.equal(node("table-main").hidden, true);
+      assert.equal(node("model-connection-panel").open, true);
+      assert.equal(JSON.parse(run("window.render_game_to_text()")).ui.surface, "settings");
+      run("selectWorkspace('game'); selectWorkspace('settings'); selectWorkspace('game')");
+      assert.equal(node("table-main").hidden, false);
+      assert.equal(node("config-main").hidden, true);
+      assert.equal(node("model-consent").checked, true);
+      assert.equal(run("JSON.stringify({ session: state.sessionToken, seat: state.seatId, connection: state.connectionId, wake: wakeControls.snapshot() })"), before);
+      assert.equal(requests.length, requestCount, "工作面切换不得调用任何权威端点");
+      assert.equal(intervals, 1, "切换不能建立第二份轮询");
+      run("returnToEntry('')");
+      assert.equal(node("nav-game").disabled, true);
+      assert.equal(node("config-main").hidden, true);
+    }
     if (scenario === "left_before_load") {
       assert.equal(stored, null);
       assert.equal(run("state.sessionToken"), null);
@@ -210,11 +246,12 @@ async function probe(scenario) {
   }
 }
 
-function readyView(seatId, targetConfigured = false) {
+function readyView(seatId, targetConfigured = false, transport = undefined) {
   return { viewer_seat_id: seatId,
     seats: [{ seat_id: seatId, is_viewer: true, public_scope_confirmed: true, leave_requested: false, ai: { mode: "ON" } }],
     model_connection: { state: "host_seen", seat_id: seatId, binding_id: "fixture-binding" },
     model_wake: { enabled: true, target_configured: targetConfigured,
+      ...(transport === undefined ? {} : { transport }),
       limits: { max_notifications: 2, max_duration_ms: 600_000 },
       window: { state: "idle", reason: null, request_id: null, attempted_count: 0, queued_count: 0,
         resolved_count: 0, cleanup_ok: true, cleanup_pending: false } },

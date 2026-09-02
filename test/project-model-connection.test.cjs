@@ -272,7 +272,7 @@ test("激活首次与换发都只发布完整文件；发布失败保留旧连�
   assert.equal(JSON.parse(fs.readFileSync(target, "utf8")).model_token, TOKEN_B);
 });
 
-test("激活拒绝相对路径、活动槽位自身、坏 schema、额外凭据、远端地址与超限文件", (t) => {
+test("激活拒绝相对路径、活动槽位自身、坏 schema、远端明文地址与超限文件", (t) => {
   const f = projectFixture(t);
   assert.throws(() => activateProjectConnection(f.root, "relative.json"),
     { code: "model_connection_source_required" });
@@ -281,7 +281,7 @@ test("激活拒绝相对路径、活动槽位自身、坏 schema、额外凭据�
   const invalid = [
     { schema: "other.v1" },
     { recovery_credential: "must-not-import" },
-    { table_origin: "https://example.invalid" },
+    { table_origin: "http://example.invalid" },
     { model_token: "short" },
   ];
   for (const extra of invalid) {
@@ -294,6 +294,19 @@ test("激活拒绝相对路径、活动槽位自身、坏 schema、额外凭据�
     { code: "model_connection_invalid" });
   assert.equal(fs.existsSync(path.join(f.root, PROJECT_PRIVATE_DIRECTORY)), false,
     "验证失败不能先创建活动目录或半成品");
+});
+
+test("项目活动槽可激活规范化后的远程 HTTPS 连接", (t) => {
+  const f = projectFixture(t);
+  f.write("https://Friends.Example:443/", TOKEN_A);
+  assert.deepEqual(activateProjectConnection(f.root, f.source), {
+    status: "activated", replaced: false, source_retained: true,
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(projectConnectionFile(f.root), "utf8")), {
+    schema: "tokengame.model-connection.v1",
+    table_origin: "https://friends.example",
+    model_token: TOKEN_A,
+  });
 });
 
 test("clear 幂等且只删除固定活动槽位，不删除下载源或同目录其他文件", (t) => {

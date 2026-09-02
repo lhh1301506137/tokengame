@@ -50,7 +50,7 @@ const SOURCES = [
 const SHAPES = Object.freeze([
   {
     name: "构造器",
-    pattern: /(?:CoreError|ProbeError|ModelSurfaceError|CustodyError|ContractError)\(\s*"([a-z_]+)"/g,
+    pattern: /(?:CoreError|ProbeError|ModelSurfaceError|CustodyError|ContractError|ConnectorError)\(\s*"([a-z_]+)"/g,
   },
   {
     name: "响应体字面量",
@@ -82,6 +82,32 @@ const SHAPES = Object.freeze([
     // 是超时code。只收这两种真实出码形状，不扫字段名或用整个字符串表自证。
     pattern: /(?:reason:\s*"(wake_[a-z_]+)"|,\s*"(wake_[a-z_]+)"\s*\);)/g,
     codes: (match) => [match[1] ?? match[2]],
+  },
+  {
+    name: "远端通知拒绝回执工厂",
+    files: ["src/host/remote-wake-broker.cjs"],
+    pattern: /\bfailed\(\s*"([a-z_]+)"/g,
+  },
+  {
+    name: "连接器启动错误工厂与关停码",
+    files: ["plugins/tokengame/codex/connect.cjs"],
+    pattern: /\b(?:failure|stopOwned)\(\s*"([a-z_]+)"/g,
+  },
+  {
+    name: "连接器终态错误赋值与兜底",
+    files: ["src/host/remote-wake-connector.cjs", "plugins/tokengame/codex/run-connector.cjs"],
+    // 实际进入返回结果的赋值/兜底；不扫描 STOP_CODES 之类输入白名单自证覆盖。
+    pattern: /(?:\breason\s*=|:)\s*"(wake_connector_[a-z_]+)"/g,
+  },
+  {
+    name: "本机游戏入口错误工厂",
+    files: ["plugins/tokengame/codex/play.cjs"],
+    pattern: /\bplayError\(\s*"([a-z_]+)"/g,
+  },
+  {
+    name: "本机游戏入口错误默认参数与兜底",
+    files: ["plugins/tokengame/codex/play.cjs"],
+    pattern: /(?:\bcode\s*=|:)\s*"(tokengame_[a-z_]+)"/g,
   },
 ]);
 
@@ -173,6 +199,35 @@ test("每一个出码都已归类，HTTP 与插件响应也算", () => {
     .join("\n  ");
   assert.deepEqual(unclassified, [],
     `以下错误码没有归类，会被按最保守的一档当成缺陷弹给用户：\n  ${detail}`);
+});
+
+test("远程 Connector、Broker 与 launcher 的真实出码点都被扫描，queue 未知不可重试", () => {
+  const found = collect();
+  for (const [code, file, shape] of [
+    ["wake_connector_configuration_invalid", "src/host/remote-wake-connector.cjs", "构造器"],
+    ["wake_connector_protocol_invalid", "src/host/remote-wake-connector.cjs", "构造器"],
+    ["wake_connector_unavailable", "src/host/remote-wake-broker.cjs", "远端通知拒绝回执工厂"],
+    ["wake_connector_busy", "src/host/remote-wake-broker.cjs", "远端通知拒绝回执工厂"],
+    ["wake_connector_start_timeout", "plugins/tokengame/codex/connect.cjs", "连接器启动错误工厂与关停码"],
+    ["wake_connector_detach_failed", "plugins/tokengame/codex/connect.cjs", "连接器启动错误工厂与关停码"],
+    ["wake_connector_cleanup_unknown", "plugins/tokengame/codex/connect.cjs", "连接器启动错误工厂与关停码"],
+    ["wake_connector_cleanup_failed", "src/host/remote-wake-connector.cjs", "连接器终态错误赋值与兜底"],
+    ["wake_connector_queue_failed", "src/host/remote-wake-connector.cjs", "连接器终态错误赋值与兜底"],
+    ["wake_connector_failed", "plugins/tokengame/codex/run-connector.cjs", "连接器终态错误赋值与兜底"],
+    ["tokengame_public_origin_invalid", "plugins/tokengame/codex/play.cjs", "本机游戏入口错误工厂"],
+    ["tokengame_codex_executable_invalid", "plugins/tokengame/codex/play.cjs", "本机游戏入口错误默认参数与兜底"],
+  ]) {
+    assert.ok(found.get(code)?.some((site) => site.file === file && site.shape === shape), `${code} 未命中实际出码点`);
+  }
+  for (const code of ["wake_connector_queue_unknown", "wake_connector_queue_failed", "wake_connector_cleanup_unknown",
+    "wake_connector_cleanup_failed", "wake_connector_start_timeout", "wake_connector_detach_failed"]) {
+    assert.equal(contract.classifyError(code), "execution_uncertain", code);
+    assert.equal(contract.dispositionFor(code).retryable, false, `${code} 不得重投 queue`);
+    assert.equal(contract.dispositionFor(code).user_visible, true, code);
+  }
+  assert.equal(contract.classifyError("wake_connector_network_unavailable"), "transport");
+  assert.equal(contract.classifyError("wake_connector_protocol_invalid"), "internal");
+  assert.equal(contract.classifyError("model_connection_changed"), "identity");
 });
 
 test("有界队列错误工厂真实进入扫描；未知接收不得因传输错误而被自动重试", () => {

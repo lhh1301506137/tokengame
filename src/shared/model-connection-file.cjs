@@ -11,16 +11,28 @@ function connectionError(code) {
   return Object.assign(new Error(code), { code, modelConnectionError: true });
 }
 
-// 连接文件是授权配置，不是网络发现结果。只接受精确的回环 origin，且禁止随重定向搬运令牌。
-function localOrigin(value) {
+const LOOPBACK_HOSTNAMES = Object.freeze(["127.0.0.1", "localhost", "[::1]"]);
+
+// 连接文件是授权配置，不是网络发现结果。HTTP 只允许回环；远程地址必须是 HTTPS。
+// Host / Forwarded 等请求头不经过这里，调用方只能传真人显式配置或服务自己铸造的值。
+function connectionOrigin(value) {
+  if (typeof value !== "string" || value === "" || value.trim() !== value
+    // 先检查原始形状，不能让 WHATWG URL 的点段/反斜杠/控制字符归一化掩盖非根地址。
+    || !/^https?:\/\/[^/?#\\\s@]+\/?$/i.test(value) || /[\u0000-\u0020\u007f]/.test(value)) {
+    throw connectionError("model_connection_invalid");
+  }
   let url;
   try { url = new URL(value); } catch { throw connectionError("model_connection_invalid"); }
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+  const loopbackHttp = url.protocol === "http:" && LOOPBACK_HOSTNAMES.includes(url.hostname);
+  if ((!loopbackHttp && url.protocol !== "https:")
     || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
     throw connectionError("model_connection_invalid");
   }
   return url.origin;
 }
+
+// 兼容既有导入名；语义已扩展为「安全连接 origin」，新代码使用 connectionOrigin。
+const localOrigin = connectionOrigin;
 
 function parseModelConnection(raw, { explicitOrigin = "" } = {}) {
   if (typeof raw !== "string" || Buffer.byteLength(raw) > MODEL_CONNECTION_MAX_BYTES) {
@@ -36,8 +48,8 @@ function parseModelConnection(raw, { explicitOrigin = "" } = {}) {
     || !/^[A-Za-z0-9_-]{32,256}$/.test(value.model_token)) {
     throw connectionError("model_connection_invalid");
   }
-  const origin = localOrigin(value.table_origin);
-  if (explicitOrigin && localOrigin(explicitOrigin) !== origin) {
+  const origin = connectionOrigin(value.table_origin);
+  if (explicitOrigin && connectionOrigin(explicitOrigin) !== origin) {
     throw connectionError("model_connection_origin_conflict");
   }
   return {
@@ -73,6 +85,7 @@ function readModelConnectionFile(file, options = {}) {
 module.exports = {
   MODEL_CONNECTION_KEYS,
   MODEL_CONNECTION_MAX_BYTES,
+  connectionOrigin,
   connectionError,
   localOrigin,
   parseModelConnection,

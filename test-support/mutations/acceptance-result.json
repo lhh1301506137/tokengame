@@ -4,6 +4,27 @@
   "test": "test/acceptance-result.test.cjs",
   "mutations": [
     {
+      "id": "baseline-allows-infinite-total",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  return Number.isFinite(startingTotal) && startingTotal > 0",
+      "replace": "  return startingTotal > 0",
+      "note": "无限总额会让凭空产生判定永远不成立，不能接受为固定基线。"
+    },
+    {
+      "id": "baseline-allows-a-different-table",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "    && currentSeatIds.every((id) => originalSeatIds.includes(id));",
+      "replace": "    && true;",
+      "note": "只有相同四席才可沿用此前总量，不能人数相同就偷换桌。"
+    },
+    {
+      "id": "unknown-hands-reported-as-zero",
+      "file": "test-support/acceptance-result.cjs",
+      "find": "  return known.length > 0 ? Math.max(...known) : \"unknown\";",
+      "replace": "  return known.length > 0 ? Math.max(...known) : 0;",
+      "note": "中止后读不到手数不能伪装成尚未开第一手。"
+    },
+    {
       "id": "passed-ignores-abort",
       "file": "test-support/acceptance-result.cjs",
       "find": "    passed: failures.length === 0 && aborted === null,",

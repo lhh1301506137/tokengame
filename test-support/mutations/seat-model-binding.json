@@ -35,8 +35,8 @@
       "id": "binding-origin-trusts-host-header",
       "file": "src/host/table-web-host.cjs",
       "find": "      case \"/api/model/bind\": return this.postModelBind(response, body);",
-      "replace": "      case \"/api/model/bind\": this.tableOrigin = `http://${request.headers.host}`; return this.postModelBind(response, body);",
-      "note": "下载文件采用攻击者可控Host头，随后宿主会把模型令牌发给错误地址。"
+      "replace": "      case \"/api/model/bind\": this.publicOrigin = `http://${request.headers.host}`; return this.postModelBind(response, body);",
+      "note": "下载文件采用攻击者可控Host头，随后宿主会把模型令牌发给错误地址。B30后下载改读publicOrigin；旧变异只改tableOrigin，对返回文件没有影响，是失效的属性锚而不是测试缺口。"
     },
     {
       "id": "session-generation-not-checked",
@@ -104,8 +104,8 @@
     {
       "id": "legacy-token-uses-first-binding",
       "file": "src/host/table-web-host.cjs",
-      "find": "    const token = request.headers[MODEL_COMMAND_TOKEN_HEADER];\n    if (this.modelCommandToken !== null && sameToken(token, this.modelCommandToken)) {\n      sendJson(response, 403, { ok: false, code: \"model_binding_required\" });\n      return;\n    }",
-      "replace": "    let token = request.headers[MODEL_COMMAND_TOKEN_HEADER];\n    if (this.modelCommandToken !== null && sameToken(token, this.modelCommandToken)) {\n      token = [...this.modelBindings.values()][0]?.token;\n    }",
+      "find": "    const token = request.headers[MODEL_COMMAND_TOKEN_HEADER];",
+      "replace": "    const token = this.modelCommandToken !== null && sameToken(request.headers[MODEL_COMMAND_TOKEN_HEADER], this.modelCommandToken)\n      ? [...this.modelBindings.values()][0]?.token : request.headers[MODEL_COMMAND_TOKEN_HEADER];",
       "note": "旧进程级令牌变成第一席的别名，迁移配置重新授予模型权限。"
     },
     {
@@ -139,8 +139,8 @@
     {
       "id": "reauthorization-skips-authoritative-privacy-fence",
       "file": "src/host/table-web-host.cjs",
-      "find": "      if (seat.privacy_fence || seat.leave_requested || seat.state === \"RELEASED\") {",
-      "replace": "      if (false) {",
+      "find": "      this.assertModelSessionCurrent(session, generation, reauthorize);\n      if (seat.privacy_fence || seat.leave_requested || seat.state === \"RELEASED\") {",
+      "replace": "      this.assertModelSessionCurrent(session, generation, reauthorize);\n      if (false) {",
       "note": "真正离桌但仍在手的席位凭据尚未吊销；只验凭据不能判定允许重新绑定。"
     },
     {

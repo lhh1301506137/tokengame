@@ -22,13 +22,14 @@ function windowFor(input, changes = {}) {
     attempted_count: 0, queued_count: 0, resolved_count: 0, cleanup_ok: true, cleanup_pending: false,
     pending_intent_id: null, native_turn_state: "unknown", accepted_notifications_retracted: false, ...changes };
 }
-function viewFor({ binding = "binding-a", mode = "ON", enabled = true, targetConfigured = undefined,
+function viewFor({ binding = "binding-a", mode = "ON", enabled = true, targetConfigured = undefined, transport = undefined,
   window = idle(), limits = LIMITS, confirmed = true, leaving = false, sessionSeat = "seat-a" } = {}) {
   return { viewer_seat_id: sessionSeat, seats: [{ seat_id: sessionSeat, is_viewer: true,
     public_scope_confirmed: confirmed, leave_requested: leaving, ai: { mode } }],
   model_connection: { state: binding === null ? "unbound" : "host_seen", binding_id: binding,
     seat_id: sessionSeat, proactive_wake_verified: false },
   model_wake: { enabled, ...(targetConfigured === undefined ? {} : { target_configured: targetConfigured }),
+    ...(transport === undefined ? {} : { transport }),
     limits: { ...limits }, window: binding === null ? null : window } };
 }
 
@@ -43,7 +44,8 @@ async function fixture({ handler, view = viewFor(), makeRequestId } = {}) {
     else if (serverWindow === null || serverWindow.request_id !== body.request_id) throw error("wake_request_unknown");
     else if (route.endsWith("/stop")) serverWindow = { ...serverWindow, state: "stopped", reason: "stopped_by_owner" };
     return { ok: true, wake: { ...serverWindow,
-      ...(view.model_wake?.target_configured === undefined ? {} : { target_configured: view.model_wake.target_configured }) } };
+      ...(view.model_wake?.target_configured === undefined ? {} : { target_configured: view.model_wake.target_configured }),
+      ...(view.model_wake?.transport === undefined ? {} : { transport: view.model_wake.transport }) } };
   };
   const ui = new WakeControls({
     request: async (route, body, options) => {
@@ -89,6 +91,7 @@ test("缺失或非法能力投影失败关闭，包括不能被正则强转通�
     ["enabled缺失", (v) => { delete v.model_wake.enabled; }],
     ["enabled字符串", (v) => { v.model_wake.enabled = "true"; }],
     ["固定目标布尔值畸形", (v) => { v.model_wake.target_configured = "true"; }],
+    ["未知通知传输", (v) => { v.model_wake.transport = "unknown_carrier"; }],
     ["limits缺失", (v) => { delete v.model_wake.limits; }],
     ["通知上限为零", (v) => { v.model_wake.limits.max_notifications = 0; }],
     ["时长上限小数", (v) => { v.model_wake.limits.max_duration_ms = 0.5; }],
@@ -164,6 +167,47 @@ test("发送器固定目标时页面不接收UUID，开启请求完全省略thre
   assert.equal(await f.ui.start(), true);
   assert.equal(Object.hasOwn(f.calls[0].body, "thread_id"), false);
   assert.equal(f.ui.visibleState().target_configured, true);
+});
+
+test("远程 Connector 尚未登记时零通知且不接受页面任务UUID", async () => {
+  const f = await fixture({ view: viewFor({ transport: "remote_connector", targetConfigured: false }) });
+  f.ready({ thread: OTHER_THREAD });
+  const view = f.ui.snapshot();
+  assert.equal(view.ui_state, "awaiting_connector");
+  assert.match(view.status_text, /等待本机连接器接入/);
+  assert.equal(view.editable, false);
+  assert.equal(view.fields.threadId, "");
+  assert.equal(view.can_start, false);
+  assert.equal(await f.ui.start(), false);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.generated(), 0);
+  assert.equal(f.ui.visibleState().transport, "remote_connector");
+});
+
+test("远程 Connector 登记后仍需新确认，固定目标请求不带thread_id", async () => {
+  const waiting = viewFor({ transport: "remote_connector", targetConfigured: false });
+  const ready = viewFor({ transport: "remote_connector", targetConfigured: true });
+  const f = await fixture({ view: ready });
+  f.apply(waiting);
+  f.ready();
+  f.apply(ready);
+  assert.equal(f.ui.snapshot().can_start, false, "连接器接入不能继承先前同意");
+  f.ready({ thread: OTHER_THREAD });
+  assert.equal(f.ui.snapshot().fields.threadId, "");
+  assert.equal(await f.ui.start(), true);
+  assert.equal(Object.hasOwn(f.calls[0].body, "thread_id"), false);
+  assert.doesNotMatch(JSON.stringify(f.ui.visibleState()), new RegExp(OTHER_THREAD));
+});
+
+test("通知传输切换清除手填目标和旧同意，不能以旧授权启动远程窗口", async () => {
+  const f = await fixture();
+  f.ready();
+  assert.equal(f.ui.snapshot().can_start, true);
+  f.apply(viewFor({ transport: "remote_connector", targetConfigured: true }));
+  assert.equal(f.ui.snapshot().fields.threadId, "");
+  assert.equal(f.ui.snapshot().consent, false);
+  assert.equal(f.ui.snapshot().can_start, false);
+  assert.equal(f.calls.length, 0);
 });
 
 test("固定目标投影或响应畸形时失败关闭，不回退到页面手填", async (t) => {

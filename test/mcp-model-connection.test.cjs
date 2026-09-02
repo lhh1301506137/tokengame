@@ -100,13 +100,13 @@ test("连接文件缺失与超限都有可理解错误，且不发网络请求",
   assert.ok(missing.body.hint.length > 10);
 });
 
-test("连接文件必须是本地服务的精确形状，不能把凭据转送远端或URL附带参数", async (t) => {
+test("连接文件必须是精确形状，远程只准 HTTPS 根 origin 且 URL 不得附带参数", async (t) => {
   const f = await fixture(t);
   const invalid = [
     { schema: "another-app.v1" },
     { model_token: "" },
     { model_token: "too-short" },
-    { table_origin: "https://example.invalid" },
+    { table_origin: "http://example.invalid" },
     { table_origin: `${f.origin}/extra-path` },
     { table_origin: `${f.origin}?leak=yes` },
     { table_origin: `${f.origin}#fragment` },

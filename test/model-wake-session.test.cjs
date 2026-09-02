@@ -796,3 +796,30 @@ test("固定sender可在服务端选择唯一目标；旧queue仍要求真人显
   assert.throws(() => failClosed.start(f.scope, { acknowledged: true, request_id: randomUUID() }),
     (error) => error.code === "invalid_field" && error.details?.field === "thread_id");
 });
+
+test("scope-aware sender 只按本绑定选目标，并在通知时收到协调器捕获的 scope", async (t) => {
+  const f = await fixture(t);
+  const fixedThread = randomUUID();
+  const observed = [];
+  const sender = async (input) => { observed.push({ phase: "queue", input }); return QUEUED; };
+  Object.defineProperties(sender, {
+    scopeAware: { value: true },
+    selectThread: { value: (candidate, scope) => {
+      observed.push({ phase: "select", scope });
+      return candidate === undefined && scope?.bindingId === f.scope.binding_id ? fixedThread : null;
+    } },
+    targetConfigured: { value: (scope) => scope?.bindingId === f.scope.binding_id },
+  });
+  const manager = f.makeManager({ wakeQueue: sender });
+  assert.equal(manager.targetConfigured, false, "无绑定上下文的全局状态不能替远端席位猜目标");
+  assert.equal(manager.targetConfiguredFor(f.scope), true);
+  await f.say("scope-aware-wake");
+  manager.start(f.scope, { acknowledged: true, request_id: randomUUID(), max_notifications: 1 });
+  await f.clock.flush();
+  const queuedCall = observed.find((entry) => entry.phase === "queue")?.input;
+  const scopedSelection = observed.find((entry) => entry.phase === "select" && entry.scope !== undefined)?.scope;
+  assert.equal(queuedCall.threadId, fixedThread);
+  assert.deepEqual(queuedCall.scope, scopedSelection);
+  assert.equal(queuedCall.scope.handle, f.a.seat_handle);
+  assert.equal(queuedCall.scope.bindingId, f.scope.binding_id);
+});

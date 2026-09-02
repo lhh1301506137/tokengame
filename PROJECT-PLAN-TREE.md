@@ -11,7 +11,7 @@ plan_tree:
     - TG-L1-PUBLIC-AI-PLAY
     - TG-L2-PUBLIC-AI-EXCHANGE
     - TG-L3-MULTIPLAYER-VERTICAL-SLICE
-    - TG-EU-PROACTIVE-WAKE-SPIKE
+    - TG-EU-PLAYABILITY-GATE
   nodes:
     - id: TG-L0-PRODUCT
       parent: none
@@ -820,6 +820,14 @@ plan_tree:
       status: blocked
       unit_kind: acceptance_gate
       summary: PLAYABILITY_GATE_V1 两层——自动化全门禁（动态私人房、四个独立 binding、至少 10 手、故障矩阵、隐私金丝雀）与一次四真人 45 分钟试玩签字。
+      active_milestone: MVP-0.1按2026-09-03用户确认先验收两好友、两设备、两个真实Codex的十手；四真人扩展后置，父节点不提前关闭。
+      understanding_view:
+        current_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-1-two-friends
+        current_revision_ref: B30-two-friend-MVP-0.1-20260903
+        candidate_successor_ref: none
+        plan_ref: PROJECT-PLAN-TREE.md#当前恢复点
+        result_ref: REVIEW-LOG.md#b30-two-friend-remote-candidate
+        presentation: aligned
       owner_links:
         - .trellis/tasks/08-26-public-ai-table-talk/prd.md#mvp-0-权威验收
         - .trellis/tasks/08-26-public-ai-table-talk/research/mvp-playability-evidence.md
@@ -827,6 +835,8 @@ plan_tree:
         - REVIEW-LOG.md#b26-absolute-cwd-real-config-migration
         - REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target
         - REVIEW-LOG.md#b28-idle-game-task-handoff
+        - REVIEW-LOG.md#b30-two-friend-remote-candidate
+        - docs/REMOTE-FRIEND-MVP.md
       blocking_reason: >-
         单栈产品闭环已完成（TG-EU-SINGLE-STACK-WEB-TABLE）；B14固定版本单席queue探针已得到真实公开，
         B21牌局内第1手早期窗口的唯一queue已取得权威开始与合法跨手终态；B22又取得一次在30秒行动截止前
@@ -835,7 +845,8 @@ plan_tree:
         B26/B27已完成绝对cwd迁移、第二次真人重启和直接工具就绪。B27唯一通知固定到正在运行的开发任务，
         最终只到1/1/0；B28已补齐空闲任务入口说明与本人确认，但没有真实空闲任务样本，仍不能替代端到端组合。主动产品公开往返、
         宿主资源可回收和可玩MVP验收仍未交付，Gate9清理blocked，Claude未跑。
-        真人层也还没跑：要四个真人45分钟试玩签字；回环地址不是异地服务。
+        B30已把显式HTTPS地址、出站连接器与独立Web工作面整合为本地已验证的两好友候选；本地脚本不等于异地服务实测。
+        当前先缺两真人、两设备、两个真实Codex和十手签字，四真人45分钟层按最新MVP-0.1阶段后置。
       automation_layer_progress_2026_08_28: >-
         自动化层的手数要求已达成：浏览器验收现在打到第 12 手（此前第 3 至 4 手），201 条断言全过、
         控制台错误 0、四个隔离上下文、27 张截图、连续三轮干净运行。故障矩阵已覆盖：五种畸形投影的
@@ -853,7 +864,7 @@ plan_tree:
         自动化层不能顶替真人层签字，模拟席或一人多窗口不能计入真人签字。
   active_node: TG-L3-MULTIPLAYER-VERTICAL-SLICE
   current_next_leaf: TG-EU-PLAYABILITY-GATE
-  current_execution_unit_ref: REVIEW-LOG.md#b28-idle-game-task-handoff
+  current_execution_unit_ref: REVIEW-LOG.md#b30-two-friend-remote-candidate
   reliable_boundary:
     earliest_trustworthy_node_or_checkpoint: EC-TG-REAL-HOST-SEAT-PROBE-20260830-A
     first_invalid_or_unverified_node: TG-EU-PROACTIVE-WAKE-SPIKE
@@ -869,10 +880,10 @@ plan_tree:
       B17独立检查修复resolve先于queue ACK再撤权时丢失结清回执的竞态；最终1315项全量Node通过。三批实机共4次原任务输入/1次queue，只有一次readiness游戏MCP调用，0次start/resolve/AI公开。第一批测试外壳过早退出，修正后既有任务未重激活项目MCP；全部B17资源已清理，不将载体阻塞写作连续产品通过。
       B18稳定项目MCP完成项目级加载和逐席活动槽热换；B19等待区两次串行queue均权威结清并双页公开。B20进入真实行动期后任务无点击启动一次，但窗口以wake_start_failed、尝试1/接收1/结清0停止，回执0评估开始/终态；相关诊断补强后全量1332/1332、两组变异34/34和脚本浏览器35/35通过。这些本地结果不把B20变成原生通过。B21用Ready前开启的新窗口只投递一次，达到1/1/1与跨手合法终态。B22仅优化managed固定prompt，红37/38后绿38/38、旧probe117/117、变异5/5+8/8、合并及独立复核155/155；唯一原生queue在HAND1后13.709秒start并在9.817秒后同手silent，截止前余6.476秒。精确source和首项工具顺序unknown，0气泡，不翻proactive_wake_verified。
       B23完成服务端固定目标去敏和Codex当前任务一键入口的本地合同：固定目标复核184/184、限定变异11/11、脚本浏览器44/44；一键入口独立复核9/9、beta/config/lifecycle 88/88、变异15/15。B24按DEC-20260901-001执行真实项目配置相对化迁移并停止。B25以进程时刻确认用户完成该决策授权的一次重启；CLI列出服务器但当前任务没有`tokengame_table`，与同任务旧绝对cwd成功加载形成直接对照。两页固定目标UI已目检，但工具未就绪，0通知/模型/queue并完整清理。本地生成器恢复canonical绝对cwd，聚焦红绿与定向变异通过。B26按DEC-20260901-002把真实父项目唯一托管块恢复为该绝对cwd，块外SHA-256未变，入口在beta前停止。B27确认第二次手动重启后项目工具直接恢复，唯一固定当前活动任务通知为1/1/0、60.003秒到限；页面与连接资源完整清理，未补发或伪造权威终态。B28把启动回复结束/任务空闲要求接入横幅、页面本人确认、Skill与文档，聚焦19/19、浏览器46/46及全量1356/1356通过，0原生模型或queue。
-      当前实现顺序转为真实空闲游戏任务的本地朋友组合，不再次迁移配置、重启、继续拆入口说明或对正在运行的开发任务重投。内嵌UI、第二真实席、牌局内公开往返、真人UAT和远端安全仍未证明。
+      B30按2026-09-03用户确认先推进两好友阶段：显式HTTPS地址、出站连接器与双人优先的外部Web工作面已落地；当前本地候选的1456项Node与693项变异组合覆盖、双席整合和四页长程均已通过。第一次完整gate的四项验证定义问题及定向复绿如实保留，不冒充第二次完整gate exit0。真实两机、第二真实AI、牌局内公开往返和十手真人验收仍未执行；同一活动开发任务不重投，内嵌UI、Claude和大厅保留后续。
   route_rebase_ref: .trellis/tasks/08-26-public-ai-table-talk/prd.md#semantic-change-20260827
   project_intelligence_ref: STATUS.md#project_intelligence
-  next_owner: user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available
+  next_owner: user_and_friend_two_device_acceptance_with_codex_primary_support
 
 semantic_baseline:
   required: yes
@@ -1010,12 +1021,14 @@ B27确认用户完成第二次手动重启，当前任务实际且唯一加载�
 
 B28没有重试B27通知，而是把可控的空闲载体前提写成产品合同：managed启动横幅、固定目标页面说明与每窗本人确认、项目Skill及三份入口/操作文档均要求目标游戏任务先结束当前回复并保持空闲；同时明确queue已接收不等于模型开始或权威结清。聚焦Node首轮18/19后修正同义措辞，最终19/19、1833.6463ms；脚本浏览器46/46、20729.272ms、0错误、6项清理通过，桌面与320px目检；完整Node1356/1356、79933.5359ms。Skill普通校验遇GBK载体失败，同一校验器加UTF-8模式后有效。本批0通知/queue/原生模型/权威评估，活动槽不存在且7802无监听。事实见`REVIEW-LOG.md#b28-idle-game-task-handoff`。
 
-**当前唯一恢复点不再是补入口说明、配置迁移、宿主重启，也不是重试正在执行的同一开发任务。** 下一叶是真实本地朋友组合：每位玩家从自己的游戏任务启动，结束启动回复并保持任务空闲，再由Web牌桌开有限窗口；仍按权威start与唯一terminal判断成功，不以queue接收数代替。页面确认只是用户声明，不是宿主空闲遥测。当前不自动创建新任务、不扩到远端部署或第二模型。`proactive_wake_verified=false`，`TG-EU-PROACTIVE-WAKE-SPIKE`和`TG-EU-PLAYABILITY-GATE`保持开放。
+**当前唯一恢复点是B30本地候选已验证，进入真人两机验收。** 用户已确认先完成两好友MVP，再考虑服务器和公开大厅。本轮不改变既有2–4席扑克规则，只增加显式HTTPS入口、各机出站连接器和外部Web游戏/配置工作面。真实测试时，两人进入同一外部牌桌，并在各自空闲的Codex游戏任务运行`codex:connect`；好友不能用`codex:play`另起本地牌桌。由本人逐席授权并开启有限通知窗，按权威start和唯一terminal判断成功，不以queue接收数代替。当前本地验证事实见`.trellis/tasks/08-26-public-ai-table-talk/research/b30-local-verification-20260903.json`，真人步骤见`docs/REMOTE-FRIEND-MVP.md`。
 
-- `latest_review_ref`: `REVIEW-LOG.md#b28-idle-game-task-handoff`
-- `readiness`: `idle_task_handoff_locally_ready_real_friend_combination_blocked`
-- `known_failures`: 相对cwd运行时失败是已修历史；B27同一活动任务通知只到1/1/0且精确排队规则unknown，B28页面确认不能证明宿主空闲；真实空闲任务组合、第二真实AI/公开往返/Claude/异地/四真人UAT仍开放，七份撤权下载仍待真人删除。
-- `next_owner`: `user_or_codex_primary_real_idle_game_task_combination_when_explicit_task_workflow_is_available`
+本轮没有自动开公网隧道、创建宿主任务、修改模型或采购服务器。两台设备、两个真实AI和十手体验尚未验证，不能因本地脚本通过关闭MVP。页面确认只是用户声明，不是宿主空闲遥测。`proactive_wake_verified=false`，`TG-EU-PROACTIVE-WAKE-SPIKE`和`TG-EU-PLAYABILITY-GATE`继续开放；四真人完整UAT后置，不抹除其历史要求。
+
+- `latest_review_ref`: `REVIEW-LOG.md#b30-two-friend-remote-candidate`
+- `readiness`: `B30_local_candidate_verified_real_two_friend_acceptance_not_run`
+- `known_failures`: 相对cwd运行时失败是已修历史；B27同一活动任务1/1/0的精确排队规则unknown；本轮真实隧道、双原生AI与十手真人验收未跑，旧七份失效下载未动。Claude、内嵌UI和四真人UAT仍未验证，但不作为两好友阶段的新增前置。
+- `next_owner`: `user_and_friend_two_device_acceptance_with_codex_primary_support`
 B9过滤日志复算：成功样本从玩家事件到权威公开33.460秒，公开后收尾11.556秒；已超过该次行动截止3.822秒。
 这些是已存日志的分段事实，不是本轮新模型调用，更不能称为实时性能通过。
 

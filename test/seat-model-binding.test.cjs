@@ -171,6 +171,33 @@ test("绑定需本人确认与足够长的请求键，文件只含连接能力�
   assert.equal(JSON.stringify(first.body.connection).includes(f.created.session_token), false);
 });
 
+test("显式 HTTPS public origin 只进入下载文件，不改变回环监听且不信 Host/Forwarded", async (t) => {
+  const publicOrigin = "https://friends-tunnel.example";
+  const f = await setup(t, { publicOrigin });
+  assert.match(f.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
+
+  const response = await postWithRawHeaders(f.origin, "/api/model/bind", {
+    session_token: f.created.session_token,
+    acknowledged: true,
+    binding_request_id: "remote-public-origin-binding-01",
+  }, {
+    host: "attacker.invalid:6666",
+    forwarded: "host=forwarded.invalid;proto=http",
+    "x-forwarded-host": "x-forwarded.invalid",
+    "x-forwarded-proto": "http",
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.connection.table_origin, publicOrigin);
+  assert.equal(JSON.stringify(response.body).includes("attacker.invalid"), false);
+  assert.equal(JSON.stringify(response.body).includes("forwarded.invalid"), false);
+  assert.equal(JSON.stringify(response.body).includes("x-forwarded.invalid"), false);
+
+  await assert.rejects(
+    () => f.host.start({ host: "0.0.0.0", port: 0 }),
+    { code: "local_bridge_auth_unresolved" },
+  );
+});
+
 test("换发与撤销即时废除旧 token/authority id，旧请求键不能复活；历史有界", async (t) => {
   const f = await setup(t);
   const key = "binding-first-request-key";

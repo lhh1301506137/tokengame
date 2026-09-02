@@ -75,3 +75,31 @@ test("进程内await返回后取消不交付结果；不冒充已经撤销权威
   await assert.rejects(core.dispatch("view.projection", {}, { signal: controller.signal }), { code: "core_request_cancelled" });
   assert.equal(dispatched, 1);
 });
+
+test("携权威令牌的 HTTP 客户端拒绝跨 origin 重定向且不把令牌送到目标", async (t) => {
+  let targetRequests = 0;
+  let sourceRequests = 0;
+  const target = http.createServer((_request, response) => {
+    targetRequests += 1;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true, result: {} }));
+  });
+  await new Promise((resolve) => target.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => target.close(resolve)));
+
+  const source = http.createServer((_request, response) => {
+    sourceRequests += 1;
+    response.writeHead(307, { location: `http://127.0.0.1:${target.address().port}/stolen` });
+    response.end();
+  });
+  await new Promise((resolve) => source.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => source.close(resolve)));
+
+  const core = new HttpCoreClient({
+    origin: `http://127.0.0.1:${source.address().port}`,
+    token: "authority-token-must-not-cross-origin",
+  });
+  await assert.rejects(core.dispatch("view.projection"), { code: "core_unreachable" });
+  assert.equal(sourceRequests, 1);
+  assert.equal(targetRequests, 0);
+});

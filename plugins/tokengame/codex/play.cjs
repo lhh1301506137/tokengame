@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { UUID } = require("../../../src/host/codex-queue-transport.cjs");
+const { connectionOrigin } = require("../../../src/shared/model-connection-file.cjs");
 const { main: betaMain } = require("../../../src/run-beta.cjs");
 const { configureCodexProject, resolveCodexProject } = require("./project-config.cjs");
 
@@ -81,6 +82,16 @@ function resolveCodexExecutable(environment, dependencies = {}) {
 }
 
 function launchEnvironment(environment, { project, executable, threadId }) {
+  let publicOrigin = "";
+  if (environment.TOKENGAME_PUBLIC_ORIGIN !== undefined
+      && environment.TOKENGAME_PUBLIC_ORIGIN !== "") {
+    try {
+      publicOrigin = connectionOrigin(environment.TOKENGAME_PUBLIC_ORIGIN);
+      if (!publicOrigin.startsWith("https://")) throw playError("tokengame_public_origin_invalid");
+    } catch {
+      throw playError("tokengame_public_origin_invalid");
+    }
+  }
   const result = {};
   for (const key of Object.keys(environment)) {
     const upper = key.toUpperCase();
@@ -98,6 +109,7 @@ function launchEnvironment(environment, { project, executable, threadId }) {
     TOKENGAME_CODEX_EXECUTABLE: executable,
     TOKENGAME_CODEX_CWD: project,
     TOKENGAME_CODEX_THREAD: threadId,
+    TOKENGAME_PUBLIC_ORIGIN: publicOrigin,
   };
 }
 

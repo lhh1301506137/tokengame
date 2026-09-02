@@ -33,7 +33,7 @@
     {
       "id": "connection-origin-conflict-ignored",
       "file": "src/shared/model-connection-file.cjs",
-      "find": "  if (explicitOrigin && localOrigin(explicitOrigin) !== origin) {",
+      "find": "  if (explicitOrigin && connectionOrigin(explicitOrigin) !== origin) {",
       "replace": "  if (false) {",
       "note": "两个配置不一致不能替玩家猜牌桌。"
     },
@@ -54,9 +54,9 @@
     {
       "id": "connection-userinfo-accepted",
       "file": "src/shared/model-connection-file.cjs",
-      "find": "    || url.username || url.password || url.search || url.hash || url.pathname !== \"/\") {",
-      "replace": "    || url.search || url.hash || url.pathname !== \"/\") {",
-      "note": "配置地址不允许附加登录信息；不能归一化后静默忽略错误配置。"
+      "find": "  const origin = connectionOrigin(value.table_origin);",
+      "replace": "  const origin = connectionOrigin(typeof value.table_origin === \"string\" && value.table_origin.includes(\"@\") ? new URL(value.table_origin).origin : value.table_origin);",
+      "note": "B30原始地址形状检查也拒绝@，只删URL的用户名/密码检查是等价变异，配置仍被另一层拒绝。改为注入仅对带@地址先取origin的真实错误：校验前静默丢弃登录信息。现有错误配置断言必须直接杀掉，不能削弱产品双重检查来迎合旧变异。"
     },
     {
       "id": "connection-envelope-ok-not-required",

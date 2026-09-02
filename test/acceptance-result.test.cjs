@@ -17,6 +17,8 @@ const {
   summarize,
   redactDetail,
   CREDENTIAL_KEYS,
+  observedHandIndex,
+  validFourSeatBaseline,
 } = require("../test-support/acceptance-result.cjs");
 
 const ROOT = path.join(__dirname, "..");
@@ -105,6 +107,53 @@ test("summarize 正常收尾时不提中止", () => {
   assert.doesNotMatch(line, /中止/);
   assert.match(line, /步骤 2/);
   assert.match(line, /通过 2/);
+});
+
+test("收尾只读观测保留实际已到手数，未观测不是 0", () => {
+  assert.equal(observedHandIndex([3, 3, "unknown", 4]), 4);
+  assert.equal(observedHandIndex(["unknown", null, undefined, NaN, -1]), "unknown");
+  assert.equal(observedHandIndex([]), "unknown");
+  assert.equal(observedHandIndex([0]), 0, "真实首手前的 0 与读取失败不同");
+});
+
+test("跨手基线必须来自此前同一四席的有限正数，不能换桌或用空值继续", () => {
+  const ids = ["a", "b", "c", "d"];
+  assert.equal(validFourSeatBaseline(800, ids, [...ids].reverse()), true);
+  for (const total of [NaN, Infinity, -1, 0, null, undefined]) {
+    assert.equal(validFourSeatBaseline(total, ids, ids), false);
+  }
+  for (const seats of [[], ["a", "b", "c"], ["a", "b", "c", "e"], ["a", "b", "c", "c"], null]) {
+    assert.equal(validFourSeatBaseline(800, ids, seats), false);
+    assert.equal(validFourSeatBaseline(800, seats, ids), false);
+  }
+});
+
+test("8c 不把即时已扣盲注的 stack 重新采样为期望总额", () => {
+  const source = fs.readFileSync(path.join(ROOT, "test-support/table-web-acceptance.mjs"), "utf8");
+  const section = source.slice(source.indexOf('// ---- 8c.'), source.indexOf('// ---- 8d.'));
+  assert.match(section, /const totalBefore = startOfTwo;/);
+  assert.match(section, /validFourSeatBaseline\(totalBefore, handTwo\.seats\.map/);
+});
+
+test("无法读取最终手数时 JSON 和摘要都写 unknown，不伪装成未开手", () => {
+  for (const value of ["unknown", null, undefined, NaN]) {
+    const input = base({ finalHandIndex: value, aborted: new Error("页面不可读") });
+    assert.equal(buildResult(input).hands_reached, "unknown");
+    assert.match(summarize(input), /已到手数 unknown/);
+    assert.doesNotMatch(summarize(input), /第 0 手/);
+  }
+  assert.equal(buildResult(base({ finalHandIndex: 3, aborted: new Error("8b 中止") })).hands_reached, 3);
+});
+
+test("长浏览器在清理前做安全只读手数采样，不仅在正常末尾赋值", () => {
+  const source = fs.readFileSync(path.join(ROOT, "test-support/table-web-acceptance.mjs"), "utf8");
+  assert.match(source, /let finalHandIndex = "unknown"/);
+  assert.match(source, /finalHandIndex = observedHandIndex\(finalHandObservation\.map/);
+  const finallyAt = source.indexOf("throw error;\n  } finally {");
+  const snapshotAt = source.indexOf('source: "final_dom_snapshot"');
+  const closeAt = source.indexOf("await boundedObservation(player.context.close()");
+  assert.ok(finallyAt >= 0 && snapshotAt > finallyAt && closeAt > snapshotAt,
+    "在真正 main finally 采样，再关闭页面；不是正常流程的 §12");
 });
 
 // ---- 产物里的凭据脱敏 ----

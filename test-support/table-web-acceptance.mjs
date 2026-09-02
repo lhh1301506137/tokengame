@@ -28,9 +28,14 @@ const repoRoot = path.resolve(here, "..");
 const resolver = require("./playwright-resolve.cjs");
 // 判定式与摘要行住在 .cjs 里，这样 node --test 也能加载它们。见那个文件的顶注。
 const {
-  buildResult, summarize, redactDetail,
-  chipConservation, degradationVerdict, handCoverage,
+  buildResult, summarize, redactDetail, observedHandIndex,
+  chipConservation, degradationVerdict, handCoverage, validFourSeatBaseline,
 } = require("./acceptance-result.cjs");
+const { revealTurn, revealPrecondition, revealFoldVerdict } = require("./reveal-scenario.cjs");
+const { bubbleGeometry } = require("./browser-visible-geometry.cjs");
+
+const runStartedAt = Date.now();
+const phaseTimes = [];
 
 const artifactDir = path.resolve(process.argv[2] ?? "artifacts/table-web-acceptance");
 fs.mkdirSync(artifactDir, { recursive: true });
@@ -70,6 +75,10 @@ const failures = [];
 let currentPhase = "启动";
 
 function phase(name) {
+  const now = Date.now();
+  const previous = phaseTimes.at(-1);
+  if (previous) previous.elapsed_ms = now - previous.started_at_ms;
+  phaseTimes.push({ name, started_at_ms: now, elapsed_ms: null });
   currentPhase = name;
   return name;
 }
@@ -99,6 +108,15 @@ function check(name, condition, detail = "") {
   return condition;
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function boundedObservation(promise, ms = 2000) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("只读收尾快照超时")), ms);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 
 // 「客户端自己放弃的请求」这一类，与网络/服务端故障分开计。
 //
@@ -359,6 +377,10 @@ async function newPlayer(browser, origin, name) {
 function readTable(page) {
   return page.evaluate(() => {
     const text = (selector) => document.querySelector(selector)?.textContent?.trim() ?? null;
+    // 行动截止时间/手身份没有完整 DOM 字段，仅从现有只读机器视图补诊断。
+    // 牌面、按钮、弃牌及亮牌结果仍全部取 DOM；不发请求、不推进时钟。
+    const diagnostic = typeof window.render_game_to_text === "function"
+      ? JSON.parse(window.render_game_to_text()) : null;
     const seats = [...document.querySelectorAll("#seats > li.seat")].map((li) => ({
       seatId: li.dataset.seatId,
       name: li.querySelector(".seat-name")?.textContent?.trim() ?? null,
@@ -399,6 +421,11 @@ function readTable(page) {
       roomId: text("#room-id"),
       inviteCode: text("#invite-code"),
       handIndex: Number.parseInt(text("#hand-index") ?? "0", 10),
+      handId: diagnostic?.hand?.hand_id ?? null,
+      handStatus: diagnostic?.hand?.status ?? null,
+      handRevision: diagnostic?.hand?.revision ?? null,
+      finishReason: diagnostic?.hand?.finish_reason ?? null,
+      actionDeadlineAt: diagnostic?.action_panel?.action_deadline_at ?? null,
       startReason: text("#start-reason"),
       adapterState: text("#adapter-state"),
       pot: Number.parseInt(text("#pot-total") ?? "0", 10),
@@ -431,6 +458,30 @@ function readTable(page) {
     };
   });
 }
+
+// 通过正常聊天表单生成当前观察样本。每次只发一条，保留普通限流，不重试绕过拒绝。
+// 时间线与座位气泡分别验证：先等独立的历史通道，再由调用点断言即时气泡可见。
+async function sendSpeechSample(player, text, label) {
+  await player.page.fill("#say-text", text);
+  const [response] = await Promise.all([
+    player.page.waitForResponse((candidate) => {
+      if (new URL(candidate.url()).pathname !== "/api/action") return false;
+      const request = candidate.request().postDataJSON();
+      return request?.command === "chat.say" && request.params?.text === text;
+    }, { timeout: 5000 }),
+    player.page.click("#say-submit"),
+  ]);
+  const body = await response.json();
+  const acceptedAt = Date.now();
+  if (!check(label, response.status() === 200 && body.ok === true,
+    JSON.stringify({ status: response.status(), code: body.code ?? null }))) {
+    throw new Error("观察样本的新发言未被接受，不拿旧气泡顶替或重试");
+  }
+  await until("新发言到达公开时间线", async () => (await readTable(player.page)).bubbles
+    .some((bubble) => bubble.text === text), { timeout: 3000, interval: 80 });
+  return { text, acceptedAt };
+}
+
 // 截图连同一个状态指纹一起记下来。
 //
 // 第一版只存 PNG，结果三张图字节完全相同，而我没有办法判断那是「页面确实没变」还是
@@ -584,6 +635,73 @@ async function findActor(players, label) {
     return holders.length === 1 ? holders[0] : false;
   }, { timeout: 25_000 });
 }
+
+const readTables = (players) => Promise.all(players.map((player) => readTable(player.page)));
+
+// 亮牌场景专用：结算/换手都是终态，不能把它们当成“行动者还没同步”继续等 25 秒。
+async function waitRevealTurn(players, handIndex, label) {
+  return until(label, async () => {
+    const tables = await readTables(players);
+    const turn = revealTurn(tables, handIndex);
+    return turn.kind === "waiting" ? false : { ...turn, tables };
+  }, { timeout: 8000, interval: 80 });
+}
+
+function revealSnapshot(players, tables) {
+  const now = Date.now();
+  return tables.map((table, index) => ({
+    player: players[index].name,
+    hand: table.handIndex,
+    hand_ref: typeof table.handId === "string"
+      ? crypto.createHash("sha256").update(table.handId).digest("hex").slice(0, 12) : "unknown",
+    status: table.handStatus, revision: table.handRevision, finish_reason: table.finishReason,
+    deadline_at: table.actionDeadlineAt,
+    deadline_remaining_ms: Number.isFinite(table.actionDeadlineAt) ? table.actionDeadlineAt - now : null,
+    actions: table.myActions.map((action) => action.action), reveal_visible: table.revealVisible,
+    seats: table.seats.map((seat) => ({
+      name: seat.name, viewer: seat.isViewer, actor: seat.isActor,
+      folded: seat.folded, cards: seat.hole.length,
+    })),
+  }));
+}
+
+async function clickRevealFold(player, before, trace, { verify = true } = {}) {
+  const event = { at: new Date().toISOString(), player: player.name, hand: before.handIndex,
+    revision_before: before.handRevision, accepted: false };
+  trace.push(event);
+  // 监听正常按钮实际发出的请求/回执，而不是点击完成就自增“已弃牌”。
+  const [response] = await Promise.all([
+    player.page.waitForResponse((response) => {
+      if (new URL(response.url()).pathname !== "/api/action") return false;
+      const request = response.request().postDataJSON();
+      return request?.command === "hand.act" && request.params?.action === "fold";
+    }, { timeout: 5000 }),
+    player.page.click('#action-buttons button[data-action="fold"]', { timeout: 5000 }),
+  ]);
+  const request = response.request().postDataJSON();
+  const body = await response.json();
+  event.http_status = response.status();
+  event.code = body.code ?? null;
+  event.same_hand_request = request.params?.hand_id === before.handId;
+  event.request_revision = request.params?.expected_revision;
+  event.replay = body.result?.replay === true;
+  if (response.status() !== 200 || body.ok !== true) {
+    throw new Error(`亮牌前弃牌被拒：${JSON.stringify(event)}`);
+  }
+  const after = await until(`${player.name} 弃牌后的投影落地`, async () => {
+    const table = await readTable(player.page);
+    return table.handId !== before.handId || table.handRevision > before.handRevision ? table : false;
+  }, { timeout: 3000, interval: 50 });
+  event.revision_after = after.handRevision;
+  event.hand_after = after.handIndex;
+  event.folded_after = after.seats.filter((seat) => seat.folded).length;
+  event.status_after = after.handStatus;
+  const verdict = revealFoldVerdict({ before, after, request, status: response.status(), body });
+  event.accepted = verdict.ok;
+  event.reasons = verdict.reasons;
+  if (verify && !verdict.ok) throw new Error(`亮牌前弃牌未连续落地：${JSON.stringify(event)}`);
+  return after;
+}
 // 执行一个动作。preference 是想要的动作名序列，按顺序取第一个当前合法的；
 // 都不合法就退回权威给的第一个按钮。永远不构造权威没给的动作——那样测的就不是 UI 了。
 async function takeAction(holder, preference = []) {
@@ -702,7 +820,9 @@ async function main() {
   // 这两个在 finally 里也要读，所以声明在 try 之外。consoleChecked 用来避免同一条断言
   // 被记两遍：正常跑完时它在第 12 节记过了，只有中途抛错才轮到 finally 补记。
   let consoleChecked = false;
-  let finalHandIndex = 0;
+  let finalHandIndex = "unknown";
+  let finalHandObservation = [];
+  const revealEvidence = { preparation: [], actions: [], observations: [] };
   // 中止原因。finally 里要拿它做判定，所以只能声明在 try 之外。
   let aborted = null;
   // 路由回调里吞下的错误。回调不能往外抛（抛出去是未处理的拒绝，会绕过 main 的 catch
@@ -1194,24 +1314,45 @@ async function main() {
       await alice.page.setViewportSize(size);
       // 换视口后布局要重排一次再量。不等的话读到的是旧矩形。
       await alice.page.waitForTimeout(400);
-
-      const geometry = await alice.page.evaluate(() => {
+      const geometrySample = await sendSpeechSample(alice,
+        `${label}几何验证 ${crypto.randomUUID().slice(0, 8)}`,
+        `${label}：几何样本是本次普通聊天表单新接受的唯一发言`);
+      // 窄屏点击底部表单会滚动页面。恢复正常顶部坐标，不改 DOM 或气泡寿命。
+      await alice.page.evaluate(() => new Promise((resolve) => {
+        window.scrollTo(0, 0);
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      // 新消息刚出现就测；耗时较长的 fullPage 截图只能放在本次测量之后。
+      const measurements = await alice.page.evaluate((sampleText) => {
         const rect = (selector) => {
           const node = document.querySelector(selector);
           if (node === null) return null;
           const r = node.getBoundingClientRect();
           return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right };
         };
-        const overlap = (a, b) => {
-          if (a === null || b === null) return 0;
-          const w = Math.min(a.right, b.right) - Math.max(a.x, b.x);
-          const h = Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y);
-          return w > 0 && h > 0 ? Math.round(w * h) : 0;
-        };
         const bubbles = [...document.querySelectorAll("#seats .seat-speech > li.seat-bubble")]
           .map((n) => {
             const r = n.getBoundingClientRect();
-            return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right };
+            const clips = [];
+            let rendered = true;
+            for (let ancestor = n; ancestor; ancestor = ancestor.parentElement) {
+              const style = getComputedStyle(ancestor);
+              if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+                rendered = false;
+              }
+              if (ancestor === n) continue;
+              const x = /^(auto|scroll|hidden|clip)$/.test(style.overflowX);
+              const y = /^(auto|scroll|hidden|clip)$/.test(style.overflowY);
+              if (!x && !y) continue;
+              const box = ancestor.getBoundingClientRect();
+              const left = box.x + ancestor.clientLeft;
+              const top = box.y + ancestor.clientTop;
+              clips.push({ x, y, rect: { x: left, y: top,
+                right: left + ancestor.clientWidth, bottom: top + ancestor.clientHeight } });
+            }
+            return { seatId: n.closest("li.seat")?.dataset.seatId, rendered, clips,
+              isSample: n.querySelector(".seat-bubble-text")?.textContent === sampleText,
+              rect: { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right } };
           });
         // 参照物用 .board-area 而不是 #board。
         //
@@ -1224,19 +1365,13 @@ async function main() {
         const pot = rect(".pot");
         return {
           viewport: { w: window.innerWidth, h: window.innerHeight },
-          bubbleCount: bubbles.length,
-          // 每个气泡与公共牌区、行动区、底池的重叠面积。全部应为 0。
-          overlapBoard: bubbles.reduce((sum, b) => sum + overlap(b, boardArea), 0),
-          overlapActions: bubbles.reduce((sum, b) => sum + overlap(b, actions), 0),
-          overlapPot: bubbles.reduce((sum, b) => sum + overlap(b, pot), 0),
+          bubbles,
           // 参照物自己的尺寸。它们退化时上面那三个 0 没有意义。
           refs: {
             boardArea, actions, pot,
             degenerate: [boardArea, actions, pot]
               .filter((r) => r === null || r.w < 20 || r.h < 10).length,
           },
-          // 可读性：气泡必须有真实尺寸。0 宽或 0 高等于「藏起来算不遮挡」。
-          degenerate: bubbles.filter((b) => b.w < 40 || b.h < 10).length,
           // 气泡不得溢出所在座位卡片的横向范围——溢出就会压到相邻席位上。
           overflowingCard: [...document.querySelectorAll("#seats > li.seat")].reduce((n, card) => {
             const c = card.getBoundingClientRect();
@@ -1251,7 +1386,11 @@ async function main() {
           boardRect: board,
           actionsRect: actions,
         };
-      });
+      }, geometrySample.text);
+      const geometry = { ...measurements, ...bubbleGeometry(measurements.bubbles, measurements.refs) };
+      check(`${label}：本次唯一发言已经出现在座位旁（不能以旧气泡顶替）`,
+        measurements.bubbles.some((bubble) => bubble.isSample),
+        `接受到测量 ${Date.now() - geometrySample.acceptedAt}ms`);
 
       // 先证明参照物有尺寸，再看重叠。顺序反过来的话，一个 0 宽的参照物会让
       // 下面三条全部通过而什么都没验证——负对照跑出来就是这样。
@@ -1269,6 +1408,9 @@ async function main() {
       check(`${label}：气泡有可读尺寸（没有靠压成 0 尺寸来"不遮挡"）`,
         geometry.bubbleCount > 0 && geometry.degenerate === 0,
         `退化 ${geometry.degenerate} / ${geometry.bubbleCount} 个`);
+      check(`${label}：裁剪后每个发言座位仍有足够可读的气泡区域`, geometry.readable,
+        `原始 ${geometry.bubbleCount} 条，可见 ${geometry.visibleCount} 条，可读 ${geometry.readableCount} 条；`
+          + `可读席位 ${geometry.readableSeats}/${geometry.occupiedSeats}`);
       check(`${label}：气泡不横向溢出所在座位卡片（不压到相邻席位）`,
         geometry.overflowingCard === 0, `溢出 ${geometry.overflowingCard} 个`);
       check(`${label}：公共牌与行动区都还在视口内`,
@@ -1288,16 +1430,23 @@ async function main() {
     // 单元测试已经钉了投影层的阈值，但那是拿注入时钟算的。这里要证明真浏览器里它真的
     // 会消失：轮询把新的 view 拿回来，气泡随之退出。盯一条具体的文本而不是盯条数——
     // 脚本适配器还在说话，条数会来回变，而「这一条走了」是确定的。
-    const beforeExit = await alice.page.evaluate(() => {
-      const first = document.querySelector("#seats .seat-speech > li.seat-bubble");
-      return first === null ? null : {
+    // 前面的两次布局截图可能已用完旧气泡的十秒寿命。用正常表单新发唯一文本，
+    // 核对确切请求已被接受；先等时间线，再独立断言座位旁出现，不延长产品寿命。
+    const expiryText = `气泡退出验证 ${crypto.randomUUID().slice(0, 8)}`;
+    const { acceptedAt: expiryAcceptedAt } = await sendSpeechSample(alice, expiryText,
+      "退出观察样本是本次经普通聊天表单新接受的唯一发言");
+    const beforeExit = await alice.page.evaluate((text) => {
+      const first = [...document.querySelectorAll("#seats .seat-speech > li.seat-bubble")]
+        .find((bubble) => bubble.querySelector(".seat-bubble-text")?.textContent === text);
+      return first === undefined ? null : {
         text: first.querySelector(".seat-bubble-text")?.textContent ?? "",
         seatId: first.dataset.seatId,
       };
-    });
+    }, expiryText);
     if (check("座位旁至少有一条气泡可用于观察退出", beforeExit !== null)) {
       const stillThere = async () => alice.page.evaluate((target) => {
         const texts = [...document.querySelectorAll("#seats .seat-speech > li.seat-bubble")]
+          .filter((node) => node.dataset.seatId === target.seatId)
           .map((n) => n.querySelector(".seat-bubble-text")?.textContent ?? "");
         const timelineTexts = [...document.querySelectorAll("#timeline > li.bubble")]
           .map((n) => n.querySelector(".bubble-text")?.textContent ?? "");
@@ -1316,7 +1465,10 @@ async function main() {
         return now.besideSeat === false ? now : false;
       }, { timeout: 20_000, interval: 500 });
 
-      check("约 10 秒后那条气泡从座位旁退出", exited.besideSeat === false);
+      const expiryElapsedMs = Date.now() - expiryAcceptedAt;
+      check("约 10 秒后那条气泡从座位旁退出", exited.besideSeat === false
+        && expiryElapsedMs >= 8000 && expiryElapsedMs <= 23_000,
+      `从本次发言接受到观察退出 ${expiryElapsedMs}ms`);
       check("退出之后它仍然留在公开时间线里（退出不是删历史）",
         exited.inTimeline === true, JSON.stringify(exited));
     }
@@ -1470,7 +1622,36 @@ async function main() {
     // 于是每一次点击都以 invalid_field 被拒。它不显眼是因为亮牌只在「其余人全弃牌、你是
     // 赢家」时才出现，而自动化里没有任何一步点过它。
     //
-    // 打一手全弃牌局面出来。三个人弃牌之后只剩一个，权威把这一手判为 all_others_folded。
+    // 先通过正常按钮结束隐藏测试沿用的旧手。旧手已花过聊天/截图/隐藏切换的时间，
+    // 可能已有超时自动弃牌，不能拿“仍是第 3 手”当成“四人还都没行动”的证明。
+    // 准备动作单列，不计入下面必须完成的三次弃牌，也不以重试覆盖任何失败。
+    const enteringReveal = await readTables(players);
+    const previousRevealHand = Math.max(...enteringReveal.map((table) => table.handIndex));
+    revealEvidence.observations.push({ point: "旧手入口", at: new Date().toISOString(),
+      tables: revealSnapshot(players, enteringReveal) });
+    for (let guard = 0; guard < 4; guard += 1) {
+      const turn = await waitRevealTurn(players, previousRevealHand, "亮牌准备：旧手行动或收尾");
+      if (turn.kind !== "actor") break;
+      const holder = players[turn.index];
+      const fresh = await readTable(holder.page);
+      if (fresh.handIndex > previousRevealHand || fresh.handStatus === "complete") break;
+      if (!fresh.myActions.some((action) => action.action === "fold")) continue;
+      await clickRevealFold(holder, fresh, revealEvidence.preparation, { verify: false });
+    }
+    // 等待依据是所有页面的手序向前推进，不是要被断言的底牌/未弃牌结果。
+    const freshRevealTables = await until("旧手后自然开出同一新手供亮牌验收", async () => {
+      const tables = await readTables(players);
+      return tables.every((table) => table.handIndex > previousRevealHand) ? tables : false;
+    }, { timeout: 12_000, interval: 80 });
+    revealEvidence.observations.push({ point: "新手前置", at: new Date().toISOString(),
+      tables: revealSnapshot(players, freshRevealTables) });
+    const readyForReveal = revealPrecondition(freshRevealTables,
+      { afterHandIndex: previousRevealHand, now: Date.now() });
+    if (!check("亮牌验收从四人未行动的新手开始，且四页前置一致", readyForReveal.ok,
+      JSON.stringify({ hand: freshRevealTables[0].handIndex, reasons: readyForReveal.reasons }))) {
+      throw new Error("亮牌验收前置不成立；详见 timing-evidence.json，不继续消费旧手");
+    }
+    // 三个人弃牌之后只剩一个，权威把这一手判为 all_others_folded。
     //
     // 刻意不用 playHand：它要等到手序号变化才返回，而手间展示窗只有 3 秒——等它返回时
     // 亮牌窗口已经关了，can_reveal 变回 false，权威那边也换了 hand_id。这里显式弃三次，
@@ -1478,37 +1659,41 @@ async function main() {
     //
     // 窗口只有 3 秒是产品语义（room-store 的 interHandEndsAt，与首手 Ready 倒计时同为
     // 3 秒），不是这里能改的东西。所以下面这一整段要快：identify -> click -> 读对手视角
-    // -> 重复点 -> 三条 HTTP 探针，全部走完在几百毫秒量级。
-    const revealHandIndex = (await readTable(alice.page)).handIndex;
+    // -> 重复点 -> 三条 HTTP 探针。截图放到这些操作之后，不让整页截图耗时吃掉窗口。
+    const revealHandIndex = freshRevealTables[0].handIndex;
     let folded = 0;
-    for (let guard = 0; guard < 12 && folded < 3; guard += 1) {
-      let holder;
-      try {
-        holder = await findActor(players, `亮牌前第 ${folded + 1} 次弃牌`);
-      } catch {
-        break; // 没有人该行动了，这一手已经收尾。
+    for (; folded < 3;) {
+      const turn = await waitRevealTurn(players, revealHandIndex, `亮牌前第 ${folded + 1} 次弃牌`);
+      if (turn.kind !== "actor") {
+        revealEvidence.observations.push({ point: "三次弃牌之前提前收尾", at: new Date().toISOString(),
+          tables: revealSnapshot(players, turn.tables) });
+        break;
       }
-      // 点击前重读。findActor 的快照会被行动超时的自动结算作废：权威到期会替人 check
-      // 或 fold，于是那份「谁有哪些按钮」的记录指向的已经是上一个行动者。直接照它点，
-      // 结果是等一个已经消失的按钮等到超时——脚本挂在这里，而牌桌本身没有任何问题。
-      const fresh = await readTable(holder.player.page);
-      if (fresh.handIndex > revealHandIndex) break;
-      const available = fresh.myActions.map((a) => a.action);
-      if (available.length === 0) continue;
-      const pick = available.includes("fold") ? "fold" : available[0];
-      await holder.player.page.click(`#action-buttons button[data-action="${pick}"]`);
-      if (pick === "fold") folded += 1;
-      await sleep(200);
+      const holder = players[turn.index];
+      const fresh = await readTable(holder.page);
+      if (fresh.handId !== freshRevealTables[0].handId || fresh.handRevision !== folded + 1
+          || !fresh.myActions.some((action) => action.action === "fold")) {
+        throw new Error("亮牌前行动状态已改变；不把自动弃牌或其他手的动作计入三次弃牌");
+      }
+      await clickRevealFold(holder, fresh, revealEvidence.actions);
+      folded += 1;
     }
-    check("亮牌前确实弃到只剩一个人（三次弃牌都落下去了）", folded === 3,
-      `实际弃牌 ${folded} 次`);
+    if (!check("亮牌前确实弃到只剩一个人（三次弃牌都落下去了）", folded === 3,
+      `实际弃牌 ${folded} 次；${JSON.stringify(revealEvidence.actions)}`)) {
+      throw new Error("三次手工弃牌未完成；不再等入下一手寻找已经过去的亮牌窗口");
+    }
 
     // 并行、在页面内轮询，把往返次数压到最低。串行读四个页面在 3 秒窗口里太慢。
     const revealHolders = await until("全弃牌收尾后出现可亮牌的赢家", async () => {
-      const flags = await Promise.all(players.map((p) => p.page.evaluate(() =>
-        document.getElementById("reveal-btn")?.hidden === false)));
-      const holders = players.filter((_, index) => flags[index]);
-      return holders.length > 0 ? holders : false;
+      const tables = await readTables(players);
+      const holders = players.filter((_, index) => tables[index].revealVisible);
+      const advanced = tables.some((table) => table.handIndex > revealHandIndex);
+      if (advanced || holders.length > 0) {
+        revealEvidence.observations.push({ point: "亮牌窗口", at: new Date().toISOString(),
+          tables: revealSnapshot(players, tables) });
+        return advanced ? [] : holders;
+      }
+      return false;
     }, { timeout: 8_000, interval: 120 });
     check("全弃牌收尾后恰好一个人可以自愿亮牌（赢家），其余人都不行",
       revealHolders.length === 1,
@@ -1549,11 +1734,12 @@ async function main() {
       check("亮出来的是同一副牌，不是每人看到一份不同的",
         new Set(revealedFor.map((entry) => entry.hole.join(","))).size === 1,
         JSON.stringify(revealedFor));
-      artifacts.push(await shot(others[0], "08b-voluntary-reveal-seen-by-others"));
 
       // 重复：再点一次不得报错，也不得把牌变成别的。
       await winner.page.click("#reveal-btn");
-      await sleep(250);
+      // wireControl 完成后才解禁；等真实请求结束，不用固定延时吃掉亮牌窗口。
+      await winner.page.waitForFunction(() => document.getElementById("reveal-btn")?.disabled === false,
+        null, { timeout: 2000 });
       const secondClickError = await winner.page.evaluate(() =>
         (document.getElementById("global-error")?.hidden === false
           ? document.getElementById("global-error").textContent.trim() : null));
@@ -1571,7 +1757,7 @@ async function main() {
       // 下面两条探针故意要 409。浏览器会为每个非 2xx 的 fetch 自己打一条 console error，
       // 那不是缺陷，但也不能悄悄不算——所以进故意失败窗口，单列在证据里。
       winner.expectFailures = true;
-      const staleOutcome = await winner.page.evaluate(async () => {
+      const staleOutcome = await winner.page.evaluate(async (expectedHandId) => {
         const token = sessionStorage.getItem("tokengame.table.session_token");
         const view = await (await fetch("/api/view", {
           method: "POST",
@@ -1579,6 +1765,9 @@ async function main() {
           body: JSON.stringify({ session_token: token }),
         })).json();
         const panel = view.view.action_panel;
+        if (panel.hand_id !== expectedHandId) {
+          throw new Error("亮牌探针前已换手：不能把下一手的 409 当成本手版本冲突证据");
+        }
         const send = async (params) => {
           const response = await fetch("/api/action", {
             method: "POST",
@@ -1611,7 +1800,7 @@ async function main() {
             idempotency_key: buttonKey,
           }),
         };
-      });
+      }, freshRevealTables[0].handId);
       check("新键带陈旧 expected_revision 被确定性拒绝",
         staleOutcome.staleWithFreshKey.body?.code === "revision_conflict",
         JSON.stringify(staleOutcome.staleWithFreshKey));
@@ -1631,6 +1820,9 @@ async function main() {
       winner.expectFailures = false;
       ok("自愿亮牌的成功、重复与陈旧版本号三条路径都走过",
         `winner=${winner.name} revision=${staleOutcome.panel_revision}`);
+      revealEvidence.completed_at = new Date().toISOString();
+      // 截图如实记录操作后的页面；亮牌时的证据是上面四页 DOM 断言，不要求截图冻结时钟。
+      artifacts.push(await shot(others[0], "08b-after-voluntary-reveal"));
     }
 
     // ---- 8c. 连续打到第 10 手以上：多人局、全下与边池、单挑 ----
@@ -1642,9 +1834,19 @@ async function main() {
     //
     // 放在这里而不是最后：第 10 / 11 节会让人暂离与离桌，那之后桌上凑不出多人局。
     const HAND_TARGET = 10;
-    const startHand = (await readTable(alice.page)).handIndex;
-    const stacksBefore = (await readTable(alice.page)).seats.map((s) => s.stack);
-    const totalBefore = stacksBefore.reduce((sum, value) => sum + value, 0);
+    const longRunStart = await readTable(alice.page);
+    const startHand = longRunStart.handIndex;
+    const stacksBefore = longRunStart.seats.map((s) => s.stack);
+    // 截图之后可能已经进下一手，当前 stack 合计会是 797（盲注另在活跃池中为 3）。
+    // 不把这个即时值重新定义为期望总额：沿用 §7 已核验的同一四席总量，损坏不会被重采样洗掉。
+    const totalBefore = startOfTwo;
+    if (!check("多手守恒沿用此前核验的有限正总量，且仍为同一四席",
+      validFourSeatBaseline(totalBefore, handTwo.seats.map((seat) => seat.seatId),
+        longRunStart.seats.map((seat) => seat.seatId)),
+      JSON.stringify({ expected_total: totalBefore, current_stacks: stacksBefore.reduce((sum, value) => sum + value, 0),
+        current_pot: longRunStart.pot, current_status: longRunStart.handStatus, seats: longRunStart.seats.length }))) {
+      throw new Error("多手段的固定总量或同桌四席前置不成立，不能重采样期望值继续");
+    }
     let allInSeen = false;
     let allInTagSeen = false;
     let headsUpSeen = false;
@@ -1920,6 +2122,7 @@ async function main() {
     phase("9 掉线与 120 秒保留窗内恢复");
     const dave = players.find((p) => p.name === "dave");
     const daveIndex = (await readTable(alice.page)).seats.findIndex((s) => s.name === "dave");
+    await dave.page.click("#nav-settings");
     await dave.page.click("#simulate-disconnect");
     const sawOffline = await until("同桌看到 dave 掉线", async () => {
       const table = await readTable(alice.page);
@@ -1939,6 +2142,7 @@ async function main() {
     artifacts.push(await shot(alice, "09-dave-offline"));
 
     await dave.page.click("#simulate-reconnect");
+    await dave.page.click("#nav-game");
     await until("dave 恢复后掉线标记消失", async () => {
       const table = await readTable(alice.page);
       return table.seats[daveIndex].tags.includes("掉线") === false;
@@ -2408,7 +2612,6 @@ async function main() {
     check("投影改写的路由回调没有吞下任何意外错误", routeErrors.length === 0,
       routeErrors.length === 0 ? "0 条" : JSON.stringify(routeErrors));
 
-    finalHandIndex = (await readTable(alice.page)).handIndex;
   } catch (error) {
     // 记下来再原样抛出。吞掉它会让退出码变成 0，那是另一种假绿。
     aborted = error;
@@ -2417,6 +2620,32 @@ async function main() {
     // 结果无条件落盘，包括脚本中途抛错的情况。第一版把写入放在 try 里，于是一次
     // 异常终止之后我手上只有 "通过 77，失败 3" 这一行、没有失败项——诊断只能靠重跑。
     // 证据文件的价值恰恰在失败的那次。
+    // 必须在 main finally 而不是 §12：提前中止也采样，不把未采到伪装成还没开手。
+    finalHandObservation = await Promise.all(players.map(async (player) => {
+      try {
+        const hand = await boundedObservation(player.page.evaluate(() => {
+          const value = document.getElementById("hand-index")?.textContent?.trim();
+          const atTable = document.getElementById("entry-view")?.hidden === true;
+          return atTable && /^\d+$/.test(value ?? "") ? Number(value) : "unknown";
+        }));
+        return { player: player.name, hand, source: "final_dom_snapshot" };
+      } catch {
+        return { player: player.name, hand: "unknown", source: "page_closed_or_unreadable" };
+      }
+    }));
+    finalHandIndex = observedHandIndex(finalHandObservation.map((entry) => entry.hand));
+    if (aborted !== null && currentPhase.startsWith("8b")) {
+      try {
+        revealEvidence.observations.push({ point: "中止快照", at: new Date().toISOString(),
+          tables: revealSnapshot(players, await boundedObservation(readTables(players))) });
+      } catch { revealEvidence.failure_snapshot = "unknown"; }
+      revealEvidence.failure = redactDetail(aborted.message ?? String(aborted));
+    }
+    const lastPhase = phaseTimes.at(-1);
+    if (lastPhase) {
+      const elapsed = Date.now() - lastPhase.started_at_ms;
+      lastPhase.elapsed_ms = Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : "unknown";
+    }
     const evidence = buildEvidenceReport(players);
     const consoleReport = evidence.perPlayer;
     const totalConsole = evidence.totalConsole;
@@ -2452,15 +2681,44 @@ async function main() {
     fs.writeFileSync(path.join(artifactDir, "result.json"),
       `${JSON.stringify(result, null, 2)}\n`);
 
+    const cleanupStartedAt = Date.now();
+    const cleanup = { contexts_closed: 0, browser_closed: false, server: "unknown" };
+    for (const player of players) {
+      try {
+        await boundedObservation(player.context.close(), 5000);
+        cleanup.contexts_closed += 1;
+      } catch { /* 由下方清理断言统一记录，不能把调用过 close 写成已关闭。 */ }
+    }
+    try {
+      await boundedObservation(browser.close(), 5000);
+      cleanup.browser_closed = !browser.isConnected();
+    } catch { /* 保留 false。 */ }
+    cleanup.server = await new Promise((resolve) => {
+      if (server.child.exitCode !== null || server.child.signalCode !== null) {
+        resolve({ exited: true, code: server.child.exitCode, signal: server.child.signalCode });
+        return;
+      }
+      const timer = setTimeout(() => resolve({ exited: false, method: "SIGTERM" }), 3000);
+      server.child.once("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolve({ exited: true, method: "SIGTERM", code, signal });
+      });
+      server.child.kill();
+    });
+    cleanup.elapsed_ms = Date.now() - cleanupStartedAt;
+    check("本次验收创建的上下文、浏览器与服务进程均已关闭",
+      cleanup.contexts_closed === players.length && cleanup.browser_closed && cleanup.server.exited === true,
+      JSON.stringify(cleanup));
+    fs.writeFileSync(path.join(artifactDir, "timing-evidence.json"), `${JSON.stringify({
+      started_at: new Date(runStartedAt).toISOString(), finished_at: new Date().toISOString(),
+      elapsed_ms: Date.now() - runStartedAt, phases: phaseTimes,
+      final_hand_observation: finalHandObservation, reveal: revealEvidence, cleanup,
+    }, null, 2)}\n`);
+    // 清理完成后覆盖本次结果，清理失败同样不能报 passed:true；旧失败目录不受影响。
+    fs.writeFileSync(path.join(artifactDir, "result.json"), `${JSON.stringify(buildResult(summaryInput), null, 2)}\n`);
     log("");
     log(summarize(summaryInput));
     log(`产物：${artifactDir}`);
-
-    for (const player of players) {
-      await player.context.close().catch(() => {});
-    }
-    await browser.close().catch(() => {});
-    server.child.kill();
   }
 
   if (failures.length > 0) {

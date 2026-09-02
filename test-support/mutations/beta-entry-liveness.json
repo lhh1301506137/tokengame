@@ -49,8 +49,8 @@
       "id": "beta-route-left-disabled",
       "file": "src/run-beta.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "    host = new TableWebHost({ core, modelAdapter: adapter, modelBindingEnabled: true, wakeQueue });",
-      "replace": "    host = new TableWebHost({ core, modelAdapter: adapter, wakeQueue });",
+      "find": "      modelBindingEnabled: true,",
+      "replace": "      modelBindingEnabled: false,",
       "note": "内测入口生成了令牌却没接上协调器。这正是 `npm run web` 的现状：牌桌照常能玩，模型路由关着，而它关着的方式是安静的——没有任何一席的宿主 AI 能发言，而 /api/health 里那行 disabled 不会有人主动去看。"
     },
     {
@@ -97,8 +97,8 @@
       "id": "beta-hides-token-path",
       "file": "src/run-beta.cjs",
       "test": "test/beta-entry.test.cjs",
-      "find": "      process.stdout.write(joinInstructions(run));",
-      "replace": "",
+      "find": "      process.stdout.write(joinInstructions({",
+      "replace": "      void (joinInstructions({",
       "note": "只打机器启动行，不告诉人逐席授权/下载与配置路径。保留旧 id 以便追溯，检查对象已迁移到 B8 本人下载说明。"
     },
     {

@@ -17,14 +17,44 @@
 
 <a class="skip-link" href="#table-main">跳到牌桌主区</a>
 
+<div class="app-shell" id="workspace-shell" data-workspace="setup">
+<aside class="workspace-nav" aria-label="TokenGame 工作区">
+  <div class="brand" aria-label="TokenGame">
+    <span class="brand-mark" aria-hidden="true">TG</span>
+    <span class="brand-copy">
+      <small>AI TABLE TALK</small>
+      <strong>TokenGame</strong>
+    </span>
+  </div>
+  <nav class="workspace-links" aria-label="工作面导航">
+    <p class="nav-label">工作区</p>
+    <button type="button" class="workspace-link" id="nav-game" aria-controls="table-main" disabled>
+      <span aria-hidden="true">♧</span> 私人牌桌
+    </button>
+    <button type="button" class="workspace-link" id="nav-settings" aria-controls="entry-view config-main" aria-current="page">
+      <span aria-hidden="true">⚙</span> 配置中心
+    </button>
+  </nav>
+  <p class="workspace-note">2–4 人私人房<br>测试筹码 · 没有真钱</p>
+</aside>
+<div class="workspace-content">
 <header class="topbar">
-  <h1>TokenGame 临时私人牌桌</h1>
-  <p class="topbar-note" id="stack-note">单栈：本页连接宿主中立权威内核</p>
-  <output class="conn" id="conn-state" aria-live="polite">未连接</output>
+  <p class="workspace-title" id="workspace-title">配置中心</p>
+  <div class="topbar-context">
+    <p class="topbar-note" id="stack-note">私人房 · 测试筹码 · 真人决策</p>
+    <output class="conn" id="conn-state" aria-live="polite">未连接</output>
+  </div>
 </header>
 
 <!-- 入口。建房与加入是同一屏的两条路，不做多步向导：MVP 的入口越短越好复核。 -->
-<main class="entry" id="entry-view">
+<main class="entry" id="entry-view" data-surface="setup" aria-labelledby="setup-title">
+  <header class="entry-intro">
+    <p class="eyebrow">PRIVATE TABLE / 2–4 PLAYERS</p>
+    <h1 id="setup-title">和朋友开一桌，让各自的 AI 坐在身边</h1>
+    <p>创建或加入临时私人房。下注始终由真人完成；AI 只读取获准的牌局上下文，并在座位旁公开发言或选择沉默。</p>
+  </header>
+
+  <div class="entry-grid">
   <section class="card" aria-labelledby="create-title">
     <h2 id="create-title">创建私人牌桌</h2>
     <p class="hint">创建后你会拿到一个邀请码。没有公开大厅，也没有自动匹配，只有拿到码的人能进。</p>
@@ -50,6 +80,8 @@
       <button type="submit" class="primary">加入牌桌</button>
     </form>
   </section>
+
+  </div>
 
   <p class="entry-error" id="entry-error" role="alert" hidden></p>
 </main>
@@ -93,7 +125,16 @@
 </section>
 
 <!-- 牌桌主屏。默认隐藏，建房或加入成功后才显示。 -->
-<main class="table" id="table-main" hidden>
+<main class="table" id="table-main" data-surface="game" hidden>
+  <div class="game-workspace">
+  <section class="table-panel" aria-labelledby="table-title">
+  <header class="game-heading">
+    <div>
+      <p class="eyebrow">LIVE PRIVATE TABLE</p>
+      <h1 id="table-title">无限注德州扑克</h1>
+    </div>
+    <p class="game-rule">AI 话术是公开参与者发言，不是系统裁决</p>
+  </header>
 
   <!-- 房间条：邀请码、手数、开局判定原因。 -->
   <section class="roombar" aria-label="房间状态">
@@ -121,6 +162,8 @@
   </section>
 
   <!-- 牌桌：公共牌、底池、席位。 -->
+  <div class="table-stage">
+    <div class="table-felt" aria-hidden="true"></div>
   <section class="board-area" aria-label="公共牌与底池">
     <div class="pot">
       <span class="label">底池</span>
@@ -134,6 +177,7 @@
   </section>
 
   <ol class="seats" id="seats" aria-label="座位"></ol>
+  </div>
 
   <!-- 行动区。按钮由权威给的 legal_actions 生成，页面不自己推断合法性。 -->
   <section class="actions" id="actions" aria-label="你的行动">
@@ -154,13 +198,44 @@
     <button type="button" class="ghost" id="ai-toggle">关闭我的座位 AI</button>
     <button type="button" class="ghost" id="reveal-btn" hidden>亮牌</button>
     <button type="button" class="ghost danger" id="leave-btn">离桌</button>
-    <span class="spacer"></span>
-    <button type="button" class="ghost" id="simulate-disconnect">模拟掉线</button>
-    <button type="button" class="ghost" id="simulate-reconnect" hidden>重新连接</button>
   </section>
 
+  </section>
+
+  <aside class="side-panel" aria-label="公开时间线">
+  <!-- 公开时间线。玩家与 AI 气泡样式必须能区分，AI 还要带 AI 标记。 -->
+  <section class="timeline-area" aria-labelledby="timeline-title">
+    <header class="timeline-heading">
+      <div>
+        <p class="eyebrow">TABLE TALK</p>
+        <h2 id="timeline-title" class="section-title">公开时间线</h2>
+      </div>
+      <span class="public-chip">全桌可见</span>
+    </header>
+    <ol class="timeline" id="timeline" aria-live="polite" aria-relevant="additions"></ol>
+    <form class="say-form" id="say-form">
+      <label for="say-text" class="sr-only">公开发言</label>
+      <input id="say-text" autocomplete="off" placeholder="对同桌说点什么（公开可见）">
+      <span class="counter" id="say-counter">0/140</span>
+      <button type="submit" class="primary" id="say-submit">发言</button>
+    </form>
+    <p class="say-error" id="say-error" role="alert" hidden></p>
+  </section>
+  </aside>
+  </div>
+</main>
+
+<!-- 配置仅切换工作面：此处拥有唯一一份现有连接控件，不克隆表单，不解除席位。 -->
+<main class="config-center" id="config-main" data-surface="settings" aria-labelledby="config-title" hidden>
+  <header class="config-heading">
+    <p class="eyebrow">YOUR WORKSPACE</p>
+    <h1 id="config-title">配置中心</h1>
+    <p>你的席位与连接保持不变。牌局仍在继续，配置完成后从左侧返回私人牌桌。</p>
+  </header>
+  <section class="config-card" aria-label="本人 AI 连接与诊断">
+
   <details class="model-connection" id="model-connection-panel">
-    <summary>连接我的会话 AI <output id="model-connection-state" aria-live="polite">未绑定</output></summary>
+    <summary><span>本人 AI 与通知设置</span><output id="model-connection-state" aria-live="polite">未绑定</output></summary>
     <p class="hint" id="model-connection-help">使用你当前宿主会话的模型，不需要另填模型 API。此处只建立本席通道，不证明宿主能无点击主动唤醒。</p>
     <form id="model-bind-form">
       <label class="model-consent" for="model-consent">
@@ -218,21 +293,17 @@
     </form>
   </details>
 
-  <!-- 公开时间线。玩家与 AI 气泡样式必须能区分，AI 还要带 AI 标记。 -->
-  <section class="timeline-area" aria-labelledby="timeline-title">
-    <h2 id="timeline-title" class="section-title">公开时间线</h2>
-    <ol class="timeline" id="timeline" aria-live="polite" aria-relevant="additions"></ol>
-    <form class="say-form" id="say-form">
-      <label for="say-text" class="sr-only">公开发言</label>
-      <input id="say-text" autocomplete="off" placeholder="对同桌说点什么（公开可见）">
-      <span class="counter" id="say-counter">0/140</span>
-      <button type="submit" class="primary" id="say-submit">发言</button>
-    </form>
-    <p class="say-error" id="say-error" role="alert" hidden></p>
   </section>
-
-  <p class="global-error" id="global-error" role="alert" hidden></p>
+  <section class="connection-diagnostics" aria-label="连接诊断">
+    <p class="hint">测试工具只影响本页连接，不会暂停权威牌局。</p>
+    <button type="button" class="ghost" id="simulate-disconnect">模拟掉线</button>
+    <button type="button" class="ghost" id="simulate-reconnect" hidden>重新连接</button>
+  </section>
 </main>
+
+<p class="global-error" id="global-error" role="alert" hidden></p>
+</div>
+</div>
 
 <script src="/table.js"></script>
 </body>
