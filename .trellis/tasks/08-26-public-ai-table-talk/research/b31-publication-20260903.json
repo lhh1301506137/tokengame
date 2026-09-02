@@ -1,0 +1,120 @@
+{
+  "schema": "tokengame.b31-publication-receipt.v1",
+  "recorded_at": "2026-09-03",
+  "snapshot": "B31代码提交推送及其CI结束后的事实；本回执由后续仅文档提交保存。",
+  "authorization": "PROJECT-DECISION-LOG.md#DEC-20260903-001",
+  "repository": "https://github.com/lhh1301506137/tokengame",
+  "branch": "main",
+  "code_commit": "360db26db1ca3209a8e3d6ee9fff3e4d2d0f6f6b",
+  "commit_subject": "fix: harden Node 22 verification for B31",
+  "push": {
+    "exit_code": 0,
+    "from": "4135611395b09ba077e156ce59010593232e5b7d",
+    "to": "360db26db1ca3209a8e3d6ee9fff3e4d2d0f6f6b",
+    "force": false,
+    "remote_head_matched": true,
+    "working_tree_clean_after_code_push": true,
+    "tool_receipts": [
+      "cf1388",
+      "f90a33",
+      "25f510"
+    ]
+  },
+  "verification_reuse": {
+    "local_tests_rerun_this_publish_turn": false,
+    "code_files_unchanged_since_frozen_evidence": true,
+    "code_test_file_count": 239,
+    "scope_sha256": "f2f4df7777274b6f9c6ab88b856135ec919a108ce2253c887694c33b5e1f6ea5",
+    "source": ".trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json",
+    "source_sha256": "3626a6f7db8baa61650918ae775b159be5cf26690063c22ccec4bc65e64e9a77"
+  },
+  "github_ci": {
+    "database_id": 33690705812,
+    "head_sha": "360db26db1ca3209a8e3d6ee9fff3e4d2d0f6f6b",
+    "url": "https://github.com/lhh1301506137/tokengame/actions/runs/33690705812",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Node ubuntu-latest",
+        "database_id": 100448550664,
+        "url": "https://github.com/lhh1301506137/tokengame/actions/runs/33690705812/job/100448550664",
+        "started_at": "2026-09-02T22:30:34Z",
+        "completed_at": "2026-09-02T22:31:50Z",
+        "status": "completed",
+        "conclusion": "success",
+        "counts": {
+          "tests": 1467,
+          "pass": 1467,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 68002.490871
+        },
+        "runtime": {
+          "node": "v22.23.2",
+          "npm": "10.9.8"
+        },
+        "evidence_lines": [
+          "Node ubuntu-latest\tRun actions/setup-node@v4\t2026-09-02T22:30:38.2459441Z node: v22.23.2",
+          "Node ubuntu-latest\tRun actions/setup-node@v4\t2026-09-02T22:30:38.2460115Z npm: 10.9.8",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4058760Z # tests 1467",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4059507Z # pass 1467",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4059871Z # fail 0",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4060264Z # cancelled 0",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4061001Z # skipped 0",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4061377Z # todo 0",
+          "Node ubuntu-latest\tRun npm test\t2026-09-02T22:31:46.4074183Z # duration_ms 68002.490871"
+        ]
+      },
+      {
+        "name": "Node windows-latest",
+        "database_id": 100448551119,
+        "url": "https://github.com/lhh1301506137/tokengame/actions/runs/33690705812/job/100448551119",
+        "started_at": "2026-09-02T22:30:34Z",
+        "completed_at": "2026-09-02T22:32:24Z",
+        "status": "completed",
+        "conclusion": "success",
+        "counts": {
+          "tests": 1475,
+          "pass": 1475,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0,
+          "duration_ms": 92467.9119
+        },
+        "runtime": {
+          "node": "v22.23.2",
+          "npm": "10.9.8"
+        },
+        "evidence_lines": [
+          "Node windows-latest\tRun actions/setup-node@v4\t2026-09-02T22:30:46.5829181Z node: v22.23.2",
+          "Node windows-latest\tRun actions/setup-node@v4\t2026-09-02T22:30:46.5829587Z npm: 10.9.8",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5099581Z # tests 1475",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5100228Z # pass 1475",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5100547Z # fail 0",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5100839Z # cancelled 0",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5101141Z # skipped 0",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5101422Z # todo 0",
+          "Node windows-latest\tRun npm test\t2026-09-02T22:32:20.5101748Z # duration_ms 92467.9119"
+        ]
+      }
+    ],
+    "log_source": "gh run view 33690705812 --repo lhh1301506137/tokengame --log",
+    "complete_log_sha256": "eb8784c1831c7cf72d229209f784e0798736e2436aa4f8d55d219177c757a0d4",
+    "complete_log_utf8_bytes": 1733310,
+    "complete_log_storage": "GitHub Actions；本回执保留决定性原始行，不声称本地另存了完整日志。",
+    "watch_exit_code": 0,
+    "nonblocking_annotation": "checkout@v4/setup-node@v4 的 Actions 执行运行时有 Node20弃用并强制改用Node24警告；项目测试实际运行时仍是日志明确列出的Node22.23.2。该警告不等于测试失败，本批不改工作流。"
+  },
+  "limits": [
+    "公开源码提交不等于部署，未启动公网入口、模型或真人牌局。",
+    "未改宿主配置、许可证、仓库可见性或历史。",
+    "两台设备、两个原生Codex和十手真人验收仍未跑，proactive_wake_verified保持false。",
+    "不关闭或归档MVP父任务。",
+    "文档后继提交的CI不冒充此代码提交的CI；最新分支状态应另查对应headSha。"
+  ],
+  "next_owner": "用户和好友按docs/REMOTE-FRIEND-MVP.md准备双机验收；开始真实连接与通知前核对各自席位授权和有限窗口。"
+}

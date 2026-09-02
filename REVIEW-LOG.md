@@ -4639,7 +4639,7 @@ execution_closure:
 <a id="b31-node22-ci-verification"></a>
 ## 2026-09-03 — B31：Node 22 CI 兼容与验证可信度
 
-状态：本地修补与限定独立复核完成，用户已授权本批提交推送；尚待实际发布回执，不关闭两好友 MVP。
+状态：本地修补与限定独立复核完成，代码提交 `360db26` 已推送且对应两平台 GitHub CI 成功；不关闭两好友 MVP。
 
 发布授权补充：后续用户明确回复“commit+push”，记录在 `PROJECT-DECISION-LOG.md#DEC-20260903-001`。
 本节下方保留本地冻结验证阶段的事实与机器记录，其中“待授权/未提交”指当时的快照，不否定后续授权。
@@ -4767,3 +4767,24 @@ execution_closure:
   claim_limits: [只闭合本地验证证据切片, 不宣布GitHub通过, 不升级原生主动AI, 不关闭MVP或父节点, 不授权本批提交推送]
   next_owner: user_for_B31_commit_push_permission_then_primary_for_GitHub_verification
 ```
+
+### 后续发布回执（不改写上面的本地冻结证据）
+
+用户以“commit+push”授权本批发布，决策为 `DEC-20260903-001`。实际代码提交是
+`360db26db1ca3209a8e3d6ee9fff3e4d2d0f6f6b`，提交说明为 `fix: harden Node 22 verification for B31`。
+仅暂存12个核定文件，提交和非强制推送均exit 0，`git ls-remote`确认远端main与该SHA一致，代码推送后工作树干净。
+忽略的运行时、日志、私有连接及宿主配置未纳入；产品65文件仍未变，不归档MVP任务。
+
+[GitHub run 33690705812](https://github.com/lhh1301506137/tokengame/actions/runs/33690705812)
+已completed/success，两个作业均成功。直接读取日志确认项目测试运行时为Node22.23.2、npm10.9.8：
+Windows `1475/1475`、92467.9119ms；Ubuntu `1467/1467`、68002.490871ms；失败、取消、跳过、todo均0。
+这次是GitHub真实作业，不复用本机WSL结果。Actions自身checkout/setup-node有Node20弃用与Node24强制运行警告，
+不等于项目测试改用了Node24；本次不扩展修改工作流。日志摘录、作业ID、时刻及SHA在
+`.trellis/tasks/08-26-public-ai-table-talk/research/b31-publication-20260903.json`，文件SHA-256为
+`92cf58bcc2dfd14c0be5137a2b62c6cc70c68caf7b89ba93a2b69ff42a3dac58`。
+
+本轮发布不重新跑本地全量：先比较239文件冻结身份一致，再由GitHub执行对应提交的完整测试。
+收集日志时一次临时Node命令有多余花括号，在调用gh前语法退出1；修正该命令后只读采集成功，未因此重跑CI或修改产品。
+发布回执与恢复点由后续仅文档提交保存；其新SHA与本次代码CI分别看待，不靠回执文字让未运行的新作业自动通过。
+最终收尾语言检查回执为 `artifacts/b31-publish-closeout-language-20260903.json`，以其实际结果为准。
+下一产品工作是双机双原生AI十手真人验收，不继续拆分CI叶、不启动模型或公网、不把本次提交当MVP交付。

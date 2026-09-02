@@ -2,7 +2,7 @@
 
 更新日期：2026-09-03
 
-## 当前工作：两好友 MVP 与 B31 验证兼容收尾
+## 当前工作：B31 已推送且 CI 通过，等待两好友实测
 
 用户已确认先做“两好友、各自 Codex、十手私人房”的 MVP，再考虑购买服务器和公开大厅。
 B30 已在既有权威栈上实现显式 HTTPS 入口、本机出站连接器和外部 Web 的游戏/配置工作面，
@@ -15,8 +15,11 @@ B30 提交前的历史证据为身份约束的 Node `1456/1456`、变异 `693/69
 `215/215`；第一次完整门禁自身 exit 1、随后仅重跑全部受影响集合的过程也保留在记录中，不能写成
 第二次完整门禁 exit 0。B31 的 Node 22 和受影响变异结果另记在
 [B31 验证记录](REVIEW-LOG.md#b31-node22-ci-verification)：冻结代码的 Windows Node 22 为 `1475/1475`、
-Linux/WSL 为 `1467/1467`，相关变异各 `25/25`。用户已按 `DEC-20260903-001` 授权本批 commit/push；
-实际远端与 GitHub CI 待核对，本机通过不替代 GitHub CI。
+Linux/WSL 为 `1467/1467`，相关变异各 `25/25`。用户已按 `DEC-20260903-001` 授权并完成代码提交
+`360db26` 的推送，远端已核对一致；[该提交的 GitHub CI](https://github.com/lhh1301506137/tokengame/actions/runs/33690705812)
+两平台均成功，实际 Node `22.23.2` 的 Windows `1475/1475`、Ubuntu `1467/1467`，没有失败或取消。
+发布回执见 `.trellis/tasks/08-26-public-ai-table-talk/research/b31-publication-20260903.json`；
+后续仅文档提交不改变上述已检代码，也不把这次 CI 结果冒充其他提交的结果。
 不能把旧 Node 24 或旧完整变异成绩写成本次重跑。
 
 下方 B8–B28 是当批历史快照，不把旧“未做远程传输”的描述当成本轮代码状态，也不把旧四页脚本成绩
@@ -106,8 +109,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: publish_authorized_B31_then_verify_GitHub_CI_before_friend_acceptance
-  reason: B31本地验证和独立复核已完成，用户已明确授权本批commit/push；核对实际推送与新提交CI后，再回到既定的双机双原生AI十手验收。
+  recommendation: prepare_two_device_two_Codex_friend_acceptance_after_B31_green_CI
+  reason: B31代码360db26已提交推送且对应两平台GitHubCI成功；工程兼容阻塞已解决，下一产品证据是既定的双机双原生AI十手验收。
 
 continuous_risk_authorization:
   status: active
@@ -149,7 +152,7 @@ delegated_mission:
   agreed_product_shape: 正常德扑加本席真实AI公开交流；不扩大当前MVP。
   authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
   current_batch_goal: 收尾已推送B30的Node22测试夹具与验证驱动兼容修补；不改产品规则、远程入口或UI，不把本地验证算作GitHub或双机双原生AI十手验收，不采购服务器或建设大厅。
-  current_batch_state: B31_publish_authorized_waiting_remote_and_GitHub_evidence
+  current_batch_state: B31_code_pushed_CI_passed_waiting_real_friend_acceptance
   in_scope: [local_regression, loopback_synthetic_tables, remote_connector_implementation_without_public_exposure, two_friend_workspace_UI, temporary_seat_connections, bounded_queue_tests, evidence_and_owned_resource_cleanup]
   out_of_scope: [global_MCP_reload, automated_or_additional_host_restart, model_override, second_model_API, new_task_creation, public_or_remote_listen, real_private_data, paid_service_activation, commits_or_deploy]
   allowed_autonomous_decisions: [test_order, finite_batch_size, evidence_capture, in_scope_reversible_repair]
@@ -275,7 +278,7 @@ project_intelligence:
       challenge: 每机一人不是入口强制条件；共享协调器令牌不能被当作逐席授权。
       plan_ref: TAKEOVER-PLAN.md
     current_reality:
-      implemented_basis: 当前产品Git基线为已推送的4135611，包含既有权威栈、逐席授权、本地Codex入口及B30显式HTTPS入口、出站连接器、按席注册与ACK、双人优先的外部Web游戏页/配置页。B31只改测试夹具及验证驱动；没有第二套权威、第二模型API或代玩家下注。
+      implemented_basis: 产品实现保持4135611，B31验证修复360db26已推送且GitHubCI通过；包含既有权威栈、逐席授权、本地Codex入口及B30显式HTTPS入口、出站连接器、按席注册与ACK、双人优先的外部Web游戏页/配置页。B31只改测试夹具及验证驱动；没有第二套权威、第二模型API或代玩家下注。
       first_gap: 由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复及撤权。不在正在运行的开发任务上重试通知，不把本地脚本当作远程实机。Claude、大厅和服务器采购不阻塞这个阶段。
       evidence_limit: B30当前本地候选已有1456项Node与693项变异的身份约束组合覆盖、双席整合及四页长程通过；第一次完整gate本身exit1，修正验证定义后只重跑全部受影响集合，不冒充第二次完整gate exit0。真实隧道、第二真实AI和两机十手仍未跑。B14和B19有单席原生公开样本；最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；页面本人确认不是宿主空闲遥测。旧CLI、四浏览器13手和当前脚本连接器都不能替代两真人验收，历史清理阻塞不被本轮回归追认为成功。
     candidates_unknowns_history:

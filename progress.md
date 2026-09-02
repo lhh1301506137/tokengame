@@ -2,13 +2,14 @@ Original prompt: 继续（恢复并实现 TG-L3-CODEX-BRIDGE-SPIKE 本地聚焦�
 
 # TokenGame 开发进度
 
-## 2026-09-03 — B31（Node 22 本地验证修复，待提交推送授权）
+## 2026-09-03 — B31（Node 22 验证修复已推送，GitHub CI 通过）
 
 - B30 已以 `4135611` 提交推送；其 GitHub Node 22 两平台失败，原因分别为跨平台 PATH 夹具不一致、纯 broker 单测等待 `unref()` 计时器导致取消。B31只修测试、验证驱动及记录，65个产品文件和CI配置未变，未启动真实宿主或公网。
 - 首次变异验证因默认 reporter 不匹配在基线阶段 exit 2。修复后又暴露取消误判、撤权负例不推进时钟，以及独立复核发现的异常退出截断报告；保留各次失败，增加显式 reporter/同一 Node、确定性时钟、绿基线计数与13项隔离驱动回归，没有放宽 INVALID 为通过。
 - 最终同一239文件身份：Windows Node 22 `1475/1475`（98100.0179ms）、Ubuntu/WSL `1467/1467`（77169.9458ms），fail/cancelled/skipped/todo均0；两平台各15条入口变异和10条远程变异全部KILLED并还原。限定独立复核为各29/29，旧P2的基线2→报告1反例现为INVALID。完整693条、浏览器和原生验证本轮不重跑，旧B30成绩不改写为本轮结果。
 - 捕获器保留13次主线程命令，累计进程墙钟573461.6865ms；其中最终6次204392.3042ms。这不是总会话等待时间或token成本，代理、基线、下载和文档时间另列或unknown。事实、哈希与分阶段来源见 `.trellis/tasks/08-26-public-ai-table-talk/research/b31-ci-verification-20260903.json`，限定结论见 `REVIEW-LOG.md#b31-node22-ci-verification`。
-- 本批修复尚未commit/push，新提交GitHub CI未跑；等待本批明确授权后发布并核对CI，再回到既定两好友真人测试。`proactive_wake_verified=false`，双机双原生AI十手未验收，MVP父节点继续开放。旧观察报告未改动。
+- 用户随后明确授权`commit+push`（`DEC-20260903-001`）。代码提交`360db26`已推送，远端与本地一致；对应GitHub run `33690705812`两平台成功，实际Node22.23.2下Windows1475/1475（92467.9119ms）、Ubuntu1467/1467（68002.490871ms），失败/取消/跳过均0。未重跑本地全量，发布前核对239文件身份仍匹配冻结证据；发布事实见`.trellis/tasks/08-26-public-ai-table-talk/research/b31-publication-20260903.json`。后续仅文档收尾另成提交，不改变已检代码。
+- 下一步回到既定两好友真人测试，不能把CI通过当真人验收。`proactive_wake_verified=false`，双机双原生AI十手未验收，MVP父节点继续开放；没有启动隧道、模型或真人牌局，旧观察报告未改动。
 
 ## 2026-09-03 — B30（两好友远程候选，本地已验证）
 
