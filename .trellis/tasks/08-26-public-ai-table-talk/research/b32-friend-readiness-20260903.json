@@ -1,0 +1,62 @@
+{
+  "schema": "tokengame.friend-readiness.v1",
+  "batch": "B32",
+  "date": "2026-09-03",
+  "base_commit": "ccbbcc21dad0aeea797fff4a410bdf734152977f",
+  "implementation_commit": "1f522d399ad8dd7a649353682244faf75c56d208",
+  "scope": {
+    "goal": "清除双好友实测前可由本地开发闭合的阻塞，并把剩余真人条件写成可执行清单",
+    "product_files_changed": false,
+    "changed_surfaces": [
+      "Node 24 下变异报告器取消语义测试夹具",
+      "Windows/Linux 的 Node 22/24 CI 矩阵",
+      "两好友预检与结果回填说明",
+      "测试质量规范"
+    ],
+    "semantic_delta": "none"
+  },
+  "verification": {
+    "node24_targeted": {"runtime": "24.13.1", "tests": 13, "passed": 13, "failed": 0, "duration_ms": 6124.8272, "exit_code": 0},
+    "node22_targeted": {"runtime": "22.23.2", "tests": 13, "passed": 13, "failed": 0, "duration_ms": 6186.6323, "exit_code": 0},
+    "node24_full": {"runtime": "24.13.1", "tests": 1475, "passed": 1475, "failed": 0, "cancelled": 0, "skipped": 0, "duration_ms": 77144.3583, "exit_code": 0},
+    "node22_full": {"runtime": "22.23.2", "tests": 1475, "passed": 1475, "failed": 0, "cancelled": 0, "skipped": 0, "duration_ms": 97256.6134, "exit_code": 0},
+    "node24_complete_gate": {"runtime": "24.13.1", "tests": 1475, "tests_passed": 1475, "mutations_total": 693, "mutations_killed": 693, "mutations_survived": 0, "mutations_unassessed": 0, "result": "PASS", "duration_ms": "unknown", "exit_code": 0},
+    "loopback_two_seat_browser": {
+      "evidence_pointer": "H:/tokengold/.codex/b32-friend-readiness-20260903-a1/report.json",
+      "environment": "loopback-two-scripted-ai",
+      "checks": 18,
+      "passed": 18,
+      "errors": 0,
+      "cleanup_passed": 7,
+      "cleanup_total": 7,
+      "duration_ms": 14598.8638,
+      "native_model_calls": 0,
+      "native_queue_calls": 0,
+      "public_tunnel_calls": 0,
+      "screenshots_inspected_by_primary": true,
+      "exit_code": 0
+    },
+    "independent_review": {"provider": "trellis-check", "findings": 0, "files_modified_by_reviewer": 0, "node22_targeted": "13/13", "node24_targeted": "13/13", "ci_yaml": "pass", "markdown_links": "pass", "node_check": "pass", "diff_check": "pass"}
+  },
+  "post_verification_cleanup": {
+    "known_table_listeners": 0,
+    "tokengame_processes": 0,
+    "active_model_connection": false,
+    "mutation_residue": false,
+    "ignored_revoked_connection_downloads": {"count": 7, "read_or_deleted_in_B32": false, "blocking_friend_test": false, "note": "既有本机历史失效文件，不在 Git 中；由真人另行决定删除。"}
+  },
+  "release_state": {"local_implementation_commit_created": true, "pushed": false, "github_node22_node24_matrix": "not_run", "reason": "本轮没有用户明确 push 授权；远端仍在 B31 收尾提交。"},
+  "acceptance_state": {
+    "local_friend_test_carrier": "ready",
+    "two_devices": "not_run",
+    "two_humans": "not_run",
+    "two_native_codex_seats": "not_run",
+    "public_https_tunnel": "not_run",
+    "ten_hands": "not_run",
+    "same_hand_public_ai_bubble_per_seat": "not_run",
+    "human_feedback_and_signoff": "not_run",
+    "proactive_wake_verified": false,
+    "mvp_complete": false
+  },
+  "next_owner": "user_for_push_then_primary_for_GitHub_matrix_verification_then_user_and_friend_for_real_acceptance"
+}

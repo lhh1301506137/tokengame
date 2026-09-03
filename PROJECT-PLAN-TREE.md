@@ -1021,7 +1021,7 @@ B27确认用户完成第二次手动重启，当前任务实际且唯一加载�
 
 B28没有重试B27通知，而是把可控的空闲载体前提写成产品合同：managed启动横幅、固定目标页面说明与每窗本人确认、项目Skill及三份入口/操作文档均要求目标游戏任务先结束当前回复并保持空闲；同时明确queue已接收不等于模型开始或权威结清。聚焦Node首轮18/19后修正同义措辞，最终19/19、1833.6463ms；脚本浏览器46/46、20729.272ms、0错误、6项清理通过，桌面与320px目检；完整Node1356/1356、79933.5359ms。Skill普通校验遇GBK载体失败，同一校验器加UTF-8模式后有效。本批0通知/queue/原生模型/权威评估，活动槽不存在且7802无监听。事实见`REVIEW-LOG.md#b28-idle-game-task-handoff`。
 
-**产品路线恢复点是B30候选的真人两机验收；B31代码已推送且对应CI通过。** 用户已确认先完成两好友MVP，再考虑服务器和公开大厅。B30不改变既有2–4席扑克规则，只增加显式HTTPS入口、各机出站连接器和外部Web游戏/配置工作面。真实测试时，两人进入同一外部牌桌，并在各自空闲的Codex游戏任务运行`codex:connect`；好友不能用`codex:play`另起本地牌桌。由本人逐席授权并开启有限通知窗，按权威start和唯一terminal判断成功，不以queue接收数代替。B30本地验证事实见`.trellis/tasks/08-26-public-ai-table-talk/research/b30-local-verification-20260903.json`，真人步骤见`docs/REMOTE-FRIEND-MVP.md`。
+**产品路线恢复点仍是B30候选的真人两机验收；B32已把本地工程面收口为待发布提交。** 用户已确认先完成两好友MVP，再考虑服务器和公开大厅。B30不改变既有2–4席扑克规则，只增加显式HTTPS入口、各机出站连接器和外部Web游戏/配置工作面。真实测试时，两人进入同一外部牌桌，并在各自空闲的Codex游戏任务运行`codex:connect`；好友不能用`codex:play`另起本地牌桌。由本人逐席授权并开启有限通知窗，按权威start和唯一terminal判断成功，不以queue接收数代替。真人步骤和回填格式见`docs/REMOTE-FRIEND-MVP.md`。
 
 工程收尾补充：B30已以`4135611`推送，其Node 22两平台CI均失败。B31只修测试夹具和验证驱动，
 不推进或关闭上面的MVP验收节点；冻结代码的Windows 1475项、WSL 1467项及相关变异各25条已通过，
@@ -1029,12 +1029,17 @@ B28没有重试B27通知，而是把可控的空闲载体前提写成产品合�
 修补、复核与实际发布事实见`REVIEW-LOG.md#b31-node22-ci-verification`；不能把本机WSL当GitHub验证，也不能把
 GitHub通过当两好友验收。此前的Node 24和693条变异记录仍是B30历史范围，不是B31全量重跑。
 
+B32修复了默认Node24下仅测试夹具的取消语义超时，并把CI扩为Node22/24×Windows/Linux；产品代码未改。
+同字节Node22与Node24完整测试各1475/1475，Node24完整gate实际exit0且693/693变异全杀；双席本地浏览器
+18/18、清理7/7并完成桌面截图目检。实现已提交为`1f522d3`但未push，因此新的远端四作业CI为not_run。
+机器事实见`.trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json`。
+
 本轮没有自动开公网隧道、创建宿主任务、修改模型或采购服务器。两台设备、两个真实AI和十手体验尚未验证，不能因本地脚本通过关闭MVP。页面确认只是用户声明，不是宿主空闲遥测。`proactive_wake_verified=false`，`TG-EU-PROACTIVE-WAKE-SPIKE`和`TG-EU-PLAYABILITY-GATE`继续开放；四真人完整UAT后置，不抹除其历史要求。
 
-- `latest_review_ref`: `REVIEW-LOG.md#b31-node22-ci-verification`（工程证据；MVP闭合仍归B30真人验收）
-- `readiness`: `B30_local_candidate_verified_real_two_friend_acceptance_not_run`
-- `known_failures`: 相对cwd运行时失败是已修历史；B27同一活动任务1/1/0的精确排队规则unknown；本轮真实隧道、双原生AI与十手真人验收未跑，旧七份失效下载未动。Claude、内嵌UI和四真人UAT仍未验证，但不作为两好友阶段的新增前置。
-- `next_owner`: `user_and_friend_two_device_acceptance_with_codex_primary_support`
+- `latest_review_ref`: `REVIEW-LOG.md#b32-friend-readiness`（本地工程就绪；MVP闭合仍归B30真人验收）
+- `readiness`: `B32_local_friend_carrier_ready_commit_not_pushed_real_two_friend_acceptance_not_run`
+- `known_failures`: 相对cwd运行时失败是已修历史；B27同一活动任务1/1/0的精确排队规则unknown；B32远端Node22/24矩阵因未push而not_run，真实隧道、双原生AI与十手真人验收未跑，旧七份失效下载未动。Claude、内嵌UI和四真人UAT仍未验证，但不作为两好友阶段的新增前置。
+- `next_owner`: `user_for_push_then_primary_for_GitHub_matrix_verification_then_user_and_friend_acceptance`
 B9过滤日志复算：成功样本从玩家事件到权威公开33.460秒，公开后收尾11.556秒；已超过该次行动截止3.822秒。
 这些是已存日志的分段事实，不是本轮新模型调用，更不能称为实时性能通过。
 

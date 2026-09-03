@@ -4788,3 +4788,84 @@ Windows `1475/1475`、92467.9119ms；Ubuntu `1467/1467`、68002.490871ms；失�
 发布回执与恢复点由后续仅文档提交保存；其新SHA与本次代码CI分别看待，不靠回执文字让未运行的新作业自动通过。
 最终收尾语言检查回执为 `artifacts/b31-publish-closeout-language-20260903.json`，以其实际结果为准。
 下一产品工作是双机双原生AI十手真人验收，不继续拆分CI叶、不启动模型或公网、不把本次提交当MVP交付。
+
+<a id="b32-friend-readiness"></a>
+## 2026-09-03 — B32：双好友实测前本地就绪收口
+
+状态：本地工程就绪提交已创建，尚未推送；远端四作业 CI 与双真人验收均未执行，不关闭 MVP。
+
+### 起点与修补
+
+用户要求判断双真人联调是否准备好，并授权继续清除本地可解决问题。仓库起点为
+`ccbbcc21dad0aeea797fff4a410bdf734152977f`，本轮没有启动公网隧道、创建宿主任务、调用原生模型、
+修改宿主配置或改变产品规则。默认 Node 24.13.1 的已知红项来自两条故意悬空 Promise 的测试：
+夹具依赖事件循环空闲时的版本偶然取消行为，外层15秒进程超时先发生。修补只给这两个专用
+`node:test` 用例设置100ms timeout，并把断言收紧到 cancelled 必须由变异报告器记为 INVALID；
+生产代码未改。相同夹具在Node22.23.2与Node24.13.1均由Primary及独立检查实际通过13/13。
+
+CI从Node22的Windows/Linux两作业扩为Node22/24×Windows/Linux四作业；README、贡献指南与
+两好友说明同步当前覆盖。远程指南新增同SHA、干净工作树、运行时及`npm test`预检，并给出不记录
+邀请码、令牌、任务ID或私密聊天的结果回填格式。它没有把GitHub协作者身份写成联机条件，也没有
+把一个人操作两端或本地脚本写成真人签字。
+
+### 当前验证与边界
+
+冻结字节上，Primary实际执行Node24完整1475/1475（77144.3583ms）和Node22完整1475/1475
+（97256.6134ms），失败、取消、跳过均0。随后Node24完整门禁真实exit0：测试1475/1475，
+693条变异全部杀掉，0存活、0未评估，并在结束后确认没有源码残留。双席本地浏览器载体实际
+18/18、14598.8638ms、0浏览器错误、清理7/7；两张桌面截图已由Primary目检。该浏览器运行明确是
+`loopback-two-scripted-ai`，原生模型、原生queue和公网隧道调用均为0。
+
+独立Trellis检查没有finding或自修；其Node22/24聚焦各13/13，CI YAML、Markdown链接、语法与
+diff检查均通过。最终已知牌桌端口监听0、TokenGame进程0、活动连接槽不存在。七份既有已撤权下载
+仍是Git忽略的本机历史文件，本轮未读未删；它们不进入提交或好友克隆，也不作为已清理证据。
+
+六个实现/说明文件已形成本地提交
+`1f522d399ad8dd7a649353682244faf75c56d208`，提交说明为
+`test: harden friend MVP readiness on Node 24`。本轮未获新的push授权，远端仍在B31收尾提交，
+所以新的四作业CI必须写`not_run`，不能复用B31的Node22结果。完整机器事实见
+`.trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json`。
+
+```yaml
+execution_closure:
+  contract: dual-ai.execution-closure.v1
+  result_id: EC-TG-B32-FRIEND-READINESS-LOCAL
+  detail_level: evidence_slice
+  scope:
+    scope_id: B32_local_friend_readiness
+    exact_outcome: 清除双好友实测前的Node24本地红项，固化双版本CI与可执行真人验收入口；不是远端CI、双真人或MVP通过。
+    owner_ref: REVIEW-LOG.md#b32-friend-readiness
+  trigger: implementation_and_verification
+  basis:
+    implementation_identity:
+      kind: git_commit
+      scope: 六个测试、CI、规范与好友说明文件；产品代码未改。
+      identity: 1f522d399ad8dd7a649353682244faf75c56d208
+      status: current_local_not_pushed
+    verification_identities:
+      - evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json
+        identity: current_file
+        status: current
+    freshness: current
+  acceptance:
+    derivation_timing: before_execution
+    obligations:
+      - {id: B32-A1, predicate: 支持范围内Node22与Node24完整测试均无失败或取消。, required: yes, real_condition: 同一冻结字节分别实际执行完整Node测试。}
+      - {id: B32-A2, predicate: 完整变异门禁无存活、未评估或源码残留。, required: yes, real_condition: 无并发编辑时实际执行完整gate并核对工作树。}
+      - {id: B32-A3, predicate: 双席本地远程载体、浏览器清理与可见界面保持可用。, required: yes, real_condition: 产品入口、两隔离浏览器与两脚本Connector实际执行并目检截图。}
+      - {id: B32-A4, predicate: 好友开测步骤能冻结同一提交且结果记录不收集秘密。, required: yes, real_condition: 独立检查命令、YAML、链接与说明边界。}
+      - {id: B30-REAL-FRIENDS, predicate: 两设备、两真人、两原生Codex完成十手且双方各有同手公开AI气泡和签字。, required: no, real_condition: 用户与好友在各自设备执行。}
+    selected_surfaces: [unit, mutation, browser, inspection]
+    observations:
+      - {obligation_id: B32-A1, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json#/verification, result: pass, caveat: 本机Windows，不是GitHub。}
+      - {obligation_id: B32-A2, evidence_type: executed, correspondence: direct, evidence_pointer: .trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json#/verification/node24_complete_gate, result: pass, caveat: Node24本机完整门禁。}
+      - {obligation_id: B32-A3, evidence_type: executed, correspondence: direct, evidence_pointer: H:/tokengold/.codex/b32-friend-readiness-20260903-a1/report.json, result: pass, caveat: 脚本AI与回环网络，原生和公网调用均0。}
+      - {obligation_id: B32-A4, evidence_type: inspection, correspondence: direct, evidence_pointer: docs/REMOTE-FRIEND-MVP.md, result: pass, caveat: 真实执行仍待双方。}
+      - {obligation_id: B30-REAL-FRIENDS, evidence_type: not_run, correspondence: direct, evidence_pointer: docs/REMOTE-FRIEND-MVP.md#两好友实测清单, result: not_run, caveat: 本地绿色不能替代。}
+    skipped: [GitHub四作业矩阵待push, 真实HTTPS隧道, 两个原生Codex席, 十手与双方签字]
+    result: pass_with_notes
+  semantic_delta: none
+  state: closed
+  claim_limits: [只关闭本地工程就绪切片, 不宣布远端CI通过, 不升级proactive_wake_verified, 不关闭双真人验收或MVP]
+  next_owner: user_for_push_then_primary_for_GitHub_matrix_verification_then_user_and_friend_for_real_acceptance
+```
