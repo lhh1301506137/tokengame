@@ -1,5 +1,25 @@
 # TokenGame 项目决策记录
 
+## DEC-20260903-002：授权推送 B32 就绪提交并核对四作业 CI
+
+metadata:
+  date: 2026-09-03
+  source: user_direct
+  scope: release
+  status: user_confirmed
+  supersedes: none
+  affected_docs: [STATUS.md, PROJECT-PLAN-TREE.md, REVIEW-LOG.md, progress.md]
+  resulting_changes:
+    - doc: REVIEW-LOG.md#b32-friend-readiness
+      change: 保留本地冻结证据，追加实际推送、远端SHA与四作业GitHub CI结果。
+
+question: 是否允许把已经完成本地验证和独立复核的 B32 两个提交推送到既有 origin/main，并在推送后核对远端 SHA 与对应 CI？
+why_it_matters: GitHub 协作者只有在 B32 到达远端后才能取得同一候选；本地通过和授权本身都不能替代远端作业事实。
+recommended_answer: 非强制推送既有 `1f522d3` 与 `9ac4ce1`，等待 Node 22/24 × Windows/Linux 四作业给出真实结果；不部署、不启动牌局、不改仓库可见性。
+user_answer: 授权
+decision: 允许把已核定的 B32 实现与就绪记录非强制推送至既有 https://github.com/lhh1301506137/tokengame.git 的 main，并读取对应 GitHub Actions 结果。许可覆盖保存本次发布事实所需的仅文档收尾，不是后续产品开发或长期自动推送许可。
+follow_up: 精确核对本地与远端 SHA、对应 run 的 headSha 和四个作业日志；失败不得写成通过。发布成功后仍只进入两好友真人验收，不启动公网隧道、模型或牌局，不关闭 MVP、主动唤醒未知或父任务。
+
 ## DEC-20260903-001：授权提交、推送 B31 验证修复并核对 GitHub CI
 
 metadata:

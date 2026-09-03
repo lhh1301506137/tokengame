@@ -4869,3 +4869,24 @@ execution_closure:
   claim_limits: [只关闭本地工程就绪切片, 不宣布远端CI通过, 不升级proactive_wake_verified, 不关闭双真人验收或MVP]
   next_owner: user_for_push_then_primary_for_GitHub_matrix_verification_then_user_and_friend_for_real_acceptance
 ```
+
+### 后续发布回执（不改写上面的本地冻结证据）
+
+用户回复“授权”，形成 `DEC-20260903-002`。现有两个提交已非强制推送：实现提交
+`1f522d399ad8dd7a649353682244faf75c56d208` 与就绪记录提交
+`9ac4ce1a9113c09f9e8b9998cbea5a3e1ecc3ffa`；推送 exit 0，`git ls-remote` 确认远端 main
+与候选 `9ac4ce1` 一致，随后本地工作树干净且无领先或落后。
+
+[GitHub run 33774656669](https://github.com/lhh1301506137/tokengame/actions/runs/33774656669)
+的 `headSha` 精确为 `9ac4ce1a9113c09f9e8b9998cbea5a3e1ecc3ffa`，状态为 completed/success。
+四个作业均成功：Node22.23.2 的 Windows `1475/1475`、93835.9954ms，Ubuntu
+`1467/1467`、68054.025576ms；Node24.19.0 的 Windows `1475/1475`、95210.3488ms，
+Ubuntu `1467/1467`、70676.154434ms；失败与取消均0。Ubuntu少8项来自既有Windows专属注册边界，
+不是漏跑的失败。Actions 对 `checkout@v4` 与 `setup-node@v4` 的 Node20弃用提示属于动作载体警告，
+不改变项目矩阵实际使用的Node22/24版本，也没有导致作业失败。
+
+完整作业ID、时刻、版本、计数与边界见
+`.trellis/tasks/08-26-public-ai-table-talk/research/b32-publication-20260903.json`。本次不因收集远端结果
+重跑本地测试，不启动公网、模型或真人牌局。真实双机、双真人、双原生Codex、十手、双方同手公开AI气泡、
+断线恢复与签字仍为 `not_run`；因此工程候选已进入“只待真人验收”，MVP、`proactive_wake_verified`
+和 `TG-EU-PLAYABILITY-GATE` 均不提前关闭。

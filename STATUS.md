@@ -2,14 +2,15 @@
 
 更新日期：2026-09-03
 
-## 当前工作：B32 本地已收口，待推送与远端 CI 后进行两好友实测
+## 当前工作：B32 已发布且四作业 CI 通过，只待两好友真人验收
 
 用户已确认先做“两好友、各自 Codex、十手私人房”的 MVP，再考虑购买服务器和公开大厅。
 B30 已在既有权威栈上实现显式 HTTPS 入口、本机出站连接器和外部 Web 的游戏/配置工作面；B31 已修复
 Node 22 的 CI 兼容并在远端通过。B32 清除了默认 Node 24 下最后一项已知本地红测，将 CI 扩为
 Node 22/24 × Windows/Linux，并补齐好友开测前的同提交预检和结果回填；产品代码、宿主配置与玩法未改。
-实现已形成本地提交 `1f522d3`，尚未 push，因此新增的四作业远端矩阵仍为 `not_run`，朋友现在从
-GitHub 拉到的仍是 B31 状态。真实隧道、两台设备、第二席原生 AI 与十手真人签字也尚未执行。
+实现提交 `1f522d3` 与就绪记录提交 `9ac4ce1` 已推送，远端 main 与候选 SHA `9ac4ce1` 一致；
+[对应 GitHub CI](https://github.com/lhh1301506137/tokengame/actions/runs/33774656669) 的四个作业全部成功。
+朋友现在可从 GitHub 取得 B32 候选。真实隧道、两台设备、第二席原生 AI 与十手真人签字仍尚未执行。
 入口与操作边界见 [远程内测指南](docs/REMOTE-FRIEND-MVP.md)，验收事实统一见
 [B32 就绪记录](REVIEW-LOG.md#b32-friend-readiness)。
 B30 提交前的历史证据为身份约束的 Node `1456/1456`、变异 `693/693`、双席浏览器 `18/18` 与四页长程
@@ -20,10 +21,11 @@ Linux/WSL 为 `1467/1467`，相关变异各 `25/25`。用户已按 `DEC-20260903
 `360db26` 的推送，远端已核对一致；[该提交的 GitHub CI](https://github.com/lhh1301506137/tokengame/actions/runs/33690705812)
 两平台均成功，实际 Node `22.23.2` 的 Windows `1475/1475`、Ubuntu `1467/1467`，没有失败或取消。
 发布回执见 `.trellis/tasks/08-26-public-ai-table-talk/research/b31-publication-20260903.json`；
-后续仅文档提交不改变上述已检代码，也不把这次 CI 结果冒充其他提交的结果。B32 当前同字节本地结果为：
+后续仅文档提交不改变上述已检代码，也不把候选 CI 冒充真人结果。B32 当前同字节本地结果为：
 Node 22.23.2 与 Node 24.13.1 各 `1475/1475`；Node 24 完整门禁 `693/693` 变异全杀且 exit 0；
 双席脚本浏览器 `18/18`、清理 `7/7`。这些都不是双真人或公网证据，完整事实见
-`.trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json`。
+`.trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json`；发布事实另见
+`.trellis/tasks/08-26-public-ai-table-talk/research/b32-publication-20260903.json`。
 
 下方 B8–B28 是当批历史快照，不把旧“未做远程传输”的描述当成本轮代码状态，也不把旧四页脚本成绩
 当成两好友真实验收。原四真人完整 UAT 保留为后续扩展，本轮签字按活动 PRD 的 MVP-0.1 最新节。
@@ -112,8 +114,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: push_B32_then_verify_four_job_CI_then_run_two_friend_acceptance
-  reason: B32本地完整门禁和双席脚本载体已通过，产品代码未变；实现提交尚未推送，远端Node22/24矩阵与双机双原生AI十手验收都未执行。
+  recommendation: run_two_friend_acceptance_on_B32_candidate
+  reason: B32已推送且对应Node22/24×Windows/Linux四作业CI全部成功；当前首个未验证边界是双机双原生AI十手验收。
 
 continuous_risk_authorization:
   status: active
@@ -155,7 +157,7 @@ delegated_mission:
   agreed_product_shape: 正常德扑加本席真实AI公开交流；不扩大当前MVP。
   authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
   current_batch_goal: 清除双好友实测前的本地运行时兼容阻塞，固化Node22/24验证与真人回填入口；不改产品规则、远程入口或UI，不把本地验证算作GitHub或双机双原生AI十手验收。
-  current_batch_state: B32_local_ready_committed_not_pushed_real_friend_acceptance_not_run
+  current_batch_state: B32_published_four_job_ci_passed_real_friend_acceptance_not_run
   in_scope: [local_regression, loopback_synthetic_tables, remote_connector_implementation_without_public_exposure, two_friend_workspace_UI, temporary_seat_connections, bounded_queue_tests, evidence_and_owned_resource_cleanup]
   out_of_scope: [global_MCP_reload, automated_or_additional_host_restart, model_override, second_model_API, new_task_creation, public_or_remote_listen, real_private_data, paid_service_activation, commits_or_deploy]
   allowed_autonomous_decisions: [test_order, finite_batch_size, evidence_capture, in_scope_reversible_repair]
@@ -281,9 +283,9 @@ project_intelligence:
       challenge: 每机一人不是入口强制条件；共享协调器令牌不能被当作逐席授权。
       plan_ref: TAKEOVER-PLAN.md
     current_reality:
-      implemented_basis: 产品实现保持4135611；B31验证修复已推送且Node22两平台CI通过；B32本地提交1f522d3只修Node24测试夹具、扩CI矩阵并补好友验收说明，产品代码未变。既有权威栈、逐席授权、本地Codex入口及B30显式HTTPS入口、出站连接器、按席注册与ACK、双人优先的外部Web游戏页/配置页保持同一实现。
+      implemented_basis: 产品实现保持4135611；B31验证修复已推送且Node22两平台CI通过；B32提交1f522d3只修Node24测试夹具、扩CI矩阵并补好友验收说明，产品代码未变，候选9ac4ce1已推送。既有权威栈、逐席授权、本地Codex入口及B30显式HTTPS入口、出站连接器、按席注册与ACK、双人优先的外部Web游戏页/配置页保持同一实现。
       first_gap: 由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复及撤权。不在正在运行的开发任务上重试通知，不把本地脚本当作远程实机。Claude、大厅和服务器采购不阻塞这个阶段。
-      evidence_limit: B32同字节Node22/24完整测试各1475/1475；Node24完整gate实际exit0且693/693全杀；双席脚本浏览器18/18、清理7/7。CI四作业因未push而not_run；真实隧道、第二真实AI和两机十手仍未跑。B14和B19有单席原生公开样本；最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；旧CLI、四浏览器13手和当前脚本连接器都不能替代两真人验收，历史清理阻塞不被本轮回归追认为成功。
+      evidence_limit: B32同字节Node22/24完整测试各1475/1475；Node24完整gate实际exit0且693/693全杀；双席脚本浏览器18/18、清理7/7。候选9ac4ce1的GitHub四作业全部成功：Windows Node22/24各1475项，Ubuntu Node22/24各1467项。真实隧道、第二真实AI和两机十手仍未跑。B14和B19有单席原生公开样本；最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；旧CLI、四浏览器13手和当前脚本连接器都不能替代两真人验收，历史清理阻塞不被本轮回归追认为成功。
     candidates_unknowns_history:
       selected: 复用单协调器与托管，真人逐席绑定，权威启动评估时返回同席快照。
       rejected: 为每席复制权威/托管，或只写说明却保留共用通行令牌。
@@ -295,7 +297,7 @@ project_intelligence:
     - {unknown_id: U-TG-LOCAL-BRIDGE-AUTH, owner: professional_design_unknown, status: open, blocking_boundary: release, blocked_scope_refs: [remote_release]}
     - {unknown_id: U-TG-TWO-FRIEND-UAT, owner: evidence_unknown, status: open, blocking_boundary: user_acceptance, blocked_scope_refs: [MVP_0_1_two_device_two_Codex_ten_hand_signoff]}
     - {unknown_id: U-TG-FOUR-HUMAN-UAT, owner: evidence_unknown, status: deferred_after_MVP_0_1, blocking_boundary: user_acceptance, blocked_scope_refs: [four_human_playability_signoff]}
-  readiness: B32_local_friend_carrier_ready_commit_not_pushed_real_two_friend_acceptance_not_run
+  readiness: B32_published_candidate_ci_green_real_two_friend_acceptance_not_run
   freshness: current
   execution_closure_ref: REVIEW-LOG.md#b32-friend-readiness
   latest_probe_evidence_ref: REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target

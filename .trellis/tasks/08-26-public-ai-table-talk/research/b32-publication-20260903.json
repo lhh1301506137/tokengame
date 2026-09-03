@@ -1,0 +1,81 @@
+{
+  "schema": "tokengame.b32-publication-receipt.v1",
+  "recorded_at": "2026-09-03",
+  "snapshot": "B32候选推送及其四作业CI结束后的事实；本回执由后续仅文档提交保存。",
+  "authorization": "PROJECT-DECISION-LOG.md#DEC-20260903-002",
+  "repository": "https://github.com/lhh1301506137/tokengame",
+  "branch": "main",
+  "implementation_commit": "1f522d399ad8dd7a649353682244faf75c56d208",
+  "candidate_commit": "9ac4ce1a9113c09f9e8b9998cbea5a3e1ecc3ffa",
+  "push": {
+    "exit_code": 0,
+    "from": "ccbbcc21dad0aeea797fff4a410bdf734152977f",
+    "to": "9ac4ce1a9113c09f9e8b9998cbea5a3e1ecc3ffa",
+    "force": false,
+    "remote_head_matched": true,
+    "working_tree_clean_after_candidate_push": true
+  },
+  "github_ci": {
+    "database_id": 33774656669,
+    "head_sha": "9ac4ce1a9113c09f9e8b9998cbea5a3e1ecc3ffa",
+    "url": "https://github.com/lhh1301506137/tokengame/actions/runs/33774656669",
+    "event": "push",
+    "created_at": "2026-09-03T15:46:49Z",
+    "updated_at": "2026-09-03T15:48:45Z",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Node 24 / ubuntu-latest",
+        "database_id": 100713220751,
+        "runtime": {"node": "v24.19.0", "npm": "11.17.0"},
+        "counts": {"tests": 1467, "pass": 1467, "fail": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 70676.154434},
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 24 / windows-latest",
+        "database_id": 100713221012,
+        "runtime": {"node": "v24.19.0", "npm": "11.17.0"},
+        "counts": {"tests": 1475, "pass": 1475, "fail": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 95210.3488},
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 22 / windows-latest",
+        "database_id": 100713221106,
+        "runtime": {"node": "v22.23.2", "npm": "10.9.8"},
+        "counts": {"tests": 1475, "pass": 1475, "fail": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 93835.9954},
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 22 / ubuntu-latest",
+        "database_id": 100713221109,
+        "runtime": {"node": "v22.23.2", "npm": "10.9.8"},
+        "counts": {"tests": 1467, "pass": 1467, "fail": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 68054.025576},
+        "conclusion": "success"
+      }
+    ],
+    "log_source": "gh run view 33774656669 --log",
+    "nonblocking_annotation": "checkout@v4与setup-node@v4报告Node20动作运行时弃用警告；项目测试矩阵实际版本由setup-node日志确认，四作业均成功。"
+  },
+  "acceptance_state": {
+    "engineering_candidate_published": true,
+    "four_job_ci_passed": true,
+    "two_devices": "not_run",
+    "two_humans": "not_run",
+    "two_native_codex_seats": "not_run",
+    "public_https_tunnel": "not_run",
+    "ten_hands": "not_run",
+    "same_hand_public_ai_bubble_per_seat": "not_run",
+    "disconnect_recovery": "not_run",
+    "human_feedback_and_signoff": "not_run",
+    "proactive_wake_verified": false,
+    "mvp_complete": false
+  },
+  "limits": [
+    "CI通过不等于双真人验收或实时性通过。",
+    "本次没有启动公网入口、模型或牌局，也没有修改宿主配置、仓库可见性或历史。",
+    "本回执所在的后续仅文档提交不改变候选代码；其CI不能倒算为候选CI，候选结果以headSha为9ac4ce1的run为准。",
+    "MVP父任务保持开放。"
+  ],
+  "next_owner": "用户和好友按docs/REMOTE-FRIEND-MVP.md执行两设备、两真人、两原生Codex的十手验收；Primary仅在实测发现可复现问题时继续修补。"
+}

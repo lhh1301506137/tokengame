@@ -4,10 +4,13 @@ Original prompt: 继续（恢复并实现 TG-L3-CODEX-BRIDGE-SPIKE 本地聚焦�
 
 ## 2026-09-03 — B32（双好友实测前本地收口）
 
+- 用户以 `DEC-20260903-002` 授权发布。`1f522d3` 与 `9ac4ce1` 已非强制推送，`git ls-remote`确认远端 main 与候选 `9ac4ce1` 一致；对应 GitHub run `33774656669` 四作业全部成功。Node22.23.2为Windows1475/1475、Ubuntu1467/1467，Node24.19.0为Windows1475/1475、Ubuntu1467/1467，失败和取消均0。发布回执见 `.trellis/tasks/08-26-public-ai-table-talk/research/b32-publication-20260903.json`。
+- CI 通过只关闭发布与远端工程验证，不关闭两好友真人验收。当前代码无需继续本地修补；下一步由用户和好友在两台设备上按 `docs/REMOTE-FRIEND-MVP.md` 完成 HTTPS 同房、两个独立空闲 Codex 游戏任务、至少十手、双方同手公开 AI 气泡、断线恢复与签字。
+
 - 默认 Node 24.13.1 下两条故意悬空 Promise 的变异报告器测试会等到外层 15 秒超时；生产代码无误，夹具错误依赖了版本偶然的事件循环取消行为。两个专用用例现以 100ms `node:test` timeout 明确产生 cancelled，并精确断言必须记为 INVALID。Node 22.23.2 与 Node 24.13.1 聚焦均13/13，完整均1475/1475。
 - 完整 Node 24 门禁本轮真实 exit 0：测试1475/1475，变异693/693全杀，0存活、0未评估。双席本地浏览器载体18/18、清理7/7、14598.8638ms，桌面截图由Primary目检；该脚本的原生模型、原生queue和公网隧道调用仍均为0。
-- CI扩为Node 22/24 × Windows/Linux；远程矩阵尚未执行，必须推送后读取对应提交的Actions结果。好友指南新增同SHA、干净工作树、运行时和`npm test`预检，以及不记录秘密的统一回填格式；没有新增产品能力或改变MVP语义。
-- 独立Trellis检查零finding、零自修；本地实现提交为`1f522d3`，当前尚未push。真实两设备、两名真人、两个独立Codex席、HTTPS入口、十手、双方同手AI公开气泡与签字全部保持not_run；下一步先发布并核对CI，再由用户和好友执行真人验收。
+- 发布前，CI已扩为Node 22/24 × Windows/Linux，但远程矩阵尚未执行；随后真实结果见本节首条。好友指南新增同SHA、干净工作树、运行时和`npm test`预检，以及不记录秘密的统一回填格式；没有新增产品能力或改变MVP语义。
+- 发布前的独立Trellis检查为零finding、零自修；本地实现提交为`1f522d3`，当时尚未push。现在发布与CI已闭合，但真实两设备、两名真人、两个独立Codex席、HTTPS入口、十手、双方同手AI公开气泡与签字仍全部保持not_run；下一步由用户和好友执行真人验收。
 
 ## 2026-09-03 — B31（Node 22 验证修复已推送，GitHub CI 通过）
 
