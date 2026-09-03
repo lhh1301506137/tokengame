@@ -23,9 +23,22 @@
 
 ## 房主准备一次入口
 
-1. 两端准备相同代码版本与 Node.js 22 或更新版本；所有 `npm run` 命令都在有 `package.json` 的
-   `tokengame` 仓库目录执行，不在 `C:\Windows\System32` 执行。项目无需额外的 npm 运行时依赖，
-   但 Codex 和所选隧道客户端仍须就绪。本批开发验证在 Windows；其他系统的真实宿主入口尚未验证。
+1. 两端先冻结同一提交并各自完成本地预检。推荐使用 CI 已覆盖的 Node.js 22 或 24；所有 `npm run`
+   命令都在有 `package.json` 的 `tokengame` 仓库目录执行，不在 `C:\Windows\System32` 执行：
+
+   ```powershell
+   Set-Location "C:\path\to\tokengame"  # 换成各自实际仓库路径
+   git switch main
+   git pull --ff-only
+   git status --short
+   git rev-parse HEAD
+   node --version
+   npm test
+   ```
+
+   两人把 `git rev-parse HEAD` 的完整输出互相核对，必须完全相同；`git status --short` 应无输出，
+   `npm test` 必须退出 0。项目无需额外的 npm 运行时依赖，但 Codex 和所选隧道客户端仍须就绪。
+   本批开发验证在 Windows；其他系统的真实宿主入口尚未验证。
 2. 房主自行选择并显式启动 HTTPS 反向隧道，转发到 `http://127.0.0.1:7802`。
    例如已安装 Cloudflare 的客户端时，在单独终端运行：
 
@@ -36,7 +49,7 @@
 3. 把客户端实际打印的 HTTPS **根地址**交给另一个终端中的 TokenGame：
 
    ```powershell
-   Set-Location "H:\tokengold\tokengame"  # 换成房主实际仓库路径
+   Set-Location "C:\path\to\tokengame"  # 换成房主实际仓库路径
    npm run beta:remote -- "https://实际生成的地址.trycloudflare.com"
    ```
 
@@ -124,6 +137,33 @@ Connector 最长运行一小时只是传输寿命，**不是一小时无限模�
 - [ ] 记录可确认的四段耗时：事件→连接器、queue→模型开始、开始→权威终态、终态→双方可见。
   无精确记录的阶段写 `unknown`；房主、好友与 Codex 的不同机器时钟不可直接相减。
 - [ ] 双方给出可玩性反馈与本轮签字；在此之前不把本地测试通过标为 MVP 完成。
+
+一个人操作两个浏览器或两台设备可以做预检，但不能替代“两名真人分别控制自己的设备、浏览器和
+Codex 游戏任务”的最终签字。任何一项失败都先停止宣称通过，保留最小去敏事实后再修复；不要为了
+凑满十手而跳过失败。
+
+## 本轮结果回填
+
+测试结束后，双方用下面的最小格式记录结果。不要填邀请码、连接令牌、原生任务 ID、下载文件路径或
+聊天隐私；机器间无法可靠对齐的耗时填 `unknown`：
+
+```text
+提交 SHA：
+房主环境：操作系统 / Node / Codex 版本
+好友环境：操作系统 / Node / Codex 版本
+HTTPS 入口：供应商名称（不记录带凭据 URL）
+完成手数：
+房主同手真实 AI 公开气泡：pass / fail（手号）
+好友同手真实 AI 公开气泡：pass / fail（手号）
+房主 Connector 短断恢复：pass / fail
+好友 Connector 短断恢复：pass / fail
+浏览器原席恢复：pass / fail（哪一席）
+敏感信息检查：pass / fail
+四段耗时：事件→连接器 / queue→模型开始 / 开始→终态 / 终态→双方可见
+房主反馈与签字：
+好友反馈与签字：
+未完成项或失败事实：
+```
 
 ## 开发者的协议边界
 

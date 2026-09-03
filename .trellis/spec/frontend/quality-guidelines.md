@@ -28,6 +28,7 @@
 - 时间相关状态机通过注入 `now` 和 `idFactory` 做确定性测试，不依赖真实等待。
 - 模拟其他平台时，`platform`、路径实现和文件系统夹具必须一致。例如 Windows PATH 用 `path.win32` 加精确路径白名单的虚拟文件系统；不能只设 `platform: "win32"`，再让 Linux 文件系统查转换后的 Windows 路径。模拟分支证明路径规则，当前平台真实临时文件用例另行保留，两者都不代表真实 Codex 宿主已可用。
 - 仅剩 `unref()` 定时器的 Promise 不会让 Node 事件循环继续存活。长轮询纯单元测试应注入 `now/setTimeout/clearTimeout` 并显式推进至截止，断言到期前未完成、到期后完成，以及送达/取消/撤权/关闭后的计时器和监听器清理；实际 HTTP 持有服务器与连接的路径另由集成测试覆盖。不能为夹具保活而修改生产 `unref()`、添加无关长计时器或固定 sleep。
+- 故意悬空 Promise 来验证 `node:test` 取消语义时，必须给该测试或 suite 设置短而明确的 `timeout`，并断言报告器产出的 `cancelled`/`INVALID` 结果；不能依赖“事件循环空闲后自动取消”的版本偶然行为。相关验证至少在 CI 支持的最低 Node 主版本和当前覆盖的新主版本各跑一次。本项目当前矩阵是 Node 22 与 24。
 - 任何用户或模型文本进入 DOM 时使用 `textContent`。
 - 面向玩家的长度上限用 `Intl.Segmenter` 数字素，不用 `String.length`。
 

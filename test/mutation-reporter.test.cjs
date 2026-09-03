@@ -10,7 +10,8 @@ const { spawnSync } = require("node:child_process");
 const ROOT = path.resolve(__dirname, "..");
 const SOURCE = '"use strict";\nmodule.exports = function value() { return 1; };\n';
 
-function fixture(t, { body = "assert.equal(value(), 1);", extraTests = "", emptySuite = false } = {}) {
+function fixture(t, { body = "assert.equal(value(), 1);", extraTests = "", emptySuite = false,
+  testTimeoutMs = null } = {}) {
   const parent = path.resolve(os.tmpdir());
   const root = fs.mkdtempSync(path.join(parent, "tokengame-mutation-reporter-"));
   t.after(() => {
@@ -31,7 +32,8 @@ function fixture(t, { body = "assert.equal(value(), 1);", extraTests = "", empty
     'const assert = require("node:assert/strict");',
     'const test = require("node:test");',
     'const value = require("../subject.cjs");',
-    emptySuite ? 'test.describe("fixture empty", () => {});' : `test("fixture behavior", async () => { ${body} });`,
+    emptySuite ? 'test.describe("fixture empty", () => {});'
+      : `test("fixture behavior"${testTimeoutMs === null ? "" : `, { timeout: ${testTimeoutMs} }`}, async () => { ${body} });`,
     extraTests,
   ].join("\n"));
 
@@ -160,19 +162,20 @@ test("合法语法但整个测试文件加载失败不能算杀死", (t) => {
 test("仅有未完成 Promise 的取消不是断言杀死", (t) => {
   const result = run(fixture(t, {
     body: "if (value() === 2) await new Promise(() => {}); assert.equal(value(), 1);",
+    testTimeoutMs: 100,
   }));
   assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stdout, /^\s*INVALID /m);
+  assert.match(result.stdout, /^\s*INVALID 测试存在取消项，未完整评估变异:/m);
   assert.match(result.stdout, /合计 1：杀掉 0，存活 0，未评估 1/);
   assertWrites(result, "return 2;");
 });
 
 test("断言失败同时发生取消时不能把未完成测试轮冒充杀死", (t) => {
   const result = run(fixture(t, {
-    extraTests: 'test("fixture pending", async () => { if (value() === 2) await new Promise(() => {}); });',
+    extraTests: 'test("fixture pending", { timeout: 100 }, async () => { if (value() === 2) await new Promise(() => {}); });',
   }));
   assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stdout, /^\s*INVALID /m);
+  assert.match(result.stdout, /^\s*INVALID 测试存在取消项，未完整评估变异:/m);
   assert.match(result.stdout, /合计 1：杀掉 0，存活 0，未评估 1/);
   assertWrites(result, "return 2;");
 });
