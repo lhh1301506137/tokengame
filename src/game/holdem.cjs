@@ -307,13 +307,18 @@ class HoldemHand {
 
     this.postBlind(this.smallBlindIndex, this.smallBlind, "small_blind");
     this.postBlind(this.bigBlindIndex, this.bigBlind, "big_blind");
-    this.currentBet = Math.max(...this.seats.map((seat) => seat.round_commitment));
+    // 大盲即使筹码不足也仍建立完整的翻牌前下注额。否则一个只剩 3 的大盲会把 5/10
+    // 的整桌降成「跟 5、最小加到 15」，后位实际少交了强制下注。无人还能回应时另由
+    // amountToCall 按在局对手的实际投入收口，避免要求唯一幸存的可行动者补一笔无人能赢的
+    // 幽灵筹码。
+    this.currentBet = this.bigBlind;
     this.lastFullRaise = this.bigBlind;
     this.pending = new Set(this.actionableSeats().map((seat) => seat.id));
     const firstPreflop = this.seats.length === 2
       ? this.smallBlindIndex
       : this.nextSeatIndex(this.bigBlindIndex);
-    this.setNextActorBefore(firstPreflop);
+    if (this.bettingRoundClosedWithoutAction()) this.finishBettingRound();
+    else this.setNextActorBefore(firstPreflop);
   }
 
   postBlind(index, amount, blindType) {
@@ -347,6 +352,35 @@ class HoldemHand {
     return this.seats.filter((seat) => !seat.folded && !seat.all_in);
   }
 
+  hasRespondingOpponent(seat) {
+    return this.seats.some(
+      (candidate) => candidate.id !== seat.id && !candidate.folded && !candidate.all_in,
+    );
+  }
+
+  highestActiveOpponentCommitment(seat) {
+    let highest = 0;
+    for (const candidate of this.activeSeats()) {
+      if (candidate.id !== seat.id) highest = Math.max(highest, candidate.round_commitment);
+    }
+    return highest;
+  }
+
+  // 通常要跟到 currentBet；但只剩这一名玩家还能行动时，超出所有在局对手实际投入的部分
+  // 没有竞争者，也就不是需要跟的下注。这个分支同时处理短额盲注与最后一个短额 all-in。
+  amountToCall(seat) {
+    const target = this.hasRespondingOpponent(seat)
+      ? this.currentBet
+      : Math.min(this.currentBet, this.highestActiveOpponentCommitment(seat));
+    return Math.max(0, target - seat.round_commitment);
+  }
+
+  bettingRoundClosedWithoutAction() {
+    const actionable = this.actionableSeats();
+    if (actionable.length === 0) return true;
+    return actionable.length === 1 && this.amountToCall(actionable[0]) === 0;
+  }
+
   seatById(playerId) {
     const seat = this.seats.find((candidate) => candidate.id === playerId);
     if (!seat) throw new HoldemRuleError("unknown_player", 404);
@@ -363,8 +397,9 @@ class HoldemHand {
     const seat = this.seatById(playerId);
     if (seat.index !== this.actorIndex || seat.folded || seat.all_in) return [];
 
-    const toCall = Math.max(0, this.currentBet - seat.round_commitment);
+    const toCall = this.amountToCall(seat);
     const maxTo = seat.round_commitment + seat.stack;
+    const hasResponder = this.hasRespondingOpponent(seat);
     const actions = [{ type: "fold" }];
     if (toCall === 0) actions.push({ type: "check" });
     if (toCall > 0) {
@@ -376,17 +411,21 @@ class HoldemHand {
       });
     }
 
-    if (seat.stack > 0 && this.currentBet === 0) {
+    if (seat.stack > 0 && this.currentBet === 0 && hasResponder) {
       const minTo = this.bigBlind;
       if (maxTo >= minTo) actions.push({ type: "bet", min_to: minTo, max_to: maxTo });
     }
-    if (seat.stack > toCall && this.currentBet > 0 && this.canRaise(seat)) {
+    if (seat.stack > toCall && this.currentBet > 0 && hasResponder && this.canRaise(seat)) {
       const minTo = this.currentBet + this.lastFullRaise;
       if (maxTo >= minTo) actions.push({ type: "raise", min_to: minTo, max_to: maxTo });
     }
 
     const allInRaises = maxTo > this.currentBet;
-    if (seat.stack > 0 && (!allInRaises || this.canRaise(seat))) {
+    const allInIsCall = seat.stack <= toCall;
+    if (
+      seat.stack > 0
+      && (allInIsCall || (hasResponder && (!allInRaises || this.canRaise(seat))))
+    ) {
       actions.push({
         type: "all_in",
         to: maxTo,
@@ -441,7 +480,7 @@ class HoldemHand {
     const actionType = typeof type === "string" ? type : "";
     const { seat, amount: targetAmount } = this.requireLegalAction(playerId, actionType, amount);
     const currentBetBefore = this.currentBet;
-    const toCallBefore = Math.max(0, currentBetBefore - seat.round_commitment);
+    const toCallBefore = this.amountToCall(seat);
     let paid = 0;
     let target = seat.round_commitment;
     let increasedBet = false;
@@ -508,7 +547,7 @@ class HoldemHand {
     }
     this.cleanPending();
 
-    if (this.pending.size === 0) this.finishBettingRound();
+    if (this.pending.size === 0 || this.bettingRoundClosedWithoutAction()) this.finishBettingRound();
     else this.setNextActorAfter(seat.index);
     return this.resultSummary();
   }

@@ -94,7 +94,7 @@
     {
       "id": "WEB-12-手内筹码显示账本值",
       "file": "src/host/table-view-model.cjs",
-      "find": "      stack: handSeat === null ? seat.stack : handSeat.stack,",
+      "find": "      stack: handActive && handSeat !== null ? handSeat.stack : seat.stack,",
       "replace": "      stack: seat.stack,",
       "why": "手内一律显示房间账本上的筹码。账本要到 HAND_COMPLETED 之后才结算，于是玩家下注后筹码数字不动——「我下了注但钱没少」会让人以为下注没生效而重复下注。"
     },

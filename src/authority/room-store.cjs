@@ -306,9 +306,10 @@ class RoomStore {
       throw new ProbeError("recovery_credential_rejected", 403, { seat_id: seat.seat_id });
     }
 
-    // 恢复不改变归属，只把状态从掉线带回旁观等待，并要求重新 Ready。
+    // 恢复不改变归属。正常筹码席回到旁观等待并要求重新 Ready；破产席必须继续
+    // SIT_OUT，否则它既不能 Ready（要求先补筹）又不能补筹（只接受 SIT_OUT），会形成死状态。
     const previousState = seat.state;
-    seat.state = "SEATED";
+    seat.state = seat.stack === 0 ? "SIT_OUT" : "SEATED";
     seat.last_connection_lost_at = null;
     seat.retention_expires_at = null;
     // 规则 1：恢复的玩家最早从下一手参与。
@@ -391,6 +392,11 @@ class RoomStore {
       // 掉线席位不能被别处代为 Ready。
       throw new ProbeError("seat_not_connected", 409, { seat_id: seat.seat_id });
     }
+    if (ready && seat.stack === 0) {
+      // 破产后继续留在原席，但「补测试筹码」和「准备下一手」是两个独立的真人决定。
+      // 直接把 0 筹码席切回 READY 会制造一个看似可参与、实际发不了牌的状态。
+      throw new ProbeError("test_chip_refill_required", 409, { seat_id: seat.seat_id });
+    }
 
     const previousState = seat.state;
     if (ready) {
@@ -418,6 +424,42 @@ class RoomStore {
     return this.seatProjection(seat);
   }
 
+  // 好友现金桌只使用不可兑现的测试筹码。玩家破产后可以在手间手动补回起始值；命令本身
+  // 不替玩家 Ready，避免一次补充同时做出两个用户决定。它也不接受自定义数额，因此不会
+  // 悄悄长成充值、转账或跨房筹码账户。
+  refillTestChips(input = {}) {
+    const seat = this.requireSeat(input.seatId);
+    if (seat.state === "RELEASED") {
+      throw new ProbeError("seat_released", 409, { seat_id: seat.seat_id });
+    }
+    if (seat.leave_requested) {
+      throw new ProbeError("seat_leaving", 409, { seat_id: seat.seat_id });
+    }
+    if (this.handActive) {
+      throw new ProbeError("test_chip_refill_during_hand", 409, { seat_id: seat.seat_id });
+    }
+    if (seat.state !== "SIT_OUT" || seat.stack !== 0) {
+      throw new ProbeError("test_chip_refill_not_available", 409, {
+        seat_id: seat.seat_id,
+        state: seat.state,
+        stack: seat.stack,
+      });
+    }
+
+    const previousStack = seat.stack;
+    seat.stack = this.startingStack;
+    seat.all_in = false;
+    this.record("SEAT_TEST_CHIPS_REFILLED", {
+      seat_id: seat.seat_id,
+      player_id: seat.player_id,
+      hand_index: this.handIndex,
+      previous_stack: previousStack,
+      stack: seat.stack,
+      remains_sit_out: true,
+    });
+    return this.seatProjection(seat);
+  }
+
   // 规则 1：可参与席只算 ACTIVE 与 READY；旁观、暂离、掉线都不计入。
   participableSeats() {
     return this.occupiedSeats().filter(
@@ -427,9 +469,9 @@ class RoomStore {
 
   // 规则 1：真正能进入下一手的席位还要满足 eligible_from_hand_index。
   //
-  // 还要有筹码。handSettled 会把归零的席位切成 SIT_OUT，但 SIT_OUT 不是终态——玩家
-  // 可以再点 Ready 回到 READY，而 READY 是可参与状态。所以这条过滤不是冗余守卫，它是
-  // 破产席位唯一的拦截点：漏掉它，0 筹码席位会进入 roster，引擎在构造席位时抛
+  // 还要有筹码。handSettled 会把归零的席位切成 SIT_OUT，setReady 也会要求它先显式补充
+  // 测试筹码。这条过滤仍是账本最后一道防线：漏掉它，任何异常的 0 筹码 READY 席位都会
+  // 进入 roster，引擎在构造席位时抛
   // invalid_starting_stack（400）；若它同时把门禁计数凑够而 roster 又不足两席，则先抛
   // invalid_seat_count（500）。两种都是把「你没筹码了」变成一次开手失败。
   //
@@ -624,14 +666,15 @@ class RoomStore {
       if (seat.state === "RELEASED") {
         continue;
       }
+      // all_in 是单手状态；无论这一手赢、输、暂离还是离桌，结算之后都不能粘在下一手投影。
+      seat.all_in = false;
       // 规则 3：「离开牌桌」在本手结束后释放席位并吊销凭据。
       if (seat.leave_requested) {
         this.releaseSeat(seat, "left_table");
         continue;
       }
-      // 筹码归零就进 sit out。合同没有明写「破产怎么办」，但它排除了充值、跨房筹码
-      // 账户与长期筹码经济，所以唯一不越界的处置就是「留在原席但不参与下一手」——
-      // 这正是已有的 SIT_OUT，不新增状态、不新增用户可见语义。
+      // 筹码归零就进 sit out。好友现金桌合同要求它留在原席但不参与下一手，随后只能
+      // 在手间由真人固定补回起始测试筹码；补筹与 Ready 是两个独立决定。
       //
       // 不能不处置：0 筹码进下一手会让引擎抛 invalid_starting_stack，牌桌直接卡死。
       if (seat.stack === 0) {
@@ -829,6 +872,10 @@ class RoomStore {
   }
 
   seatProjection(seat) {
+    const testChipRefillAvailable = !this.handActive
+      && seat.state === "SIT_OUT"
+      && seat.stack === 0
+      && !seat.leave_requested;
     return {
       seat_id: seat.seat_id,
       player_id: seat.player_id,
@@ -843,6 +890,8 @@ class RoomStore {
       privacy_fence: seat.privacy_fence,
       pending_fold: seat.pending_fold,
       all_in: seat.all_in,
+      test_chip_refill_available: testChipRefillAvailable,
+      test_chip_refill_amount: testChipRefillAvailable ? this.startingStack : null,
       credential_revoked: seat.credential_revoked,
       retention_remaining_ms: this.retentionRemainingMs(seat),
       limits_version: this.limits.version,
@@ -857,6 +906,7 @@ class RoomStore {
       contract: "tokengame.temporary-private-room.v1",
       room: clone(room),
       limits_version: this.limits.version,
+      starting_stack: this.startingStack,
       hand_index: this.handIndex,
       hand_active: this.handActive,
       first_hand_started: this.firstHandStarted,
@@ -909,9 +959,6 @@ module.exports = {
   BINDING_STATES,
   PARTICIPABLE_STATES,
 };
-
-
-
 
 
 

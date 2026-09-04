@@ -1,0 +1,143 @@
+{
+  "name": "好友现金桌手间手动补测试筹码",
+  "test": "test/test-chip-refill.test.cjs",
+  "notes": "补筹只恢复不可兑现的本桌测试筹码，不是充值系统。权威、权限、投影与浏览器必须共同守住：只能手间、只能归零暂离席、固定回到起始值、补完仍需真人另按 Ready。",
+  "mutations": [
+    {
+      "id": "REFILL-01-零筹码可直接Ready",
+      "file": "src/authority/room-store.cjs",
+      "find": "    if (ready && seat.stack === 0) {",
+      "replace": "    if (false) {",
+      "why": "破产席绕过补筹决策进入可参与名单，下一手会拿 0 筹码启动。"
+    },
+    {
+      "id": "REFILL-02-手内允许补筹",
+      "file": "src/authority/room-store.cjs",
+      "find": "    if (this.handActive) {\n      throw new ProbeError(\"test_chip_refill_during_hand\", 409, { seat_id: seat.seat_id });\n    }",
+      "replace": "    if (false) {\n      throw new ProbeError(\"test_chip_refill_during_hand\", 409, { seat_id: seat.seat_id });\n    }",
+      "why": "玩家可在一手尚未结算时改写跨手账本。"
+    },
+    {
+      "id": "REFILL-03-任意手间席都能补筹",
+      "file": "src/authority/room-store.cjs",
+      "find": "    if (seat.state !== \"SIT_OUT\" || seat.stack !== 0) {",
+      "replace": "    if (false) {",
+      "why": "有筹码或仍在桌内的玩家可重复铸造测试筹码。"
+    },
+    {
+      "id": "REFILL-04-补筹没有恢复起始值",
+      "file": "src/authority/room-store.cjs",
+      "find": "    seat.stack = this.startingStack;",
+      "replace": "    seat.stack = 0;",
+      "why": "命令返回成功但玩家仍破产，UI 与下一手无法继续。"
+    },
+    {
+      "id": "REFILL-05-补筹暗中替玩家Ready",
+      "file": "src/authority/room-store.cjs",
+      "find": "    seat.stack = this.startingStack;\n    seat.all_in = false;",
+      "replace": "    seat.stack = this.startingStack;\n    seat.state = \"READY\";\n    seat.all_in = false;",
+      "why": "一次点击合并了补筹与参赛两个独立真人决定。"
+    },
+    {
+      "id": "REFILL-06-结算后all-in状态粘住",
+      "file": "src/authority/room-store.cjs",
+      "find": "      seat.all_in = false;\n      // 规则 3：「离开牌桌」在本手结束后释放席位并吊销凭据。",
+      "replace": "      // 规则 3：「离开牌桌」在本手结束后释放席位并吊销凭据。",
+      "why": "上一手的 all-in 徽标继续显示在手间与下一手。"
+    },
+    {
+      "id": "REFILL-07-浏览器在错误阶段看到补筹资格",
+      "file": "src/authority/room-store.cjs",
+      "find": "    const testChipRefillAvailable = !this.handActive\n      && seat.state === \"SIT_OUT\"\n      && seat.stack === 0\n      && !seat.leave_requested;",
+      "replace": "    const testChipRefillAvailable = seat.stack === 0;",
+      "why": "浏览器按不完整条件显示一个权威必然拒绝的按钮。"
+    },
+    {
+      "id": "REFILL-08-投影不告诉浏览器固定补筹额",
+      "file": "src/authority/room-store.cjs",
+      "find": "      test_chip_refill_amount: testChipRefillAvailable ? this.startingStack : null,",
+      "replace": "      test_chip_refill_amount: null,",
+      "why": "界面只能猜补到多少，规则与展示会漂移。"
+    },
+    {
+      "id": "REFILL-09-命令退出席位凭据授权",
+      "file": "src/authority/command-surface.cjs",
+      "find": "  \"seat.ready\",\n  \"seat.refill_test_chips\",\n  \"seat.sit_out_after_hand\",",
+      "replace": "  \"seat.ready\",\n  \"seat.sit_out_after_hand\",",
+      "test": "test/seat-authorization.test.cjs",
+      "why": "持传输令牌的人可替任意席位铸造测试筹码。"
+    },
+    {
+      "id": "REFILL-10-补筹错误开放给模型",
+      "file": "src/authority/host-surface.cjs",
+      "find": "const MODEL_COMMANDS = Object.freeze([\n  \"ai.take_intents\",",
+      "replace": "const MODEL_COMMANDS = Object.freeze([\n  \"seat.refill_test_chips\",\n  \"ai.take_intents\",",
+      "test": "test/model-command-isolation.test.cjs",
+      "why": "AI 可替真人决定补筹并扩大本席筹码。"
+    },
+    {
+      "id": "REFILL-11-浏览器真人动作被传输层挡掉",
+      "file": "src/host/table-web-host.cjs",
+      "find": "  \"seat.ready\",\n  \"seat.refill_test_chips\",\n  \"seat.sit_out_after_hand\",",
+      "replace": "  \"seat.ready\",\n  \"seat.sit_out_after_hand\",",
+      "test": "test/table-web-host.test.cjs",
+      "why": "核心能力存在但 Web 产品路径不可达。"
+    },
+    {
+      "id": "REFILL-12-命令成功却不执行补筹",
+      "file": "src/authority/command-surface.cjs",
+      "find": "        refilled: o.rooms.refillTestChips({ seatId: p.seat_id }),",
+      "replace": "        refilled: o.rooms.seatState(p.seat_id),",
+      "test": "test/table-web-host.test.cjs",
+      "why": "HTTP 返回 200，但跨手账本没有变化。"
+    },
+    {
+      "id": "REFILL-13-完成旧手覆盖手间新账本",
+      "file": "src/host/table-view-model.cjs",
+      "find": "      stack: handActive && handSeat !== null ? handSeat.stack : seat.stack,",
+      "replace": "      stack: handSeat !== null ? handSeat.stack : seat.stack,",
+      "test": "test/table-web-host.test.cjs",
+      "why": "补筹已成功，页面仍被上一手历史 0 筹码覆盖。"
+    },
+    {
+      "id": "REFILL-14-页面缺少补筹按钮",
+      "file": "web/table/index.html",
+      "find": "id=\"refill-test-chips\"",
+      "replace": "id=\"refill-test-chips-missing\"",
+      "test": "test/test-chip-refill-ui.test.cjs",
+      "why": "产品能力存在但玩家找不到入口。"
+    },
+    {
+      "id": "REFILL-15-页面忽略权威补筹资格",
+      "file": "web/table/table.js",
+      "find": "  const canRefill = me.test_chip_refill_available === true;",
+      "replace": "  const canRefill = false;",
+      "test": "test/test-chip-refill-ui.test.cjs",
+      "why": "破产玩家永远看不到补筹入口。"
+    },
+    {
+      "id": "REFILL-16-破产时Ready仍可点",
+      "file": "web/table/table.js",
+      "find": "  readyBtn.disabled = me.leave_requested === true || canRefill;",
+      "replace": "  readyBtn.disabled = me.leave_requested === true;",
+      "test": "test/test-chip-refill-ui.test.cjs",
+      "why": "界面诱导玩家发一个必然被权威拒绝的 Ready。"
+    },
+    {
+      "id": "REFILL-17-补筹按钮发送错误命令",
+      "file": "web/table/table.js",
+      "find": "wireControl(\"refill-test-chips\", () => act(\"seat.refill_test_chips\", {}));",
+      "replace": "wireControl(\"refill-test-chips\", () => act(\"seat.ready\", {}));",
+      "test": "test/test-chip-refill-ui.test.cjs",
+      "why": "点击补筹却直接尝试 Ready，恢复路径不可用。"
+    },
+    {
+      "id": "REFILL-18-破产席恢复后进入死状态",
+      "file": "src/authority/room-store.cjs",
+      "find": "    seat.state = seat.stack === 0 ? \"SIT_OUT\" : \"SEATED\";",
+      "replace": "    seat.state = \"SEATED\";",
+      "test": "test/test-chip-refill.test.cjs",
+      "why": "零筹码席恢复成 SEATED 后既不能 Ready，也不满足只允许 SIT_OUT 补筹的前置。"
+    }
+  ]
+}

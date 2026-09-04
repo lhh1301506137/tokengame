@@ -137,6 +137,9 @@ const MESSAGES = {
   room_full: "座位满了。",
   public_scope_not_confirmed: "要先确认公开范围才能继续。",
   seat_not_connected: "这一席当前不在线。",
+  test_chip_refill_during_hand: "只能在一手结束后补充测试筹码。",
+  test_chip_refill_not_available: "当前座位不需要补充测试筹码。",
+  test_chip_refill_required: "筹码已用完，请先补充测试筹码再准备。",
   not_your_turn: "还没轮到你。",
   stale_revision: "牌桌刚刚变了，已经刷新，请再看一眼。",
   hand_not_found: "这一手已经结束了。",
@@ -1150,21 +1153,31 @@ el("model-unbind").addEventListener("click", async () => {
 function renderSeatControls(view) {
   const me = view.seats.find((seat) => seat.is_viewer) ?? null;
   const readyBtn = el("ready-toggle");
+  const refillBtn = el("refill-test-chips");
   const sitoutBtn = el("sitout-toggle");
   const aiBtn = el("ai-toggle");
 
   if (me === null) {
-    for (const button of [readyBtn, sitoutBtn, aiBtn]) button.disabled = true;
+    for (const button of [readyBtn, refillBtn, sitoutBtn, aiBtn]) button.disabled = true;
+    refillBtn.hidden = true;
     return;
   }
 
   const isReady = me.state === "READY";
   const isSatOut = me.state === "SIT_OUT";
+  const canRefill = me.test_chip_refill_available === true;
   // 暂离之后回到牌桌走的就是这个按钮（setReady 会把 sit_out_after_hand 清掉），
   // 所以手内也不能禁用它——禁用等于把暂离变成不可逆。
-  readyBtn.textContent = isSatOut ? "回到牌桌" : isReady ? "撤回准备" : "我准备好了";
+  readyBtn.textContent = canRefill ? "请先补充测试筹码"
+    : isSatOut ? "回到牌桌" : isReady ? "撤回准备" : "我准备好了";
   readyBtn.setAttribute("aria-pressed", String(isReady));
-  readyBtn.disabled = me.leave_requested === true;
+  readyBtn.disabled = me.leave_requested === true || canRefill;
+
+  refillBtn.hidden = !canRefill;
+  refillBtn.textContent = canRefill
+    ? `补充至 ${me.test_chip_refill_amount ?? view.room?.starting_stack ?? "起始"} 测试筹码`
+    : "补充测试筹码";
+  refillBtn.disabled = !canRefill || me.leave_requested === true;
 
   // 暂离是单向命令：权威没有"取消暂离"这条路，回来只能靠 Ready。所以这里不做成
   // 开关——一个点了没反应的"取消"按钮比没有按钮更糟。
@@ -1200,6 +1213,8 @@ wireControl("ready-toggle", () => {
   const me = state.view?.seats.find((seat) => seat.is_viewer) ?? null;
   return act("seat.ready", { ready: me?.state !== "READY" });
 });
+
+wireControl("refill-test-chips", () => act("seat.refill_test_chips", {}));
 
 wireControl("sitout-toggle", () => act("seat.sit_out_after_hand", {}));
 

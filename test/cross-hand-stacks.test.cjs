@@ -275,11 +275,9 @@ test("F1：筹码归零的席位进入 sit out，不带着 0 筹码被塞进下�
   }
 });
 
-test("F1：破产席位重新 Ready 也进不了下一手名单", () => {
-  // 这条走的是 handSettled 之外的另一条路。破产处置在 handSettled 里把席位切成
-  // SIT_OUT，但 SIT_OUT 不是终态——玩家随后完全可以再点一次 Ready，UI 上那个按钮就在
-  // 那儿，而 READY 是可参与状态。若名单只看状态不看筹码，这一席会带着 0 筹码进 roster，
-  // 引擎构造席位时抛 invalid_starting_stack，一个「你没筹码了」变成一次开手失败。
+test("F1：破产席位必须先手动补测试筹码，再单独 Ready 回到下一手", () => {
+  // 破产处置先把席位切成 SIT_OUT。补筹码与 Ready 是两个明确的真人动作：前者只恢复
+  // 不可兑现测试筹码，仍保持暂离；后者才表达「我要回到牌桌」。
   //
   // 四人局，只淘汰一家：留下三席有筹码，所以门禁应当放行，破产席必须被剔除。
   // 这是「名单过滤生效」与「牌桌照常继续」同时成立的那个场景。
@@ -300,28 +298,33 @@ test("F1：破产席位重新 Ready 也进不了下一手名单", () => {
     "handSettled 应当先把破产席切成 SIT_OUT",
   );
 
+  assert.throws(
+    () => ctx.o.setReady({ seatId: bustedSeatId, ready: true }),
+    probe("test_chip_refill_required"),
+  );
+  assert.equal(ctx.o.rooms.seatState(bustedSeatId).state, "SIT_OUT");
+  const refilled = ctx.o.rooms.refillTestChips({ seatId: bustedSeatId });
+  assert.equal(refilled.stack, 200);
+  assert.equal(refilled.state, "SIT_OUT", "补筹码不替玩家准备");
   ctx.o.setReady({ seatId: bustedSeatId, ready: true });
-  assert.equal(ctx.o.rooms.seatState(bustedSeatId).state, "READY", "Ready 按钮确实点得动");
+  assert.equal(ctx.o.rooms.seatState(bustedSeatId).state, "READY");
 
   ctx.advance(TABLE_LIFECYCLE_V1.interHandDisplayMs);
   const decision = ctx.o.rooms.evaluateStart();
   assert.equal(decision.can_start, true, "还有三席有筹码，牌桌不该停");
-  assert.equal(decision.participable_count, 4, "破产席仍是 READY，仍算可参与");
-  assert.equal(decision.roster_count, 3, "但发牌名单只有三席");
-  assert.ok(
-    !decision.roster.includes(bustedSeatId),
-    "0 筹码的席位不得进入名单，哪怕它已经 READY",
-  );
+  assert.equal(decision.participable_count, 4);
+  assert.equal(decision.roster_count, 4);
+  assert.ok(decision.roster.includes(bustedSeatId));
 
   const started = ctx.o.startHandIfDue();
   assert.equal(started.started, true);
-  assert.equal(ctx.o.hand.seats.length, 3);
+  assert.equal(ctx.o.hand.seats.length, 4);
   for (const seat of ctx.o.hand.seats) {
     assert.ok(seat.starting_stack > 0, "进入牌局的每一席都必须有筹码");
   }
 });
 
-test("F1：有筹码的席位不足两名时门禁按名单拒绝，不承诺开不出的手", () => {
+test("F1：未补筹码时保持 SIT_OUT；补回一席并 Ready 后牌桌可继续", () => {
   // 与上一条同源但结局相反：三人全下，赢家独取全部筹码，另两家归零。
   // 两名破产玩家都重新 Ready 后，participable 是 3，名单只有 1。
   // 门禁若数 participable 就会放行，而引擎拿到 1 席 roster 抛 invalid_seat_count（500）,
@@ -335,29 +338,70 @@ test("F1：有筹码的席位不足两名时门禁按名单拒绝，不承诺开
 
   const funded = ctx.seats.filter((seat, index) => ledgerStack(ctx, index) > 0);
   assert.equal(funded.length, 1, "三人全下应当只剩一家有筹码");
-  for (const [index, seat] of ctx.seats.entries()) {
-    if (ledgerStack(ctx, index) === 0) {
-      ctx.o.setReady({ seatId: seat.seat_id, ready: true });
-    }
+  const busted = ctx.seats.filter((seat, index) => ledgerStack(ctx, index) === 0);
+  assert.equal(busted.length, 2);
+  for (const seat of busted) {
+    assert.throws(
+      () => ctx.o.setReady({ seatId: seat.seat_id, ready: true }),
+      probe("test_chip_refill_required"),
+    );
   }
 
   ctx.advance(TABLE_LIFECYCLE_V1.interHandDisplayMs);
   const decision = ctx.o.rooms.evaluateStart();
   assert.equal(decision.can_start, false);
   assert.equal(decision.reason, "insufficient_participants");
-  assert.equal(decision.participable_count, 3, "三席都是 READY 或 ACTIVE");
+  assert.equal(decision.participable_count, 1, "两名破产玩家保持 SIT_OUT");
   assert.equal(decision.roster_count, 1, "但只有一席发得出牌");
   assert.equal(decision.min_participants, TABLE_LIFECYCLE_V1.minParticipants);
-  // ready_count 也必须按名单数，哪怕这里数出 0 看着反直觉：两名破产玩家确实是 READY，
-  // 但他们发不出牌。ready_count 是首手门禁的计数器，若它把发不了牌的席位算进去，
-  // 首手就会重新出现「门禁放行、名单不足」的同一个分叉。
-  assert.equal(decision.ready_count, 0, "READY 但无筹码的席位不计入门禁计数");
+  assert.equal(decision.ready_count, 0);
 
   // 门禁拒绝就必须真的拒绝：由于没有筹码来源，这一桌到此为止而不是抛 500。
   assert.throws(() => ctx.o.rooms.startHand(), probe("hand_start_blocked"));
   const due = ctx.o.startHandIfDue();
   assert.equal(due.started, false);
   assert.equal(due.decision.reason, "insufficient_participants");
+
+  ctx.o.rooms.refillTestChips({ seatId: busted[0].seat_id });
+  ctx.o.setReady({ seatId: busted[0].seat_id, ready: true });
+  const resumed = ctx.o.startHandIfDue();
+  assert.equal(resumed.started, true);
+  assert.equal(resumed.roster.length, 2);
+});
+
+test("F1：首手门禁与名单同看有筹码 roster，异常零栈 READY 不能把人数凑够", () => {
+  // setReady 的正常入口已经拒绝零筹码；这里故意破坏 RoomStore 内部不变量，验证
+  // seatsEligibleForNextHand 仍是开手前最后一道独立防线。没有这条反例，名单过滤、
+  // readyCount 和 gateCount 三处可以一起漂成「看起来没人走得到」的死代码。
+  const ctx = harness({ playerCount: 2, startingStack: 200 });
+  for (const seat of ctx.seats) ctx.o.setReady({ seatId: seat.seat_id, ready: true });
+  ctx.o.rooms.seats.get(ctx.seatId(1)).stack = 0;
+
+  const decision = ctx.o.rooms.evaluateStart();
+  assert.equal(decision.can_start, false);
+  assert.equal(decision.reason, "awaiting_ready");
+  assert.equal(decision.participable_count, 2, "异常席仍处于 READY，便于看出两集合差异");
+  assert.equal(decision.roster_count, 1, "真正发得出牌的名单只剩一席");
+  assert.equal(decision.ready_count, 1, "首手 Ready 计数必须来自 roster，不来自在座状态");
+});
+
+test("F1：后续手门禁也按有筹码 roster，异常零栈 ACTIVE 只能停在等待", () => {
+  const ctx = harness({ playerCount: 2, startingStack: 200 });
+  begin(ctx);
+  ctx.act({ playerId: actorPlayerId(ctx), type: "fold" });
+  assert.equal(ctx.o.hand.status, "complete");
+
+  const corrupted = ctx.o.rooms.seats.get(ctx.seatId(1));
+  corrupted.state = "ACTIVE";
+  corrupted.stack = 0;
+  ctx.advance(TABLE_LIFECYCLE_V1.interHandDisplayMs);
+
+  const decision = ctx.o.rooms.evaluateStart();
+  assert.equal(decision.can_start, false);
+  assert.equal(decision.reason, "insufficient_participants");
+  assert.equal(decision.participable_count, 2);
+  assert.equal(decision.roster_count, 1);
+  assert.throws(() => ctx.o.rooms.startHand(), probe("hand_start_blocked"));
 });
 
 test("F1：掉线恢复回到同一席同一 stack，恢复本身不改筹码", () => {

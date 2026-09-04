@@ -627,7 +627,7 @@ test("两份合起来正好是宿主面", () => {
 test("会改变已确认用户结果的命令一律不在模型面", () => {
   // 逐条点名而不是「检查模型面长度」：长度断言在有人加一条又删一条时照旧为真。
   for (const command of [
-    "hand.act", "hand.reveal", "seat.ready", "room.confirm_public_scope",
+    "hand.act", "hand.reveal", "seat.ready", "seat.refill_test_chips", "room.confirm_public_scope",
     "chat.say", "seat.leave", "view.hand",
   ]) {
     assert.equal(contract.classifyActor(command), "human", `${command} 必须归真人`);

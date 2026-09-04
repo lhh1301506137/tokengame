@@ -1,0 +1,56 @@
+{
+  "name": "成熟无限注德州扑克边界",
+  "test": "test/holdem-mature-rules.test.cjs",
+  "notes": "这些不是 TokenGame 自创玩法，而是完整大盲、短额 all-in、重开加注和无人可回应时自动收口的成熟规则。精确行为回归与耗时较长的完整枚举分开，使每条变异都能快速重跑。",
+  "mutations": [
+    {
+      "id": "HMR-01-短额大盲把整桌下注额降到实际投入",
+      "file": "src/game/holdem.cjs",
+      "find": "    this.currentBet = this.bigBlind;",
+      "replace": "    this.currentBet = Math.max(...this.seats.map((seat) => seat.round_commitment));",
+      "why": "大盲只剩少量筹码时，后位因此少交强制下注且最小加注额错误。"
+    },
+    {
+      "id": "HMR-02-盲注后全员all-in却不自动跑牌",
+      "file": "src/game/holdem.cjs",
+      "find": "    if (this.bettingRoundClosedWithoutAction()) this.finishBettingRound();\n    else this.setNextActorBefore(firstPreflop);",
+      "replace": "    if (false) this.finishBettingRound();\n    else this.setNextActorBefore(firstPreflop);",
+      "why": "actor 保持 null、hand 仍 active，整桌永久卡住。"
+    },
+    {
+      "id": "HMR-03-唯一可行动者仍被迫补幽灵筹码",
+      "file": "src/game/holdem.cjs",
+      "find": "    const target = this.hasRespondingOpponent(seat)\n      ? this.currentBet\n      : Math.min(this.currentBet, this.highestActiveOpponentCommitment(seat));",
+      "replace": "    const target = this.currentBet;",
+      "why": "超出所有在局对手实际投入的筹码无人能赢，却仍被要求跟入。"
+    },
+    {
+      "id": "HMR-04-无人可回应时仍开放加注",
+      "file": "src/game/holdem.cjs",
+      "find": "    const hasResponder = this.hasRespondingOpponent(seat);",
+      "replace": "    const hasResponder = true;",
+      "why": "唯一对手已经 all-in 时仍能把筹码推向没有竞争者的边池。"
+    },
+    {
+      "id": "HMR-05-行动后不识别无需再行动的封闭轮",
+      "file": "src/game/holdem.cjs",
+      "find": "    if (this.pending.size === 0 || this.bettingRoundClosedWithoutAction()) this.finishBettingRound();",
+      "replace": "    if (this.pending.size === 0) this.finishBettingRound();",
+      "why": "最后一名可行动者无需补齐时仍收到一次无意义 check。"
+    },
+    {
+      "id": "HMR-06-不完整开局all-in被当作completion",
+      "file": "src/game/holdem.cjs",
+      "find": "      const minTo = this.currentBet + this.lastFullRaise;",
+      "replace": "      const minTo = this.lastFullRaise;",
+      "why": "无限注翻牌后短额开局 all-in 后，完整加注少算当前下注额。"
+    },
+    {
+      "id": "HMR-07-累计恰好完整加注仍不重开行动",
+      "file": "src/game/holdem.cjs",
+      "find": "    return seat.last_acted_bet === null\n      || this.currentBet - seat.last_acted_bet >= this.lastFullRaise;",
+      "replace": "    return seat.last_acted_bet === null\n      || this.currentBet - seat.last_acted_bet > this.lastFullRaise;",
+      "why": "多个短额 all-in 累计恰好达到完整加注时，原下注者错误失去再次加注权。"
+    }
+  ]
+}

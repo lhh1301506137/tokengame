@@ -85,6 +85,17 @@ async function startHand(client, core, clock, tokens) {
   return core.dispatch("hand.start_if_due");
 }
 
+async function browserHandAct(client, token, action, key) {
+  const view = await client.view(token);
+  const params = {
+    action,
+    hand_id: view.action_panel.hand_id,
+    expected_revision: view.action_panel.expected_revision,
+    idempotency_key: key,
+  };
+  return client.act(token, "hand.act", params);
+}
+
 test("会话令牌不携带席位凭据，浏览器也不能自带 seat_id 替别席行动", async (t) => {
   const { client } = await withHost(t);
   const { created, joined, a } = await seatTwo(client);
@@ -136,6 +147,43 @@ test("浏览器只能发白名单动作：不能以自己 AI 的名义发言，�
 
   // 完全不存在的命令与「存在但不许调」返回同一个码，避免成为命令面的探测口。
   assert.equal((await client.act(a, "no.such.command", {})).body.code, "action_not_permitted");
+});
+
+test("浏览器破产席只能在手间手动补回测试筹码，补完仍需另按 Ready", async (t) => {
+  const { client, core, clock } = await withHost(t);
+  const { a, b } = await seatTwo(client);
+  await startHand(client, core, clock, [a, b]);
+
+  const firstA = await client.view(a);
+  const actorToken = firstA.action_panel.is_actor ? a : b;
+  const callerToken = actorToken === a ? b : a;
+  assert.equal((await browserHandAct(client, actorToken, "all_in", "refill-all-in")).body.ok, true);
+  assert.equal((await browserHandAct(client, callerToken, "call", "refill-call")).body.ok, true);
+
+  const views = [await client.view(a), await client.view(b)];
+  const bustedView = views.find((view) => view.seats.find((seat) => seat.is_viewer)?.stack === 0);
+  assert.ok(bustedView, "固定牌堆的单挑 all-in 应产生一名破产玩家");
+  const bustedToken = bustedView === views[0] ? a : b;
+  let mine = bustedView.seats.find((seat) => seat.is_viewer);
+  assert.equal(bustedView.room.starting_stack, 200);
+  assert.equal(mine.state, "SIT_OUT");
+  assert.equal(mine.test_chip_refill_available, true);
+  assert.equal(mine.test_chip_refill_amount, 200);
+
+  const prematureReady = await client.act(bustedToken, "seat.ready", { ready: true });
+  assert.equal(prematureReady.status, 409);
+  assert.equal(prematureReady.body.code, "test_chip_refill_required");
+
+  const refilled = await client.act(bustedToken, "seat.refill_test_chips", {});
+  assert.equal(refilled.status, 200);
+  assert.equal(refilled.body.result.refilled.stack, 200);
+  assert.equal(refilled.body.result.refilled.state, "SIT_OUT");
+
+  mine = (await client.view(bustedToken)).seats.find((seat) => seat.is_viewer);
+  assert.equal(mine.stack, 200);
+  assert.equal(mine.test_chip_refill_available, false);
+  assert.equal((await client.act(bustedToken, "seat.ready", { ready: true })).status, 200);
+  assert.equal((await client.view(bustedToken)).seats.find((seat) => seat.is_viewer).state, "READY");
 });
 
 test("每个查看者只拿到自己的底牌，对手底牌在视图里根本不存在", async (t) => {

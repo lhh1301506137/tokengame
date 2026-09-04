@@ -127,7 +127,7 @@ const tools = [
       + "使用 ai.start 返回的 model_context 分析本席牌面与公开聊天，ai.resolve 回填公开发言或沉默；"
       + "view.projection / view.timeline 只读公共信息。"
       + "只传权威给你的 intent_id / turn_id，不要传 seat_id、seat_handle 或凭据——"
-      + "席位身份由本机协调器补齐。下注、按 Ready、确认公开范围、亮牌都是真人的决定，"
+      + "席位身份由本机协调器补齐。下注、按 Ready、补测试筹码、确认公开范围、亮牌都是真人的决定，"
       + "这里发不出去。",
     inputSchema: {
       type: "object",
@@ -313,7 +313,7 @@ async function callTool(name, args = {}) {
         code: "command_not_model_facing",
         command: command ?? null,
         model_commands: [...MODEL_COMMANDS],
-        hint: "下注、按 Ready、确认公开范围、亮牌是真人的决定，不经模型工具。",
+        hint: "下注、按 Ready、补测试筹码、确认公开范围、亮牌是真人的决定，不经模型工具。",
       });
     }
     try {

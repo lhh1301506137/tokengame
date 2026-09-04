@@ -100,6 +100,7 @@ const SEAT_GONE_CODES = Object.freeze([
 const BROWSER_ACTIONS = Object.freeze([
   "room.confirm_public_scope",
   "seat.ready",
+  "seat.refill_test_chips",
   "seat.sit_out_after_hand",
   "seat.leave",
   "seat.connect",

@@ -88,6 +88,7 @@
 - 用户选择 MVP-0 的德扑动作只通过牌桌按钮与下注滑杆提交；不提供 `@tokengame action ...` 或自然语言出牌。任务中的“跟了”“加两百”“all in”等文本仍只是默认公开话术，永远没有动作效力。
 - 用户选择严格的掉线方案：玩家断线不暂停牌局、不增加行动时间；原行动截止到达后可 check 则自动 check，否则自动 fold。当前手结算后掉线席 sit out，原席与恢复凭据保留 120 秒，随后释放；可参与者少于两人时只暂停下一手开始。
 - 用户选择 Ready 开局：至少两名玩家 Ready 后进入 3 秒倒计时；未 Ready 的已入座玩家保持旁观，不阻塞开局。首手之后，仍处于 ACTIVE/READY 的玩家自动连续开下一手；中途加入或恢复者最早从下一手参加。
+- 用户确认好友 MVP 采用不可兑现的测试筹码现金桌：一手结算后筹码归零的玩家进入 SIT_OUT，只能在手间手动补回该房间固定起始筹码 200；不允许自定义数额、不自动补筹码，也不因补筹码自动 Ready。补完后玩家必须另行点击 Ready，账户、买入、兑现和跨房筹码经济不进入本轮。
 - 官方能力核查修正了此前过强判断：同步 `Stop` Hook 可用 continuation prompt 继续尚未完全结束的当前回合，MCP Apps UI 也定义了 `ui/message`/`sendFollowUpMessage`；但异步 Hook 明确不能唤醒已经空闲的任务，目标 Codex Desktop 是否支持组件因远端事件自动发 follow-up 仍需实测。
 - 用户选择先执行同一可见任务技术尖峰：保留 Codex 主输入框作为目标 TABLE_PUBLIC 入口，验证 MCP Apps `ui/message` 与有界 `Stop` continuation 能否驱动同一个 `SEAT_AI` 上下文；关键门禁失败时明确回退到牌桌聊天框 + 协调器专用 App Server 线程。
 - 用户选择双操作退出并串行换房：`Sit out after hand` 只在当前手结算后暂离、保留席位和任务公开绑定；`Leave table` 立即停止该任务后续公开路由和 AI，在下一个合法行动点处理 live hand、手后释放席位并吊销凭据。旧绑定达到 UNBOUND 前不得加入新房或新席。
@@ -347,6 +348,7 @@
 - [ ] 玩家在一手进行中加入、恢复或点击 Ready 时只能进入 WAITING_NEXT_HAND；当前手的牌堆、盲注、底池、行动顺序和底牌投影完全不变。
 - [ ] ACTIVE 玩家选择 `SIT_OUT_AFTER_HAND` 后仍可正常完成当前手且任务文本继续按 TABLE_PUBLIC 处理；HAND_SETTLED 后恰好进入 SIT_OUT，下一手不发牌/不收盲，席位和有效恢复凭据仍属于该玩家。
 - [ ] SIT_OUT 玩家重新 Ready 时只加入下一手候选；重复暂离、取消/恢复 Ready、刷新和事件重放不会创建两个状态转换或中途发牌。
+- [ ] 一手结算后筹码归零的席位保持 `SIT_OUT`，直接 Ready 稳定返回 `test_chip_refill_required`；只允许该席在手间调用一次固定补筹，把账本恢复到房间 `starting_stack=200`。有筹码、已释放、正在离桌或手牌进行中的席位不能补；补完仍为 `SIT_OUT`，必须另行 Ready，重复请求不会叠加筹码。
 - [ ] 非 all-in ACTIVE 玩家请求 `LEAVE_TABLE` 后，新的玩家 prompt、AI wake、迟到 assistant 输出和 UI 动作立即被 binding privacy fence 拒绝；权威状态机仅在该席下一个合法行动点 forced fold 一次，已投入筹码保留且其他玩家当前行动不被打断。
 - [ ] all-in 玩家 leave 后当前手主池/边池与摊牌照常结算；已 fold 玩家不重复 fold。HAND_SETTLED 后两者都只产生一次 `VOLUNTARY_SEAT_RELEASED`，不会退款、回滚或泄露未公开底牌。
 - [ ] WAITING/SIT_OUT 席 leave 可立即释放；所有释放路径都吊销 seat/recovery/UI capability、删除本机 session-seat secret 并恢复任务普通私密语义，旧凭据重放稳定失败且不会进入 120 秒恢复窗口。

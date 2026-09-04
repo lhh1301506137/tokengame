@@ -283,6 +283,7 @@ const SEAT_STATE_WRITES = Object.freeze([
   "seat.connect", //             写 connections / retention_expires_at —— F4 的缺口
   "seat.disconnect", //          写 state / retention_expires_at，启动保留窗
   "seat.ready", //               写 ready，影响开局门禁
+  "seat.refill_test_chips", //   手间把本席不可兑现测试筹码补回起始值
   "seat.sit_out_after_hand", //  写 sit_out_after_hand
   "seat.leave", //               写 privacy_fence / pending_fold / leave_requested
   "hand.act", //                 以该席身份行动，写筹码与牌局版本

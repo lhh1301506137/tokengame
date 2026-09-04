@@ -22,6 +22,7 @@ const HOST_COMMANDS = Object.freeze([
   "seat.connect",
   "seat.disconnect",
   "seat.ready",
+  "seat.refill_test_chips",
   "seat.sit_out_after_hand",
   "seat.leave",
   // 牌局里玩家自己做的决定。只有这两条：下注动作，以及无人跟注时自愿亮牌。
@@ -109,6 +110,7 @@ const CREDENTIAL_COMMANDS = Object.freeze([
   // 代价说清楚：协调器在保留窗内重启，该席无法恢复，120 秒后正常释放。掉线恢复要覆盖的是
   // 连接断开，协调器进程还活着，那条路径不受影响。
   "seat.recover",
+  "seat.refill_test_chips",
   "seat.sit_out_after_hand",
   "view.hand",
 ]);
@@ -154,6 +156,7 @@ const HUMAN_COMMANDS = Object.freeze([
   "seat.connect",
   "seat.disconnect",
   "seat.ready",
+  "seat.refill_test_chips",
   "seat.sit_out_after_hand",
   "seat.leave",
   "hand.act",

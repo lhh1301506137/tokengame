@@ -15,6 +15,7 @@
     "codex:connect": "node plugins/tokengame/codex/connect.cjs",
     "connection:activate": "node src/run-model-connection.cjs activate",
     "connection:clear": "node src/run-model-connection.cjs clear",
+    "acceptance:refill": "node test-support/test-chip-refill-browser-acceptance.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.cjs",
     "gate": "node test-support/gate.cjs",
     "beta": "node src/run-beta.cjs",

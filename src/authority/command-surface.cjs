@@ -28,6 +28,7 @@ const SEAT_AUTHORIZED = Object.freeze([
   // 替全桌承诺「你打的自由文本默认公开」，而被代为承诺的人从未见过这句话。
   "room.confirm_public_scope",
   "seat.ready",
+  "seat.refill_test_chips",
   "seat.sit_out_after_hand",
   "seat.leave",
   // F4：connect 与 disconnect 必须成对把关。原来只有 disconnect 在这里，于是只持传输
@@ -174,6 +175,10 @@ class CommandSurface {
 
       "seat.ready": (p) => ({
         ready: o.setReady({ seatId: p.seat_id, ready: p.ready !== false }).payload,
+      }),
+
+      "seat.refill_test_chips": (p) => ({
+        refilled: o.rooms.refillTestChips({ seatId: p.seat_id }),
       }),
 
       "seat.sit_out_after_hand": (p) => ({

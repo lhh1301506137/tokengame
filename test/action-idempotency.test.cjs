@@ -497,6 +497,7 @@ const CLASSIFICATION = {
     "seat.connect",
     "seat.disconnect",
     "seat.ready",
+    "seat.refill_test_chips",
     "seat.sit_out_after_hand",
     "seat.leave",
     "ai.set_mode",

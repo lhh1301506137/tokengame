@@ -24,6 +24,69 @@
 | 派生显示状态 | 倒计时、街道、按钮禁用、气泡计数 | 每次渲染从当前投影计算，不持久化为第二份事实 |
 | 【已替代】旧探针栈 | `TableStore`、`EventStore`、`web/app.js` 的 `ui.state` | 冻结，不再演进 |
 
+## 场景：破产席手间补测试筹码
+
+### 1. 范围 / 触发
+
+本场景只服务好友现金桌 MVP 的不可兑现测试筹码。`HAND_SETTLED` 后，账本筹码为 0 的席位进入
+`SIT_OUT`；玩家可在没有手牌进行时主动补回房间固定起始筹码，然后另行 Ready。它不是买入、充值、
+加码、自动续桌或跨房账户，不能接受玩家给出的数额。
+
+### 2. 接口与投影
+
+- 领域入口：`RoomStore.refillTestChips({ seatId })`。
+- 人类命令：`seat.refill_test_chips`，沿用本席 `seat_id` 与 `recovery_credential` 授权；模型命令面禁止该命令。
+- 席位投影：`test_chip_refill_available: boolean`、`test_chip_refill_amount: number | null`。
+- 房间投影：`starting_stack: number`。浏览器只按这三个权威字段显示按钮和文案，不自行猜测资格或金额。
+
+### 3. 前置 / 后置合同
+
+- 前置：席位未释放、未请求离桌、当前无进行中的手牌，且席位状态精确为 `SIT_OUT`、账本 `stack===0`。
+- 后置：账本 `stack` 精确恢复为 `startingStack`，`all_in=false`，状态仍为 `SIT_OUT`；只记录一次
+  `SEAT_TEST_CHIPS_REFILLED`。补筹本身绝不调用 `setReady`。
+- `setReady({ ready: true })` 遇到 `stack===0` 必须先拒绝，防止异常零栈席进入开手名单。
+- `recoverSeat` 对零筹码席必须保持 `SIT_OUT`；若统一改成 `SEATED`，它会同时不满足 Ready 与补筹前置，形成死状态。
+- 手内界面显示 `HoldemHand` 的余额；手间界面显示 `RoomStore` 账本。已经结束的旧手不能覆盖补筹后的账本。
+
+### 4. 错误矩阵
+
+| 条件 | 稳定错误码 | 结果 |
+|---|---|---|
+| 席位已释放 | `seat_released` | 不改筹码或状态 |
+| 已请求离桌 | `seat_leaving` | 不改筹码或状态 |
+| 当前手仍进行中 | `test_chip_refill_during_hand` | 不改筹码或本手 |
+| 席位不是 `SIT_OUT` 或已有筹码 | `test_chip_refill_not_available` | 不叠加、不重置 |
+| 零筹码席直接 Ready | `test_chip_refill_required` | 保持 `SIT_OUT` |
+
+### 5. Good / Base / Bad
+
+- Good：玩家输光后看到“补充至 200 测试筹码”，点击后筹码为 200、按钮消失，仍需自己点击 Ready。
+- Base：正常有筹码玩家看不到补筹按钮，连续多手沿用真实结算后的账本。
+- Bad：手内补筹、重复补筹、浏览器自带金额、模型调用补筹、旧完成手覆盖新账本，均被拒绝或测试杀掉。
+
+### 6. 必须验证
+
+- 领域测试覆盖可用、不可用、手内、离桌/释放、幂等和“补筹不 Ready”。
+- HTTP 产品路径覆盖浏览器会话授权，模型命令隔离覆盖模型无权补筹。
+- 两个隔离 Chromium 上下文完成真实 UI 的 all-in/call 破产→补筹→单独 Ready，并检查控制台与截图。
+- 变异测试必须杀掉金额写死错误、错误资格、手内放行、自动 Ready、重复叠加和旧手账本覆盖。
+
+### 7. 错误与正确写法
+
+```js
+// Bad：客户端决定数额，且补筹顺手替玩家 Ready。
+seat.stack += Number(input.amount);
+seat.state = "READY";
+
+// Good：领域层只接受席位，固定恢复房间起始值，仍保持 SIT_OUT。
+refillTestChips({ seatId }) {
+  const seat = this.requireSeat(seatId);
+  // ...检查释放、离桌、手间、SIT_OUT 与 stack===0...
+  seat.stack = this.startingStack;
+  seat.state = "SIT_OUT";
+}
+```
+
 ## 浏览器模式
 
 新栈的浏览器使用一个小型模块状态对象：

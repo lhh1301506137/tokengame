@@ -187,6 +187,7 @@ function buildSeats({
     const isViewer = seat.seat_id === viewerSeatId;
     const handSeat = byPlayer.get(seat.player_id) ?? null;
     const ai = aiStates?.[seat.seat_id] ?? null;
+    const handActive = roomState?.hand_active === true;
 
     // 底牌只在两种情况下出现：这是查看者自己的席位（此时 hand 来自 view.hand，权威已按
     // viewerId 解锁），或者权威已经公开摊牌（此时公共视图里本来就有）。本模块不自己判断
@@ -212,7 +213,9 @@ function buildSeats({
       //
       // 手内两者相加不等于任何有意义的数：账本是「这一手开始时的钱」，引擎是「现在还剩
       // 的钱」，投入部分单独由 committed_this_hand 显示。
-      stack: handSeat === null ? seat.stack : handSeat.stack,
+      // 完成后的旧手仍会保留 3 秒供结果展示，因此不能只凭 handSeat 是否存在来判阶段。
+      // 玩家补筹码后，旧手里的 0 仍是历史事实，当前可用筹码则已经是房间账本的 200。
+      stack: handActive && handSeat !== null ? handSeat.stack : seat.stack,
       // 账本值也一并给出。手内它等于「本手开始时的筹码」，UI 可以用它显示盈亏方向；
       // 手间它与 stack 相同。分开给而不是让 UI 自己推，是因为「本手开始时有多少」
       // 无法从当前状态倒算——弃牌席位的投入不会退回。
@@ -226,6 +229,10 @@ function buildSeats({
       all_in: seat.all_in === true || handSeat?.status === "all_in",
       sit_out_after_hand: seat.sit_out_after_hand === true,
       leave_requested: seat.leave_requested === true,
+      // 是否可补筹码由房间权威判定。浏览器只按布尔展示按钮，不从 stack/state/hand
+      // 自己拼一套资格条件，否则手间边界变化时会短暂露出一个必然被核心拒绝的按钮。
+      test_chip_refill_available: seat.test_chip_refill_available === true,
+      test_chip_refill_amount: seat.test_chip_refill_amount ?? null,
       // 掉线保留窗剩余毫秒。null = 没在保留窗里。UI 靠它显示 120 秒倒计时。
       retention_remaining_ms: seat.retention_remaining_ms ?? null,
       is_dealer: hand !== null && hand.dealer_player_id === seat.player_id,
@@ -474,6 +481,7 @@ function build(input = {}) {
       first_hand_started: roomState.first_hand_started === true,
       participable_count: roomState.participable_count ?? 0,
       limits_version: roomState.limits_version ?? null,
+      starting_stack: roomState.starting_stack ?? null,
       // 开局判定整份照抄。UI 要显示「还差一个人 Ready」这类原因，而原因的措辞
       // 必须和权威的判定一致，否则玩家会看到一个不解释当前状态的提示。
       start_decision: roomState.start_decision ?? null,

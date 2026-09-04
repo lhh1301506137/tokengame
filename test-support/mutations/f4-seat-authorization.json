@@ -20,8 +20,8 @@
     {
       "id": "F4-03-ready退出授权集合",
       "file": "src/authority/command-surface.cjs",
-      "find": "  \"seat.ready\",\n  \"seat.sit_out_after_hand\",",
-      "replace": "  \"seat.sit_out_after_hand\",",
+      "find": "  \"seat.ready\",\n  \"seat.refill_test_chips\",\n  \"seat.sit_out_after_hand\",",
+      "replace": "  \"seat.refill_test_chips\",\n  \"seat.sit_out_after_hand\",",
       "why": "外人替他席按 Ready，把没准备好的人拖进牌局。"
     },
     {

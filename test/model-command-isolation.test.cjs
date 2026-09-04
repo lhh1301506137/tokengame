@@ -36,6 +36,7 @@ const {
 const MODEL_MUST_NOT_CALL = [
   "room.confirm_public_scope",
   "seat.ready",
+  "seat.refill_test_chips",
   "hand.act",
   "hand.reveal",
 ];
@@ -58,7 +59,7 @@ test("分权：真人面与模型面加起来恰好是宿主面，且互不相�
   const union = [...HUMAN_COMMANDS, ...MODEL_COMMANDS].sort();
   const host = [...HOST_COMMANDS].sort();
 
-  assert.equal(host.length, 21, "宿主面条数变了就要重新审这份分权，而不是让对账自动跟着变");
+  assert.equal(host.length, 22, "宿主面条数变了就要重新审这份分权，而不是让对账自动跟着变");
 
   const missing = host.filter((name) => !union.includes(name));
   assert.deepEqual(
