@@ -2,14 +2,15 @@
 
 更新日期：2026-09-05
 
-## 当前工作：B33 实现已提交并获推送授权，待远端 CI 后进入两好友真人验收
+## 当前工作：B33 共享候选与四作业 CI 已通过，待两好友真人验收
 
 用户已确认先做“两好友、各自 Codex、十手私人房”的 MVP，再考虑购买服务器和公开大厅。
 B30–B32 已把显式 HTTPS 入口、本机出站 Connector、外部 Web 工作区和 Node 22/24 四平台 CI 候选推到
 远端；B33 在真人开测前对标成熟实现，补齐基础规则反例与“破产→手间固定补测试筹码→另按 Ready”闭环。
 该批实现已形成提交 `610a8a175ec7938a894227bd7853f6259ab91659`，首轮完整门禁的失败及后续修补均如实保留；最终串行完整门禁已
 Node 1491/1491、变异718/718、exit 0；其中包含破产席掉线恢复后仍可补筹的死状态反例。
-用户已按 `DEC-20260905-002` 授权非强制推送与 CI 核对；在实际推送完成前，远端 main 仍是 B32 发布记录 `76cdcf9`，不能把授权写成发布成功。真实隧道、两台设备、第二席原生 AI 与十手
+用户已按 `DEC-20260905-002` 授权并完成非强制推送：远端候选为 `97b4c946b2e572e5460babddbb8857abdbb0bbdb`，对应
+[GitHub Actions run 33909572989](https://github.com/lhh1301506137/tokengame/actions/runs/33909572989) 的 Node 22/24 × Windows/Ubuntu 四作业全部成功；Windows 各1491/1491、Ubuntu各1483/1483，失败、取消、跳过和todo均0。真实隧道、两台设备、第二席原生 AI 与十手
 真人签字仍尚未执行。入口见 [远程内测指南](docs/REMOTE-FRIEND-MVP.md)，规则范围见
 [德扑 MVP 覆盖说明](docs/POKER-MVP-COVERAGE.md)，本批事实见
 [B33 记录](REVIEW-LOG.md#b33-poker-maturity-and-refill)。
@@ -114,8 +115,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: push_B33_candidate_and_verify_CI_before_two_friend_acceptance
-  reason: B33本地完整门禁与双浏览器破产闭环已通过，实现提交已创建且推送已获授权；真人应等待远端同一候选CI结果后再开始。
+  recommendation: begin_two_friend_acceptance_on_B33_candidate
+  reason: B33本地完整门禁、双浏览器破产闭环、远端同一候选四作业CI均已通过；剩余阻塞是两台设备、两真人与双原生Codex的实际体验证据。
 
 continuous_risk_authorization:
   status: active
@@ -157,7 +158,7 @@ delegated_mission:
   agreed_product_shape: 正常德扑加本席真实AI公开交流；不扩大当前MVP。
   authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
   current_batch_goal: 对标成熟德扑实现，补齐会阻断好友十手闭环的基础规则与破产恢复；跑完本地门禁后形成同一候选，不扩账户经济、赛事、公开大厅或Claude适配。
-  current_batch_state: B33_implementation_committed_push_authorized_CI_pending_real_friend_acceptance_not_run
+  current_batch_state: B33_remote_candidate_and_CI_green_real_friend_acceptance_not_run
   in_scope: [local_regression, loopback_synthetic_tables, remote_connector_implementation_without_public_exposure, two_friend_workspace_UI, temporary_seat_connections, bounded_queue_tests, evidence_and_owned_resource_cleanup]
   out_of_scope: [global_MCP_reload, automated_or_additional_host_restart, model_override, second_model_API, new_task_creation, public_or_remote_listen, real_private_data, paid_service_activation, commits_or_deploy]
   allowed_autonomous_decisions: [test_order, finite_batch_size, evidence_capture, in_scope_reversible_repair]
@@ -283,9 +284,9 @@ project_intelligence:
       challenge: 每机一人不是入口强制条件；共享协调器令牌不能被当作逐席授权。
       plan_ref: TAKEOVER-PLAN.md
     current_reality:
-      implemented_basis: 远端main在本次推送前仍为B32发布记录76cdcf9，其中产品候选9ac4ce1保留既有权威栈、逐席授权、本地Codex入口、显式HTTPS入口、出站Connector和双人优先Web工作区。B33新增成熟规则反例与破产席手间固定补测试筹码，已形成实现提交610a8a175ec7938a894227bd7853f6259ab91659，推送与CI仍以实际回执为准。
-      first_gap: 将已获授权的B33提交非强制推送并核对同一SHA的远端CI；随后由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复、破产补筹及撤权。Claude、大厅和服务器采购不阻塞这个阶段。
-      evidence_limit: B33最终字节的串行完整gate实际exit0，Node1491/1491、718/718变异全杀；双隔离Chromium破产闭环11/11、6033ms、0控制台错误。首轮gate的712杀掉/3存活/2未评估、一次并发变异误编排及第二次1490/717中间绿灯均保留，不被最终绿色抹除。B33尚无GitHub CI。真实隧道、第二真实AI和两机十手仍未跑；B14和B19有单席原生公开样本，最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；自动化不能替代两真人验收。
+      implemented_basis: 远端B33候选97b4c946b2e572e5460babddbb8857abdbb0bbdb包含既有权威栈、逐席授权、本地Codex入口、显式HTTPS入口、出站Connector、双人优先Web工作区，以及成熟规则反例与破产席手间固定补测试筹码；对应Actions 33909572989四作业全部成功。
+      first_gap: 由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复、破产补筹及撤权。Claude、大厅和服务器采购不阻塞这个阶段。
+      evidence_limit: B33最终字节的串行完整gate实际exit0，Node1491/1491、718/718变异全杀；双隔离Chromium破产闭环11/11、6033ms、0控制台错误；远端同一候选的Windows Node22/24各1491/1491、Ubuntu各1483/1483。首轮gate的712杀掉/3存活/2未评估、一次并发变异误编排及第二次1490/717中间绿灯均保留，不被最终绿色抹除。真实隧道、第二真实AI和两机十手仍未跑；B14和B19有单席原生公开样本，最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；自动化不能替代两真人验收。
     candidates_unknowns_history:
       selected: 复用单协调器与托管，真人逐席绑定，权威启动评估时返回同席快照。
       rejected: 为每席复制权威/托管，或只写说明却保留共用通行令牌。
@@ -297,7 +298,7 @@ project_intelligence:
     - {unknown_id: U-TG-LOCAL-BRIDGE-AUTH, owner: professional_design_unknown, status: open, blocking_boundary: release, blocked_scope_refs: [remote_release]}
     - {unknown_id: U-TG-TWO-FRIEND-UAT, owner: evidence_unknown, status: open, blocking_boundary: user_acceptance, blocked_scope_refs: [MVP_0_1_two_device_two_Codex_ten_hand_signoff]}
     - {unknown_id: U-TG-FOUR-HUMAN-UAT, owner: evidence_unknown, status: deferred_after_MVP_0_1, blocking_boundary: user_acceptance, blocked_scope_refs: [four_human_playability_signoff]}
-  readiness: B33_implementation_committed_push_authorized_CI_pending_real_two_friend_acceptance_not_run
+  readiness: B33_remote_candidate_and_four_job_CI_green_real_two_friend_acceptance_not_run
   freshness: current
   execution_closure_ref: REVIEW-LOG.md#b33-poker-maturity-and-refill
   latest_probe_evidence_ref: REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target

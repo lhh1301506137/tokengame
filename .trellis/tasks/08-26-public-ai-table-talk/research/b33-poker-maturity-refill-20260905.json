@@ -34,7 +34,23 @@
   "decision_ref": "PROJECT-DECISION-LOG.md#DEC-20260905-001",
   "publication_decision_ref": "PROJECT-DECISION-LOG.md#DEC-20260905-002",
   "implementation_commit": "610a8a175ec7938a894227bd7853f6259ab91659",
-  "publication_state_at_record_commit": "push_authorized_remote_and_ci_pending",
+  "publication_state_at_record_commit": "remote_candidate_and_ci_verified; this closeout record postdates the tested candidate",
+  "publication": {
+    "remote": "https://github.com/lhh1301506137/tokengame.git",
+    "candidate_commit": "97b4c946b2e572e5460babddbb8857abdbb0bbdb",
+    "remote_main_verified": true,
+    "github_actions_run_id": 33909572989,
+    "github_actions_url": "https://github.com/lhh1301506137/tokengame/actions/runs/33909572989",
+    "head_sha_matches_candidate": true,
+    "conclusion": "success",
+    "jobs": [
+      { "node": 22, "os": "windows-latest", "tests": 1491, "passed": 1491, "failed": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 98199.9287 },
+      { "node": 24, "os": "windows-latest", "tests": 1491, "passed": 1491, "failed": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 97880.7915 },
+      { "node": 22, "os": "ubuntu-latest", "tests": 1483, "passed": 1483, "failed": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 74081.70325 },
+      { "node": 24, "os": "ubuntu-latest", "tests": 1483, "passed": 1483, "failed": 0, "cancelled": 0, "skipped": 0, "todo": 0, "duration_ms": 73414.873414 }
+    ],
+    "ci_scope": "npm test only; mutation and browser results remain local evidence"
+  },
   "verification": {
     "browser_refill_acceptance": {
       "command": "npm run acceptance:refill -- <outside-repo-output-dir>",
@@ -94,7 +110,6 @@
     }
   },
   "not_run": [
-    "GitHub CI for B33",
     "public HTTPS tunnel",
     "two real people on two devices",
     "second native Codex seat",
