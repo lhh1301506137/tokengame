@@ -1,5 +1,45 @@
 # TokenGame 项目决策记录
 
+## DEC-20260905-002：授权提交并推送 B33 候选、核对 GitHub CI
+
+metadata:
+  date: 2026-09-05
+  source: user_direct
+  scope: release
+  status: user_confirmed
+  supersedes: none
+  affected_docs: [STATUS.md, PROJECT-PLAN-TREE.md, RETURN-HANDOFF.md, REVIEW-LOG.md, progress.md]
+  resulting_changes:
+    - commit: 610a8a175ec7938a894227bd7853f6259ab91659
+      change: 保存 B33 德扑规则加固、测试筹码补充闭环及对应自动化。
+
+question: 是否允许把 B33 当前已验证改动提交并推送到既有 origin/main？
+why_it_matters: 好友必须从同一远端提交开始真人验收；本地绿色和 GitHub 协作者身份都不能替代实际提交、推送与对应 CI。
+recommended_answer: 精确暂存 B33 实现和证据，创建非强制提交并推送既有 main，核对远端 SHA 与 Node 22/24 × Windows/Linux CI；不部署、不启动隧道、模型或牌局。
+user_answer: 授权 commit+push
+decision: 允许在 H:/tokengold/tokengame 保存 B33 实现与必要记录，非强制推送至既有 https://github.com/lhh1301506137/tokengame.git 的 main，并读取对应 GitHub Actions 结果。许可包含保存本次发布回执所需的仅文档收尾，但不是长期自动推送、部署或真人验收授权。
+follow_up: 核对本地/远端 SHA、run 的 headSha 和各矩阵作业；失败不得写成通过。CI 成功后进入两好友真人验收，仍不把自动化或发布写成双真人、双原生 AI、真实 HTTPS 或十手签字完成。
+
+## DEC-20260905-001：好友现金桌采用手间手动补测试筹码
+
+metadata:
+  date: 2026-09-05
+  source: user_direct
+  scope: product_rule
+  status: user_confirmed
+  supersedes: none
+  affected_docs: [README.md, docs/POKER-MVP-COVERAGE.md, docs/REMOTE-FRIEND-MVP.md, .trellis/tasks/08-26-public-ai-table-talk/prd.md, .trellis/spec/frontend/state-management.md]
+  resulting_changes:
+    - command: seat.refill_test_chips
+      change: 零筹码SIT_OUT席只能在手间补回房间固定起始测试筹码，补完仍需单独Ready。
+
+question: 好友 MVP 中玩家输光测试筹码后如何继续，是否要引入买入或账户经济？
+why_it_matters: 没有恢复路径就可能在十手验收中永久卡桌；自动或任意金额补筹又会引入未定义经济与参赛同意。
+recommended_answer: 使用不可兑现测试筹码；破产后手间手动恢复到固定起始值200，不自动补、不允许自定义金额、不自动Ready。
+user_answer: 可以
+decision: 采用上述最小恢复规则。补筹是人类席位命令，模型无权调用；有筹码、手牌进行中、离桌中或已释放席位均不能补。账户、现金价值、充值、提现、顶筹和跨房筹码继续排除在好友MVP之外。
+follow_up: 用领域、HTTP、模型隔离、浏览器双上下文与变异测试证明破产闭环，再进入双好友真人十手验收。
+
 ## DEC-20260903-002：授权推送 B32 就绪提交并核对四作业 CI
 
 metadata:

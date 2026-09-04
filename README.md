@@ -5,7 +5,8 @@ TokenGame 在探索一种不一样的 AI 游戏形态：**牌局仍是正常的�
 施压还是联手诈唬。**
 
 > **当前状态：实验性 Alpha。** 核心牌局与单机多人浏览器原型可以运行，Codex 单席真实发言已有
-> 有界实测。本轮增加临时 HTTPS 私人房入口、逐玩家本机 Connector 与外部 Web 工作区，
+> 有界实测。当前候选包含临时 HTTPS 私人房入口、逐玩家本机 Connector、外部 Web 工作区，以及
+> 破产后手间手动补回固定起始测试筹码的闭环；
 > **两台设备、两席真实 AI 的十手好友验收仍未完成**，不能把本地脚本通过当成实时联机已通过。
 > Claude 接入与 Codex 内嵌 UI 不在本轮范围。测试筹码不对应真钱、代币或付费模型额度。
 
@@ -35,11 +36,12 @@ Codex 项目 MCP 与本地自动化都有实现和测试。它还不是可发布
 - 牌桌交互、移动端可读性、首次安装体验和真人试玩；
 - 德州扑克规则、隐私边界和多宿主一致性的反例测试。
 
-项目的详细事实、失败样本和未完成边界都保留在仓库中；欢迎针对一个可复现问题提交小而完整的改动。
+项目的详细事实、失败样本和未完成边界都保留在仓库中；基础玩法与成熟实现的覆盖比较见
+[德扑 MVP 覆盖说明](./docs/POKER-MVP-COVERAGE.md)。欢迎针对一个可复现问题提交小而完整的改动。
 开始贡献前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 这仍是实验性私人房，不是生产牌室。当前范围见[路线恢复点](./PROJECT-PLAN-TREE.md#当前恢复点)，
-两好友接入见[远程内测指南](./docs/REMOTE-FRIEND-MVP.md)，本轮证据见[B30 记录](./REVIEW-LOG.md#b30-two-friend-remote-candidate)；真实宿主历史见[B9 记录](./REVIEW-LOG.md#b9-real-host-seat-probe)，本地协议基线见[B8 接手记录](./REVIEW-LOG.md#b8-seat-model-binding)，
+两好友接入见[远程内测指南](./docs/REMOTE-FRIEND-MVP.md)，当前本地收口见[B33 记录](./REVIEW-LOG.md#b33-poker-maturity-and-refill)；真实宿主历史见[B9 记录](./REVIEW-LOG.md#b9-real-host-seat-probe)，本地协议基线见[B8 接手记录](./REVIEW-LOG.md#b8-seat-model-binding)，
 协议见[宿主适配器合同](./docs/HOST-ADAPTER-CONTRACT.md)。
 
 ## 本地运行

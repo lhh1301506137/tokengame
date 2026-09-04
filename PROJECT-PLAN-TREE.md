@@ -1021,7 +1021,7 @@ B27确认用户完成第二次手动重启，当前任务实际且唯一加载�
 
 B28没有重试B27通知，而是把可控的空闲载体前提写成产品合同：managed启动横幅、固定目标页面说明与每窗本人确认、项目Skill及三份入口/操作文档均要求目标游戏任务先结束当前回复并保持空闲；同时明确queue已接收不等于模型开始或权威结清。聚焦Node首轮18/19后修正同义措辞，最终19/19、1833.6463ms；脚本浏览器46/46、20729.272ms、0错误、6项清理通过，桌面与320px目检；完整Node1356/1356、79933.5359ms。Skill普通校验遇GBK载体失败，同一校验器加UTF-8模式后有效。本批0通知/queue/原生模型/权威评估，活动槽不存在且7802无监听。事实见`REVIEW-LOG.md#b28-idle-game-task-handoff`。
 
-**产品路线恢复点仍是B30候选的真人两机验收；B32已发布并通过对应四作业CI。** 用户已确认先完成两好友MVP，再考虑服务器和公开大厅。B30不改变既有2–4席扑克规则，只增加显式HTTPS入口、各机出站连接器和外部Web游戏/配置工作面。真实测试时，两人进入同一外部牌桌，并在各自空闲的Codex游戏任务运行`codex:connect`；好友不能用`codex:play`另起本地牌桌。由本人逐席授权并开启有限通知窗，按权威start和唯一terminal判断成功，不以queue接收数代替。真人步骤和回填格式见`docs/REMOTE-FRIEND-MVP.md`。
+**产品路线恢复点是发布已提交的B33候选并核对远端CI，再执行两好友真人两机验收；推送前远端仍是B32。** 用户已确认先完成两好友MVP，再考虑服务器和公开大厅。B30不改变既有2–4席扑克规则，只增加显式HTTPS入口、各机出站连接器和外部Web游戏/配置工作面。真实测试时，两人进入同一外部牌桌，并在各自空闲的Codex游戏任务运行`codex:connect`；好友不能用`codex:play`另起本地牌桌。由本人逐席授权并开启有限通知窗，按权威start和唯一terminal判断成功，不以queue接收数代替。真人步骤和回填格式见`docs/REMOTE-FRIEND-MVP.md`。
 
 工程收尾补充：B30已以`4135611`推送，其Node 22两平台CI均失败。B31只修测试夹具和验证驱动，
 不推进或关闭上面的MVP验收节点；冻结代码的Windows 1475项、WSL 1467项及相关变异各25条已通过，
@@ -1036,12 +1036,22 @@ B32修复了默认Node24下仅测试夹具的取消语义超时，并把CI扩为
 本地与发布机器事实分别见`.trellis/tasks/08-26-public-ai-table-talk/research/b32-friend-readiness-20260903.json`
 和`.trellis/tasks/08-26-public-ai-table-talk/research/b32-publication-20260903.json`。
 
+B33没有更换扑克底座，而是用PokerKit、`@hivetech/poker-engine`、Poker TDA和WSOP公开规则做行为
+对标；不复制源码、不增加运行依赖。实现补齐短额盲注/跟注、无人可回应时的合法动作与自动归约，并按
+`DEC-20260905-001`增加零筹码席手间固定补回200测试筹码、补筹与Ready分离的最小现金桌恢复。
+双隔离浏览器破产闭环11/11且控制台0错误；首轮完整门禁真实exit1（712杀掉、3存活、2未评估）后已
+修补测试缺口和过期锚点后第二次串行门禁Node1490/1490、变异717/717、exit0；收尾又修复破产席
+经核心恢复后进入不可补筹`SEATED`死状态，最终字节的第三次完整门禁真实exit0：Node1491/1491、
+变异718/718全杀。
+规则范围见`docs/POKER-MVP-COVERAGE.md`，过程见
+`REVIEW-LOG.md#b33-poker-maturity-and-refill`。实现已提交为`610a8a175ec7938a894227bd7853f6259ab91659`并获推送授权；实际远端与CI回执产生前仍不得把B32远端CI写成B33证据。
+
 本轮没有自动开公网隧道、创建宿主任务、修改模型或采购服务器。两台设备、两个真实AI和十手体验尚未验证，不能因本地脚本通过关闭MVP。页面确认只是用户声明，不是宿主空闲遥测。`proactive_wake_verified=false`，`TG-EU-PROACTIVE-WAKE-SPIKE`和`TG-EU-PLAYABILITY-GATE`继续开放；四真人完整UAT后置，不抹除其历史要求。
 
-- `latest_review_ref`: `REVIEW-LOG.md#b32-friend-readiness`（本地工程就绪；MVP闭合仍归B30真人验收）
-- `readiness`: `B32_published_candidate_ci_green_real_two_friend_acceptance_not_run`
-- `known_failures`: 相对cwd运行时失败是已修历史；B27同一活动任务1/1/0的精确排队规则unknown；真实隧道、双原生AI与十手真人验收未跑，旧七份失效下载未动。Claude、内嵌UI和四真人UAT仍未验证，但不作为两好友阶段的新增前置。
-- `next_owner`: `user_and_friend_for_two_device_acceptance_with_primary_support`
+- `latest_review_ref`: `REVIEW-LOG.md#b33-poker-maturity-and-refill`（B33本地门禁已闭合；MVP闭合仍归B30真人验收）
+- `readiness`: `B33_implementation_committed_push_authorized_CI_pending_real_two_friend_acceptance_not_run`
+- `known_failures`: B33首轮完整门禁失败和一次并发变异误编排均已定向纠正，最终串行gate通过；相对cwd运行时失败是已修历史；B27同一活动任务1/1/0的精确排队规则unknown；真实隧道、双原生AI与十手真人验收未跑，旧七份失效下载未动。Claude、内嵌UI和四真人UAT仍未验证，但不作为两好友阶段的新增前置。
+- `next_owner`: `codex_primary_push_and_CI_verification_then_user_and_friend_acceptance`
 B9过滤日志复算：成功样本从玩家事件到权威公开33.460秒，公开后收尾11.556秒；已超过该次行动截止3.822秒。
 这些是已存日志的分段事实，不是本轮新模型调用，更不能称为实时性能通过。
 

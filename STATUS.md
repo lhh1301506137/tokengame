@@ -1,18 +1,18 @@
 # TokenGame 项目状态
 
-更新日期：2026-09-03
+更新日期：2026-09-05
 
-## 当前工作：B32 已发布且四作业 CI 通过，只待两好友真人验收
+## 当前工作：B33 实现已提交并获推送授权，待远端 CI 后进入两好友真人验收
 
 用户已确认先做“两好友、各自 Codex、十手私人房”的 MVP，再考虑购买服务器和公开大厅。
-B30 已在既有权威栈上实现显式 HTTPS 入口、本机出站连接器和外部 Web 的游戏/配置工作面；B31 已修复
-Node 22 的 CI 兼容并在远端通过。B32 清除了默认 Node 24 下最后一项已知本地红测，将 CI 扩为
-Node 22/24 × Windows/Linux，并补齐好友开测前的同提交预检和结果回填；产品代码、宿主配置与玩法未改。
-实现提交 `1f522d3` 与就绪记录提交 `9ac4ce1` 已推送，远端 main 与候选 SHA `9ac4ce1` 一致；
-[对应 GitHub CI](https://github.com/lhh1301506137/tokengame/actions/runs/33774656669) 的四个作业全部成功。
-朋友现在可从 GitHub 取得 B32 候选。真实隧道、两台设备、第二席原生 AI 与十手真人签字仍尚未执行。
-入口与操作边界见 [远程内测指南](docs/REMOTE-FRIEND-MVP.md)，验收事实统一见
-[B32 就绪记录](REVIEW-LOG.md#b32-friend-readiness)。
+B30–B32 已把显式 HTTPS 入口、本机出站 Connector、外部 Web 工作区和 Node 22/24 四平台 CI 候选推到
+远端；B33 在真人开测前对标成熟实现，补齐基础规则反例与“破产→手间固定补测试筹码→另按 Ready”闭环。
+该批实现已形成提交 `610a8a175ec7938a894227bd7853f6259ab91659`，首轮完整门禁的失败及后续修补均如实保留；最终串行完整门禁已
+Node 1491/1491、变异718/718、exit 0；其中包含破产席掉线恢复后仍可补筹的死状态反例。
+用户已按 `DEC-20260905-002` 授权非强制推送与 CI 核对；在实际推送完成前，远端 main 仍是 B32 发布记录 `76cdcf9`，不能把授权写成发布成功。真实隧道、两台设备、第二席原生 AI 与十手
+真人签字仍尚未执行。入口见 [远程内测指南](docs/REMOTE-FRIEND-MVP.md)，规则范围见
+[德扑 MVP 覆盖说明](docs/POKER-MVP-COVERAGE.md)，本批事实见
+[B33 记录](REVIEW-LOG.md#b33-poker-maturity-and-refill)。
 B30 提交前的历史证据为身份约束的 Node `1456/1456`、变异 `693/693`、双席浏览器 `18/18` 与四页长程
 `215/215`；第一次完整门禁自身 exit 1、随后仅重跑全部受影响集合的过程也保留在记录中，不能写成
 第二次完整门禁 exit 0。B31 的 Node 22 和受影响变异结果另记在
@@ -114,8 +114,8 @@ trellis:
   active_task_scope: fullstack
   active_task_context_curated: yes
   active_task_research: .trellis/tasks/08-26-public-ai-table-talk/research/semantic-candidate-rules-public-ai-exchange-20260827.json
-  recommendation: run_two_friend_acceptance_on_B32_candidate
-  reason: B32已推送且对应Node22/24×Windows/Linux四作业CI全部成功；当前首个未验证边界是双机双原生AI十手验收。
+  recommendation: push_B33_candidate_and_verify_CI_before_two_friend_acceptance
+  reason: B33本地完整门禁与双浏览器破产闭环已通过，实现提交已创建且推送已获授权；真人应等待远端同一候选CI结果后再开始。
 
 continuous_risk_authorization:
   status: active
@@ -156,15 +156,15 @@ delegated_mission:
   user_goal: 持续推进朋友私人房原型的本地与真实宿主测试，减少逐次许可等待。
   agreed_product_shape: 正常德扑加本席真实AI公开交流；不扩大当前MVP。
   authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
-  current_batch_goal: 清除双好友实测前的本地运行时兼容阻塞，固化Node22/24验证与真人回填入口；不改产品规则、远程入口或UI，不把本地验证算作GitHub或双机双原生AI十手验收。
-  current_batch_state: B32_published_four_job_ci_passed_real_friend_acceptance_not_run
+  current_batch_goal: 对标成熟德扑实现，补齐会阻断好友十手闭环的基础规则与破产恢复；跑完本地门禁后形成同一候选，不扩账户经济、赛事、公开大厅或Claude适配。
+  current_batch_state: B33_implementation_committed_push_authorized_CI_pending_real_friend_acceptance_not_run
   in_scope: [local_regression, loopback_synthetic_tables, remote_connector_implementation_without_public_exposure, two_friend_workspace_UI, temporary_seat_connections, bounded_queue_tests, evidence_and_owned_resource_cleanup]
   out_of_scope: [global_MCP_reload, automated_or_additional_host_restart, model_override, second_model_API, new_task_creation, public_or_remote_listen, real_private_data, paid_service_activation, commits_or_deploy]
   allowed_autonomous_decisions: [test_order, finite_batch_size, evidence_capture, in_scope_reversible_repair]
   must_ask_user: [canonical_critical_boundary, affected_L0_L2_change, global_refresh_or_uncovered_restart, unexplained_integrity_failure]
   max_risk: medium
   continuous_risk_authorization_ref: STATUS.md#continuous_risk_authorization
-  latest_review_ref: REVIEW-LOG.md#b32-friend-readiness
+  latest_review_ref: REVIEW-LOG.md#b33-poker-maturity-and-refill
   mission_specific_stop_conditions: [explicit_tool_permission_boundary, user_stop, readiness_failure_without_new_evidence, ambiguous_queue_delivery_no_repeat, bounded_batch_limit, unrecoverable_cleanup_or_integrity_failure]
   verification_floor: 原生任务UUID留在本机，远程只有不透明目标别名；逐席鉴权、本人每窗确认、跨窗口单槽、权威resolve、取消与清理分项；脚本、本地入口、真实隧道和两个真实宿主证据分开。
   preflight_baseline:
@@ -283,9 +283,9 @@ project_intelligence:
       challenge: 每机一人不是入口强制条件；共享协调器令牌不能被当作逐席授权。
       plan_ref: TAKEOVER-PLAN.md
     current_reality:
-      implemented_basis: 产品实现保持4135611；B31验证修复已推送且Node22两平台CI通过；B32提交1f522d3只修Node24测试夹具、扩CI矩阵并补好友验收说明，产品代码未变，候选9ac4ce1已推送。既有权威栈、逐席授权、本地Codex入口及B30显式HTTPS入口、出站连接器、按席注册与ACK、双人优先的外部Web游戏页/配置页保持同一实现。
-      first_gap: 由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复及撤权。不在正在运行的开发任务上重试通知，不把本地脚本当作远程实机。Claude、大厅和服务器采购不阻塞这个阶段。
-      evidence_limit: B32同字节Node22/24完整测试各1475/1475；Node24完整gate实际exit0且693/693全杀；双席脚本浏览器18/18、清理7/7。候选9ac4ce1的GitHub四作业全部成功：Windows Node22/24各1475项，Ubuntu Node22/24各1467项。真实隧道、第二真实AI和两机十手仍未跑。B14和B19有单席原生公开样本；最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；旧CLI、四浏览器13手和当前脚本连接器都不能替代两真人验收，历史清理阻塞不被本轮回归追认为成功。
+      implemented_basis: 远端main在本次推送前仍为B32发布记录76cdcf9，其中产品候选9ac4ce1保留既有权威栈、逐席授权、本地Codex入口、显式HTTPS入口、出站Connector和双人优先Web工作区。B33新增成熟规则反例与破产席手间固定补测试筹码，已形成实现提交610a8a175ec7938a894227bd7853f6259ab91659，推送与CI仍以实际回执为准。
+      first_gap: 将已获授权的B33提交非强制推送并核对同一SHA的远端CI；随后由两个设备上的真人、各自已结束启动回复并保持空闲的Codex游戏任务，验证同桌十手、双方AI公开往返、断线恢复、破产补筹及撤权。Claude、大厅和服务器采购不阻塞这个阶段。
+      evidence_limit: B33最终字节的串行完整gate实际exit0，Node1491/1491、718/718变异全杀；双隔离Chromium破产闭环11/11、6033ms、0控制台错误。首轮gate的712杀掉/3存活/2未评估、一次并发变异误编排及第二次1490/717中间绿灯均保留，不被最终绿色抹除。B33尚无GitHub CI。真实隧道、第二真实AI和两机十手仍未跑；B14和B19有单席原生公开样本，最近已结清的牌局内原生样本仍为B22的silent/0气泡。queue接收不等于模型开始或权威终态；自动化不能替代两真人验收。
     candidates_unknowns_history:
       selected: 复用单协调器与托管，真人逐席绑定，权威启动评估时返回同席快照。
       rejected: 为每席复制权威/托管，或只写说明却保留共用通行令牌。
@@ -297,13 +297,13 @@ project_intelligence:
     - {unknown_id: U-TG-LOCAL-BRIDGE-AUTH, owner: professional_design_unknown, status: open, blocking_boundary: release, blocked_scope_refs: [remote_release]}
     - {unknown_id: U-TG-TWO-FRIEND-UAT, owner: evidence_unknown, status: open, blocking_boundary: user_acceptance, blocked_scope_refs: [MVP_0_1_two_device_two_Codex_ten_hand_signoff]}
     - {unknown_id: U-TG-FOUR-HUMAN-UAT, owner: evidence_unknown, status: deferred_after_MVP_0_1, blocking_boundary: user_acceptance, blocked_scope_refs: [four_human_playability_signoff]}
-  readiness: B32_published_candidate_ci_green_real_two_friend_acceptance_not_run
+  readiness: B33_implementation_committed_push_authorized_CI_pending_real_two_friend_acceptance_not_run
   freshness: current
-  execution_closure_ref: REVIEW-LOG.md#b32-friend-readiness
+  execution_closure_ref: REVIEW-LOG.md#b33-poker-maturity-and-refill
   latest_probe_evidence_ref: REVIEW-LOG.md#b27-absolute-cwd-post-restart-fixed-target
-  latest_local_evidence_ref: REVIEW-LOG.md#b32-friend-readiness
-  protected_semantic_delta: none
-  material_projection_generation: not_triggered_no_new_L0_L2_projection
+  latest_local_evidence_ref: REVIEW-LOG.md#b33-poker-maturity-and-refill
+  protected_semantic_delta: DEC-20260905-001_confirmed_friend_cash_refill_rule
+  material_projection_generation: completed_for_refill_command_and_projection
   route_permission:
     decision: granted
     requested_route_ref: TG-EU-PLAYABILITY-GATE
@@ -312,6 +312,7 @@ project_intelligence:
     active_testing_authorization_ref: PROJECT-DECISION-LOG.md#DEC-20260831-002
     specific_permission_ref: PROJECT-DECISION-LOG.md#DEC-20260831-003
     migration_and_restart_permission_ref: PROJECT-DECISION-LOG.md#DEC-20260901-002
+    publication_permission_ref: PROJECT-DECISION-LOG.md#DEC-20260905-002
     completed_native_window_ref: PROJECT-DECISION-LOG.md#DEC-20260831-003
     completed_native_window_status: stopped_4_of_12_inputs_3_of_4_queues_3_public_permission_revoked_cleanup_policy_blocked
     excluded_from_grant: [global_install, global_MCP_reload, automated_or_additional_host_restart, model_or_reasoning_override, second_model_API, remote_listen, push, deploy, uncapped_model_calls, human_acceptance]
